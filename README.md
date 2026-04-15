@@ -42,7 +42,7 @@ Each message spawns a short-lived `claude -p` subprocess using `--output-format 
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/your-username/claude-miniapp
+git clone https://github.com/jerry12122/Claude-Code-Mini-App
 cd claude-miniapp
 go build -o claude-miniapp ./cmd/server
 ```
