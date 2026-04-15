@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <title>Claude Code TMA</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" />
+  <style>
+    :root { --tg-content-safe-top: 0px; }
+    body { background: #0f0f0f; color: #e5e5e5; font-family: system-ui, sans-serif; }
+    input, textarea, select { font-size: 16px !important; }
+    .prose pre { margin: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+    .prose pre code { white-space: pre; }
+    .prose code:not(pre code) {
+      background: #2a2a2a; padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.9em;
+    }
+    .prose p { margin: 0.5em 0; }
+    .prose ul, .prose ol { padding-left: 1.5em; margin: 0.5em 0; }
+    .prose h1,.prose h2,.prose h3 { font-weight: 600; margin: 0.75em 0 0.25em; }
+    .prose table { border-collapse: collapse; min-width: 100%; }
+    .prose table th, .prose table td { border: 1px solid #3a3a5a; padding: 0.3em 0.75em; white-space: nowrap; }
+    .prose table th { background: #2a2a4a; font-weight: 600; }
+    .prose .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0.5em 0; }
+    .bubble-claude { background: #1a1a2e; border: 1px solid #2a2a4a; overflow: hidden; min-width: 0; }
+    .bubble-user   { background: #1a2e1a; border: 1px solid #2a4a2a; overflow: hidden; min-width: 0; }
+    @keyframes pulse-dot {
+      0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; }
+    }
+    .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #6366f1; margin: 0 2px; animation: pulse-dot 1.2s infinite; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    .session-list { scrollbar-width: thin; scrollbar-color: rgba(99,102,241,0.4) transparent; }
+    .session-list::-webkit-scrollbar { width: 4px; }
+    .session-list::-webkit-scrollbar-track { background: transparent; }
+    .session-list::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.4); border-radius: 2px; }
+  </style>
+</head>
+<body class="h-screen">
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ── Telegram WebApp 初始化 ────────────────────────────────────────────────────
+const tgApp = window.Telegram?.WebApp;
+// 判斷是否在 Telegram WebView 裡（即使 initData 暫時為空也算）
+const isTMA = !!(tgApp);
+const initData = isTMA ? (tgApp.initData || '') : '';
+// 有 initData 才走 TG 驗證，否則 fallback 到密碼驗證
+const isTelegram = isTMA && initData !== '';
+
+if (isTMA) {
+  tgApp.ready();
+  tgApp.expand();
+  tgApp.disableVerticalSwipes?.();
+  const updateContentSafeArea = () => {
+    const top = tgApp.contentSafeAreaInset?.top ?? 0;
+    document.documentElement.style.setProperty('--tg-content-safe-top', `${top}px`);
+  };
+  updateContentSafeArea();
+  tgApp.onEvent('contentSafeAreaChanged', updateContentSafeArea);
+}
+
+console.log('[init] isTMA:', isTMA, 'isTelegram:', isTelegram, 'initData len:', initData.length, 'protocol:', location.protocol);
+
+// 統一 fetch：TMA 帶 initData，Web 模式 cookie 由瀏覽器自動帶入
+const apiFetch = (url, opts = {}) => {
+  const headers = { ...(opts.headers || {}) };
+  if (isTelegram) {
+    headers['X-Telegram-Init-Data'] = initData;
+  }
+  return fetch(url, { ...opts, headers });
+};
+
+// WebSocket URL（自動依 http/https 選 ws/wss）
+// Web 模式：WebSocket 同源請求會自動帶 cookie，無需額外參數
+const wsURL = (sessionId) => {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const base = `${proto}://${location.host}/sessions/${sessionId}/ws`;
+  if (isTelegram) return `${base}?initData=${encodeURIComponent(initData)}`;
+  return base;
+};
+
+marked.setOptions({
+  highlight: (code, lang) => {
+    if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true,
+});
+
+const parseMarkdown = (text) => {
+  const html = marked.parse(text);
+  return html
+    .replace(/<table>/g, '<div class="table-wrap"><table>')
+    .replace(/<\/table>/g, '</table></div>');
+};
+
+// ── Session 列表畫面 ──────────────────────────────────────────────────────────
+function SessionView({ onEnter }) {
+  const [sessions, setSessions]   = useState([]);
+  const [showForm, setShowForm]   = useState(false);
+  const [newName, setNewName]     = useState('');
+  const [newDir, setNewDir]       = useState('');
+  const [newMode, setNewMode]     = useState('default');
+  const [loading, setLoading]     = useState(false);
+
+  const load = async () => {
+    const res = await apiFetch('/sessions');
+    setSessions(await res.json());
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!newName.trim()) return;
+    setLoading(true);
+    await apiFetch('/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim(), work_dir: newDir.trim(), permission_mode: newMode }),
+    });
+    setNewName(''); setNewDir(''); setNewMode('default');
+    setShowForm(false);
+    setLoading(false);
+    load();
+  };
+
+  const del = async (id, e) => {
+    e.stopPropagation();
+    if (!confirm('確定刪除此 Session 及所有對話紀錄？')) return;
+    await apiFetch(`/sessions/${id}`, { method: 'DELETE' });
+    load();
+  };
+
+  const modeLabel = { default: '預設', acceptEdits: '自動編輯', bypassPermissions: '⚠️ 跳過授權' };
+
+  return (
+    <div className="flex flex-col h-screen">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0"
+           style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}>
+        <span className="font-semibold text-indigo-400 text-base">Claude Code</span>
+        <button onClick={() => setShowForm(!showForm)}
+          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">
+          + 新 Session
+        </button>
+      </div>
+
+      {/* 建立表單 */}
+      {showForm && (
+        <div className="px-4 py-3 bg-gray-900 border-b border-gray-700 space-y-2 shrink-0">
+          <input value={newName} onChange={e => setNewName(e.target.value)}
+            placeholder="Session 名稱（必填）"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600" />
+          <input value={newDir} onChange={e => setNewDir(e.target.value)}
+            placeholder="工作目錄（選填，如 /home/user/project）"
+            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600 font-mono" />
+          <div className="flex gap-2">
+            <select value={newMode} onChange={e => setNewMode(e.target.value)}
+              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300">
+              <option value="default">default</option>
+              <option value="acceptEdits">acceptEdits</option>
+              <option value="bypassPermissions">bypassPermissions ⚠️</option>
+            </select>
+            <button onClick={create} disabled={loading || !newName.trim()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg text-sm font-medium">
+              建立
+            </button>
+            <button onClick={() => setShowForm(false)}
+              className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm">
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Session 列表 */}
+      <div className="flex-1 overflow-y-auto session-list" style={{overscrollBehaviorY: 'contain'}}>
+        {sessions.length === 0 ? (
+          <div className="text-center text-gray-600 mt-24 text-sm">尚無 Session，點右上角建立</div>
+        ) : sessions.map(s => (
+          <div key={s.id} onClick={() => onEnter(s)}
+            className="flex items-center justify-between px-4 py-3.5 border-b border-gray-800 hover:bg-gray-800/50 active:bg-gray-700/50 cursor-pointer transition-colors">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-gray-100 truncate">{s.name || '未命名'}</div>
+              {s.work_dir && (
+                <div className="text-xs text-gray-500 font-mono mt-0.5 truncate">{s.work_dir}</div>
+              )}
+              <div className="text-xs text-gray-600 mt-0.5">{modeLabel[s.permission_mode] || s.permission_mode}</div>
+            </div>
+            <button onClick={(e) => del(s.id, e)}
+              className="ml-2 shrink-0 text-gray-600 hover:text-red-400 px-2 py-1 text-xs rounded transition-colors">
+              刪除
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── 聊天畫面 ─────────────────────────────────────────────────────────────────
+function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
+  const [messages, setMessages]   = useState([]);
+  const [input, setInput]         = useState('');
+  const [state, setState]         = useState('IDLE');
+  const [permTools, setPermTools] = useState([]);
+  const [mode, setMode]           = useState(session.permission_mode || 'default');
+  const [histLoaded, setHistLoaded] = useState(false);
+  const wsRef     = useRef(null);
+  const bottomRef = useRef(null);
+  const streamBuf = useRef('');
+  const unmountedRef = useRef(false);
+
+  // 捲到底
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // 離開頁面確認（任務進行中或等待授權時）
+  useEffect(() => {
+    const handler = (e) => {
+      if (state === 'THINKING' || state === 'STREAMING' || state === 'AWAITING_CONFIRM') {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [state]);
+
+  // 載入歷史 + 建立 WS
+  useEffect(() => {
+    unmountedRef.current = false;
+
+    const init = async () => {
+      // 載入歷史紀錄
+      const res = await apiFetch(`/sessions/${session.id}/messages`);
+      const hist = await res.json();
+      if (!unmountedRef.current) {
+        setMessages(hist.map(m => ({
+          role: m.role,
+          content: m.content,
+          html: m.role === 'claude' ? parseMarkdown(m.content) : null,
+        })));
+        setHistLoaded(true);
+      }
+
+      // 建立 WebSocket
+      connectWS();
+    };
+
+    const connectWS = () => {
+      if (unmountedRef.current) return;
+      const ws = new WebSocket(wsURL(session.id));
+      wsRef.current = ws;
+
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+
+        if (msg.type === 'status') {
+          setState(msg.value);
+          if (msg.value === 'THINKING') {
+            streamBuf.current = '';
+            setMessages(prev => [...prev, { role: 'claude', content: '', html: null, streaming: true }]);
+          }
+          if (msg.value === 'IDLE' || msg.value === 'AWAITING_CONFIRM') {
+            setMessages(prev => prev.map((m, i) =>
+              i === prev.length - 1 ? { ...m, streaming: false } : m
+            ));
+          }
+        }
+
+        if (msg.type === 'reset') {
+          setMessages([]);
+          streamBuf.current = '';
+        }
+
+        if (msg.type === 'delta') {
+          streamBuf.current += msg.content;
+          const html = parseMarkdown(streamBuf.current);
+          setMessages(prev => prev.map((m, i) =>
+            i === prev.length - 1 ? { ...m, content: streamBuf.current, html } : m
+          ));
+        }
+
+        if (msg.type === 'permission_request') {
+          setPermTools(msg.tools || []);
+        }
+      };
+
+      ws.onerror = (evt) => {
+        console.error('[ws] 連線錯誤', evt);
+      };
+
+      ws.onclose = (evt) => {
+        console.warn('[ws] 連線關閉', evt.code, evt.reason);
+        if (!unmountedRef.current) setTimeout(connectWS, 2000);
+      };
+    };
+
+    init();
+
+    return () => {
+      unmountedRef.current = true;
+      wsRef.current?.close();
+    };
+  }, [session.id]);
+
+  const send = useCallback((obj) => {
+    if (wsRef.current?.readyState === 1) wsRef.current.send(JSON.stringify(obj));
+  }, []);
+
+  const handleSend = () => {
+    const trimmed = input.trim();
+    if (!trimmed || state !== 'IDLE') return;
+    if (trimmed === '/reset' || trimmed === '/clear') {
+      send({ type: 'reset_context' });
+      setInput('');
+      return;
+    }
+    setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
+    send({ type: 'input', data: trimmed });
+    setInput('');
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+  };
+
+  const handleAllowOnce = () => {
+    send({ type: 'allow_once', tools: permTools.map(t => t.tool_name) });
+    setPermTools([]);
+  };
+
+  const handleSetMode = (newMode) => {
+    setMode(newMode);
+    send({ type: 'set_mode', mode: newMode });
+    setPermTools([]);
+  };
+
+  const handleInterrupt = () => send({ type: 'interrupt' });
+
+  const isDisabled = state !== 'IDLE';
+
+  return (
+    <div className={`flex flex-col ${fullHeight ? 'h-screen' : 'h-full'}`}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800 shrink-0"
+           style={{ paddingTop: 'calc(0.5rem + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}>
+        <div className="flex items-center gap-2 min-w-0">
+          {showBack && (
+            <button onClick={onBack}
+              className="shrink-0 text-gray-400 hover:text-gray-200 text-lg leading-none px-1">
+              ←
+            </button>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="font-semibold text-indigo-400 text-sm truncate">{session.name || '未命名'}</div>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-mono shrink-0 ${
+                state === 'IDLE'            ? 'bg-green-900 text-green-300' :
+                state === 'THINKING'        ? 'bg-indigo-900 text-indigo-300' :
+                state === 'STREAMING'       ? 'bg-blue-900 text-blue-300' :
+                'bg-yellow-900 text-yellow-300'
+              }`}>{state}</span>
+            </div>
+            {session.work_dir && (
+              <div className="text-xs text-gray-500 font-mono truncate">{session.work_dir}</div>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select value={mode} onChange={e => handleSetMode(e.target.value)}
+            className="text-xs bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-300">
+            <option value="default">default</option>
+            <option value="acceptEdits">acceptEdits</option>
+            <option value="bypassPermissions">bypass ⚠️</option>
+          </select>
+        </div>
+      </div>
+
+      {/* 訊息列表 */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        {histLoaded && messages.length === 0 && (
+          <div className="text-center text-gray-600 mt-20 text-sm">輸入指令開始對話</div>
+        )}
+        {messages.map((m, i) => (
+          <div key={i} className={`rounded-xl px-4 py-3 text-sm max-w-full ${
+            m.role === 'user' ? 'bubble-user ml-8' : 'bubble-claude mr-8'
+          }`}>
+            <div className="text-xs text-gray-500 mb-1">{m.role === 'user' ? '你' : 'Claude'}</div>
+            {m.role === 'claude' ? (
+              m.html
+                ? <div className="prose text-gray-200 text-sm" dangerouslySetInnerHTML={{ __html: m.html }} />
+                : <><span className="dot"/><span className="dot"/><span className="dot"/></>
+            ) : (
+              <div className="whitespace-pre-wrap text-gray-200">{m.content}</div>
+            )}
+          </div>
+        ))}
+
+        {/* 授權確認 */}
+        {state === 'AWAITING_CONFIRM' && permTools.length > 0 && (
+          <div className="rounded-xl border border-yellow-700 bg-yellow-950/40 px-4 py-3 text-sm mr-8">
+            <div className="text-yellow-400 font-semibold mb-2">需要授權</div>
+            {permTools.map((t, i) => (
+              <div key={i} className="text-gray-300 text-xs font-mono mb-1">
+                {t.tool_name}
+                {t.tool_input && (
+                  <span className="text-gray-500"> — {JSON.stringify(t.tool_input).slice(0, 80)}</span>
+                )}
+              </div>
+            ))}
+            <div className="flex gap-2 mt-3">
+              <button onClick={handleAllowOnce}
+                className="px-3 py-1.5 bg-yellow-700 hover:bg-yellow-600 text-white rounded-lg text-xs">
+                允許此操作
+              </button>
+              <button onClick={() => handleSetMode('acceptEdits')}
+                className="px-3 py-1.5 bg-orange-700 hover:bg-orange-600 text-white rounded-lg text-xs">
+                允許並記住
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* 輸入區 */}
+      <div className="shrink-0 px-4 py-3 bg-gray-900 border-t border-gray-800"
+           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}>
+        {state === 'STREAMING' || state === 'THINKING' ? (
+          <button onClick={handleInterrupt}
+            className="w-full py-2 bg-red-900/60 hover:bg-red-800 text-red-300 rounded-lg text-sm">
+            中斷
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={isDisabled}
+              placeholder="輸入指令… (Enter 送出，Shift+Enter 換行)"
+              rows={2}
+              className="flex-1 resize-none bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-600 disabled:opacity-40"
+            />
+            <button onClick={handleSend} disabled={isDisabled || !input.trim()}
+              className="px-4 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 text-white rounded-lg text-sm font-medium">
+              送出
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 密碼輸入畫面（非 TMA 環境）────────────────────────────────────────────────
+function PasswordView({ onSuccess }) {
+  const [pwd, setPwd]     = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    if (!pwd.trim()) return;
+    setLoading(true);
+    setError('');
+    const res = await fetch('/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
+    });
+    setLoading(false);
+    if (res.ok) {
+      onSuccess();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || '密碼錯誤，請重試');
+    }
+  };
+
+  const handleKey = (e) => {
+    if (e.key === 'Enter') submit();
+  };
+
+  return (
+    <div className="flex items-center justify-center h-screen">
+      <div className="w-72 space-y-4">
+        <div className="text-center">
+          <div className="text-indigo-400 text-2xl font-bold mb-1">Claude Code</div>
+          <div className="text-gray-500 text-sm">請輸入存取密碼</div>
+        </div>
+        <input
+          type="password"
+          value={pwd}
+          onChange={e => setPwd(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder="密碼"
+          autoFocus
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600"
+        />
+        {error && <div className="text-red-400 text-xs text-center">{error}</div>}
+        <button onClick={submit} disabled={loading || !pwd.trim()}
+          className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg text-sm font-medium">
+          {loading ? '驗證中…' : '進入'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Debug Banner（開發用，上線前移除）────────────────────────────────────────
+const DEBUG_BANNER = false;
+function DebugBanner() {
+  if (!DEBUG_BANNER) return null;
+  return (
+    <div style={{position:'fixed',top:0,left:0,right:0,background:'#1a1a00',color:'#ffff00',fontSize:'10px',padding:'4px 8px',zIndex:9999,wordBreak:'break-all'}}>
+      isTMA={String(isTMA)} | TG={String(isTelegram)} | initData={initData ? initData.slice(0,40)+'…' : '(empty)'}
+    </div>
+  );
+}
+
+// ── Root ──────────────────────────────────────────────────────────────────────
+function App() {
+  const [session, setSession] = useState(null);
+  const [authed, setAuthed]   = useState(isTelegram);
+  const [isWideScreen, setIsWideScreen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
+  // 非 TMA 環境：mount 時試探 cookie 是否仍有效
+  const [checking, setChecking] = useState(!isTelegram);
+
+  useEffect(() => {
+    if (isTelegram) return;
+    fetch('/sessions').then(res => {
+      if (res.ok) setAuthed(true);
+    }).finally(() => setChecking(false));
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 1024px)');
+    const handleChange = (e) => setIsWideScreen(e.matches);
+    setIsWideScreen(media.matches);
+    if (media.addEventListener) {
+      media.addEventListener('change', handleChange);
+    } else {
+      media.addListener(handleChange);
+    }
+    return () => {
+      if (media.removeEventListener) {
+        media.removeEventListener('change', handleChange);
+      } else {
+        media.removeListener(handleChange);
+      }
+    };
+  }, []);
+
+  if (checking) {
+    return <div className="flex items-center justify-center h-screen"><div className="text-gray-500 text-sm">載入中…</div></div>;
+  }
+
+  const renderAuthedLayout = () => {
+    if (!isWideScreen) {
+      return session
+        ? <ChatView session={session} onBack={() => setSession(null)} />
+        : <SessionView onEnter={setSession} />;
+    }
+
+    return (
+      <div className="h-screen flex bg-black">
+        <aside className="w-[360px] max-w-[40vw] border-r border-gray-800 bg-gray-950">
+          <SessionView onEnter={setSession} />
+        </aside>
+        <main className="flex-1 min-w-0">
+          {session ? (
+            <ChatView session={session} onBack={() => setSession(null)} showBack={false} fullHeight={false} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-gray-500 text-sm bg-gray-950/40">
+              請從左側選擇一個 Session 開始對話
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <DebugBanner />
+      {!authed
+        ? <PasswordView onSuccess={() => setAuthed(true)} />
+        : renderAuthedLayout()
+      }
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+
+<div id="root" class="h-screen"></div>
+</body>
+</html>

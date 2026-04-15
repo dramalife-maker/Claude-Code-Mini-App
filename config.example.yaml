@@ -1,0 +1,28 @@
+bot_token: "YOUR_BOT_TOKEN_HERE"
+
+whitelist_tg_ids:
+  - 123456789  # Your Telegram user ID (get it from @userinfobot)
+
+web:
+  # 網頁登入密碼（透過 POST /auth/login 傳入，非 query param）
+  password: "change-me"
+
+  # 允許使用 web 密碼登入的 IP 範圍（內網 + 本機）
+  # 真實 IP 取自 CF-Connecting-IP > X-Forwarded-For > 直連 IP
+  allowed_cidrs:
+    - "127.0.0.0/8"
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+
+  # Session cookie 有效期（登入後免重新輸入密碼的時間）
+  session_ttl: "24h"
+
+# true = 跳過所有驗證（僅限本機開發）
+no_auth: false
+
+server:
+  port: 8080
+
+db:
+  path: "./claude-miniapp.db"
