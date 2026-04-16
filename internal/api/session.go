@@ -1,7 +1,7 @@
 package api
 
 import (
-	"claude-miniapp/internal/db"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -40,6 +40,27 @@ func (h *SessionHandler) Create(c *fiber.Ctx) error {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.Status(201).JSON(s)
+}
+
+func (h *SessionHandler) Rename(c *fiber.Ctx) error {
+	id := c.Params("id")
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	if body.Name == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "name 不可為空"})
+	}
+	if err := h.db.UpdateSessionName(id, body.Name); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	s, err := h.db.GetSession(id)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(s)
 }
 
 func (h *SessionHandler) Delete(c *fiber.Ctx) error {

@@ -68,6 +68,14 @@ func (db *DB) DeleteSession(id string) error {
 	return err
 }
 
+func (db *DB) UpdateSessionName(id, name string) error {
+	_, err := db.Exec(
+		`UPDATE sessions SET name = ?, last_active = datetime('now') WHERE id = ?`,
+		name, id,
+	)
+	return err
+}
+
 func (db *DB) UpdateClaudeID(id, claudeID string) error {
 	_, err := db.Exec(
 		`UPDATE sessions SET claude_id = ?, last_active = datetime('now') WHERE id = ?`,

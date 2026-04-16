@@ -11,14 +11,15 @@ import (
 
 	fiberws "github.com/gofiber/contrib/websocket"
 
-	"claude-miniapp/internal/claude"
-	"claude-miniapp/internal/db"
-	"claude-miniapp/internal/tg"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/claude"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
 )
 
 // connRegistry 記錄每個 session 當前活著的連線
 // key: sessionID, value: activeConn
 var connRegistry sync.Map
+var statusRegistry sync.Map // key: sessionID, value: string
 
 type activeConn struct {
 	token int64
@@ -97,13 +98,26 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			return false
 		}
 
+		setAndSendStatus := func(status string) {
+			statusRegistry.Store(sessionID, status)
+			relaySend(serverMsg{Type: "status", Value: status})
+		}
+
 		// 還原未處理的 pending_denials
 		if sess.PendingDenials != "" {
 			send(serverMsg{Type: "status", Value: StateAwaitingConfirm})
 			send(serverMsg{Type: "permission_request", Tools: json.RawMessage(sess.PendingDenials)})
+			statusRegistry.Store(sessionID, StateAwaitingConfirm)
 			log.Printf("[ws] 還原 pending_denials for session %s", sessionID)
 		} else {
-			send(serverMsg{Type: "status", Value: StateIdle})
+			status := StateIdle
+			if v, ok := statusRegistry.Load(sessionID); ok {
+				if s, ok := v.(string); ok && s != "" {
+					status = s
+				}
+			}
+			send(serverMsg{Type: "status", Value: status})
+			statusRegistry.Store(sessionID, status)
 		}
 
 		// runClaude 啟動子進程並串流結果
@@ -124,7 +138,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			mu.Unlock()
 
 			log.Printf("[ws] 啟動 claude.Run claudeID=%q mode=%s", opts.SessionID, opts.PermissionMode)
-			relaySend(serverMsg{Type: "status", Value: StateThinking})
+			setAndSendStatus(StateThinking)
 
 			go func(opts claude.RunOptions) {
 				streaming := false
@@ -140,7 +154,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 						case "content_block_start":
 							if e.Event.ContentBlock != nil && e.Event.ContentBlock.Type == "text" && !streaming {
 								streaming = true
-								relaySend(serverMsg{Type: "status", Value: StateStreaming})
+								setAndSendStatus(StateStreaming)
 							}
 						case "content_block_delta":
 							if e.Event.Delta != nil && e.Event.Delta.Type == "text_delta" && e.Event.Delta.Text != "" {
@@ -155,7 +169,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 							log.Printf("[ws] assistant 整包回覆，長度=%d", len(text))
 							if !streaming {
 								streaming = true
-								relaySend(serverMsg{Type: "status", Value: StateStreaming})
+								setAndSendStatus(StateStreaming)
 							}
 							responseBuf.WriteString(text)
 							relaySend(serverMsg{Type: "delta", Content: text})
@@ -183,12 +197,12 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 									log.Printf("[ws] 儲存 pending_denials 失敗: %v", err)
 								}
 							}
-							relaySend(serverMsg{Type: "status", Value: StateAwaitingConfirm})
+							setAndSendStatus(StateAwaitingConfirm)
 							relaySend(serverMsg{Type: "permission_request", Tools: e.PermissionDenials})
 							go tg.Notify(botToken, tgUserID, fmt.Sprintf("⚠️ *%s* 需要授權確認，請開啟 App", sess.Name))
 						} else {
 							clearPendingDenials(database, sessionID)
-							relaySend(serverMsg{Type: "status", Value: StateIdle})
+							setAndSendStatus(StateIdle)
 							go tg.Notify(botToken, tgUserID, fmt.Sprintf("✅ *%s* 任務完成", sess.Name))
 						}
 					}
@@ -201,7 +215,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 						log.Printf("[ws] claude.Run 執行錯誤: %v", err)
 						relaySend(serverMsg{Type: "error", Content: err.Error()})
 					}
-					relaySend(serverMsg{Type: "status", Value: StateIdle})
+					setAndSendStatus(StateIdle)
 				} else {
 					log.Println("[ws] claude.Run 正常結束")
 				}
@@ -256,7 +270,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 				if err := database.UpdatePermissionMode(sessionID, msg.Mode); err != nil {
 					log.Printf("[ws] 更新 permission_mode 失敗: %v", err)
 				}
-				send(serverMsg{Type: "status", Value: StateIdle})
+				setAndSendStatus(StateIdle)
 				log.Println("[ws] permission mode 切換為:", msg.Mode)
 
 			case "reset_context":
@@ -275,7 +289,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 				}
 				clearPendingDenials(database, sessionID)
 				send(serverMsg{Type: "reset"})
-				send(serverMsg{Type: "status", Value: StateIdle})
+				setAndSendStatus(StateIdle)
 				log.Printf("[ws] session %s context 已重置", sessionID)
 
 			case "interrupt":
@@ -285,7 +299,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 					cancelFn = nil
 				}
 				mu.Unlock()
-				send(serverMsg{Type: "status", Value: StateIdle})
+				setAndSendStatus(StateIdle)
 			}
 		}
 	}

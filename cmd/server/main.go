@@ -8,12 +8,12 @@ import (
 	fiberws "github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
 
-	"claude-miniapp/internal/api"
-	"claude-miniapp/internal/auth"
-	"claude-miniapp/internal/config"
-	"claude-miniapp/internal/db"
-	"claude-miniapp/internal/tg"
-	"claude-miniapp/internal/ws"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/api"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/auth"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/config"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/ws"
 )
 
 func main() {
@@ -170,6 +170,7 @@ func main() {
 	sh := api.NewSessionHandler(database)
 	app.Get("/sessions", authMiddleware, sh.List)
 	app.Post("/sessions", authMiddleware, sh.Create)
+	app.Patch("/sessions/:id", authMiddleware, sh.Rename)
 	app.Delete("/sessions/:id", authMiddleware, sh.Delete)
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)
 
