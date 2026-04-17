@@ -400,44 +400,28 @@ function SessionView({ onEnter }) {
 
       {/* 搜尋／排序（有 Session 時顯示） */}
       {sessions.length > 0 && (
-        <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 shrink-0 flex flex-col gap-2 min-w-0">
+        <div className="px-3 py-2 bg-gray-900/80 border-b border-gray-800 shrink-0 flex gap-2 min-w-0 items-center">
           <input
             type="search"
             value={sessionSearch}
             onChange={(e) => setSessionSearch(e.target.value)}
-            placeholder="搜尋名稱、目錄、Runner…"
+            placeholder="搜尋…"
             autoComplete="off"
-            className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600"
+            className="flex-1 min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600"
           />
-          <div className="min-w-0">
-            <div className="text-xs text-gray-500 mb-1.5">排序方式</div>
-            <div
-              className="flex flex-wrap gap-1.5"
-              role="group"
-              aria-label="排序方式"
-            >
-              {sortOptions.map((opt) => {
-                const active = sessionSort === opt.value;
-                return (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setSessionSort(opt.value)}
-                    aria-pressed={active}
-                    title={opt.label}
-                    className={
-                      'px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors shrink-0 ' +
-                      (active
-                        ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm'
-                        : 'bg-gray-800/80 border-gray-700 text-gray-400 hover:border-gray-600 hover:text-gray-300')
-                    }
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <span className="shrink-0 text-xs text-gray-500 whitespace-nowrap" id="session-sort-label">排序</span>
+          <select
+            id="session-sort"
+            value={sessionSort}
+            onChange={(e) => setSessionSort(e.target.value)}
+            title="左側 Session 列表的排序方式"
+            aria-labelledby="session-sort-label"
+            className="shrink-0 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-gray-300 focus:outline-none focus:border-indigo-600 cursor-pointer max-w-[9.5rem]"
+          >
+            {sortOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -757,13 +741,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
   };
 
   const handleKeyDown = (e) => {
-    if (e.key !== 'Enter') return;
-    // 僅在 Ctrl/Cmd + Enter 時送出；單獨 Enter 保留為換行（行動版鍵盤的 Enter 多半不帶 Shift，
-    // 舊版「Enter 即送出」會讓使用者還沒打完多行就送出，AI 只收到第一行。）
-    if (e.ctrlKey || e.metaKey) {
-      e.preventDefault();
-      handleSend();
-    }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
   const handleAllowOnce = () => {
@@ -916,7 +894,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={isDisabled}
-              placeholder="輸入指令…（Enter 換行；Ctrl+Enter 或按鈕送出）"
+              placeholder="輸入指令… (Enter 送出，Shift+Enter 換行)"
               rows={2}
               className="flex-1 resize-none bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-indigo-600 disabled:opacity-40"
             />

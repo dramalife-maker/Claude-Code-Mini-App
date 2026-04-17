@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 	"os/exec"
+	"runtime"
 	"strings"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
@@ -57,10 +58,23 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		}
 	}
 
-	// prompt 必須放在最後當 positional argument
-	args = append(args, opts.Prompt)
+	// prompt 必須放在最後當 positional argument。
+	//
+	// Windows workaround：`cursor-agent` 在 Windows 是 `.cmd` → `.ps1` → node.exe 的 wrapper，
+	// Go `exec.Command` 啟動 `.cmd` 時會走 `cmd.exe /c`，而 cmd.exe 的 parser 遇到 arg
+	// 裡的 LF (0x0A) 會截斷整條命令，造成多行 prompt 只剩第一行。cursor-agent 又沒有
+	// stdin 模式可退，只能在傳進去前把 LF 轉成字面 `\n`（兩字元）—— 實測 LLM 會把它當
+	// 成換行理解（訓練語料裡 `\n` 本來就代表換行）。代價是極罕見的 edge case：使用者
+	// 的 prompt 本身就包含字面 `\n`（例如在問「Python 的 `\n` 怎麼用」）時語意會偏差。
+	// 因為是 Windows dev 環境限定，權衡下來可接受。正式部署的 Linux 不會走這條路。
+	prompt := opts.Prompt
+	if runtime.GOOS == "windows" && strings.ContainsRune(prompt, '\n') {
+		prompt = strings.ReplaceAll(prompt, "\n", `\n`)
+		log.Printf("[cursor] Windows 偵測到多行 prompt，已把 LF 轉為字面 \\n（避開 cmd.exe 截斷）")
+	}
+	args = append(args, prompt)
 
-	log.Printf("[cursor] 執行指令: cursor-agent %s", strings.Join(args, " "))
+	log.Printf("[cursor] 執行指令: cursor-agent %s (prompt len=%d)", strings.Join(args, " "), len(prompt))
 	if opts.WorkDir != "" {
 		log.Printf("[cursor] 工作目錄: %s", opts.WorkDir)
 	}

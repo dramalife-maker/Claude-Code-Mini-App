@@ -30,14 +30,18 @@ func (r *Runner) Name() string { return agent.TypeGemini }
 //
 // 指令格式：
 //
-//	gemini -p <prompt> --output-format stream-json \
+//	gemini --output-format stream-json \
 //	  [--resume <session_id>] [-m <model>] [--approval-mode <mode>]
+//	# prompt 透過 stdin pipe 餵入
 //
-// prompt 透過 `-p/--prompt` 旗標傳入（不是 positional），因為 positional 在 TTY 下
-// 會走互動模式。
+// 實作備註：
+// 官方支援 `-p/--prompt` 旗標或 stdin pipe 兩種方式。我們統一走 stdin，原因：
+// 在 Windows 上 gemini 是 `gemini.cmd` 的 batch wrapper，Go `exec.Command` 會透過
+// `cmd.exe /c` 啟動它；`cmd.exe` 的 command-line parser 遇到參數中的 `\n` 會截斷，
+// 造成多行 prompt 只剩第一行進 Node 進程（Linux/macOS 的原生 binary 沒這問題）。
+// 改走 stdin 後跨平台都不會被 cmd.exe 的 parser 侵蝕，語意也更接近「管線輸入」。
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
 	args := []string{
-		"-p", opts.Prompt,
 		"--output-format", "stream-json",
 	}
 
@@ -59,12 +63,13 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	}
 	args = append(args, "--approval-mode", approval)
 
-	log.Printf("[gemini] 執行指令: gemini %s", strings.Join(args, " "))
+	log.Printf("[gemini] 執行指令: gemini %s (prompt len=%d via stdin)", strings.Join(args, " "), len(opts.Prompt))
 	if opts.WorkDir != "" {
 		log.Printf("[gemini] 工作目錄: %s", opts.WorkDir)
 	}
 
 	cmd := exec.CommandContext(ctx, "gemini", args...)
+	cmd.Stdin = strings.NewReader(opts.Prompt)
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir
 	}
