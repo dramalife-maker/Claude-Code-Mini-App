@@ -23,13 +23,15 @@ type Runner struct{}
 // Name 實作 agent.Runner。
 func (r *Runner) Name() string { return agent.TypeClaude }
 
-// Run 實作 agent.Runner：啟動 claude -p 子進程，逐行解析 stream-json 並透過 cb 回傳事件。
-func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
-	args := []string{
+// buildClaudeArgs 組出傳給 `claude` 可執行檔的 argv（不含程式名本身）。供 Run 與單元測試共用。
+func buildClaudeArgs(opts agent.RunOptions) []string {
+	args := make([]string, 0, len(opts.CliExtraArgs)+16)
+	args = append(args, opts.CliExtraArgs...)
+	args = append(args,
 		"-p",
 		"--output-format", "stream-json",
 		"--verbose",
-	}
+	)
 
 	if opts.SessionID != "" {
 		args = append(args, "--resume", opts.SessionID)
@@ -55,6 +57,12 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			}
 		}
 	}
+	return args
+}
+
+// Run 實作 agent.Runner：啟動 claude -p 子進程，逐行解析 stream-json 並透過 cb 回傳事件。
+func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
+	args := buildClaudeArgs(opts)
 
 	log.Printf("[claude] 執行指令: claude %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt))
 	if opts.WorkDir != "" {

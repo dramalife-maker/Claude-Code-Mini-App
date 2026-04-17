@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/google/uuid"
@@ -20,14 +21,18 @@ type Session struct {
 	Name           string   `json:"name"`
 	Description    string   `json:"description"`
 	WorkDir        string   `json:"work_dir"`
+	// GitBranch 非 DB 欄位，僅於 API 序列化時由後端填入（目前分支名稱）。
+	GitBranch      string   `json:"git_branch,omitempty"`
 	PermissionMode string   `json:"permission_mode"`
 	AllowedTools   []string `json:"allowed_tools"`
 	PendingDenials string   `json:"pending_denials"`
 	LastActive     string   `json:"last_active"`
 	Status         string   `json:"status"`
+	// CliExtraArgs 為自訂 CLI 引數（每個元素一個 argv），JSON 存於 cli_extra_args。
+	CliExtraArgs []string `json:"cli_extra_args"`
 }
 
-func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string) (*Session, error) {
+func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string) (*Session, error) {
 	id := uuid.New().String()
 	if permissionMode == "" {
 		permissionMode = "default"
@@ -35,9 +40,17 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 	if agentType == "" {
 		agentType = "claude"
 	}
+	extraJSON := "[]"
+	if len(cliExtraArgs) > 0 {
+		b, err := json.Marshal(cliExtraArgs)
+		if err != nil {
+			return nil, err
+		}
+		extraJSON = string(b)
+	}
 	_, err := db.Exec(
-		`INSERT INTO sessions (id, name, description, work_dir, permission_mode, agent_type) VALUES (?, ?, ?, ?, ?, ?)`,
-		id, name, description, workDir, permissionMode, agentType,
+		`INSERT INTO sessions (id, name, description, work_dir, permission_mode, agent_type, cli_extra_args) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, name, description, workDir, permissionMode, agentType, extraJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -47,14 +60,14 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 
 func (db *DB) GetSession(id string) (*Session, error) {
 	row := db.QueryRow(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status FROM sessions WHERE id = ?`, id,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args FROM sessions WHERE id = ?`, id,
 	)
 	return scanSession(row)
 }
 
 func (db *DB) ListSessions() ([]*Session, error) {
 	rows, err := db.Query(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status FROM sessions ORDER BY last_active DESC`,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args FROM sessions ORDER BY last_active DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -84,6 +97,19 @@ func (db *DB) UpdateSessionName(id, name string) error {
 	_, err := db.Exec(
 		`UPDATE sessions SET name = ?, last_active = datetime('now') WHERE id = ?`,
 		name, id,
+	)
+	return err
+}
+
+// UpdateSessionCliExtraArgs 更新自訂 CLI 引數（整段覆寫，JSON 陣列）。
+func (db *DB) UpdateSessionCliExtraArgs(id string, cliExtraArgs []string) error {
+	b, err := json.Marshal(cliExtraArgs)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(
+		`UPDATE sessions SET cli_extra_args = ?, last_active = datetime('now') WHERE id = ?`,
+		string(b), id,
 	)
 	return err
 }
@@ -142,9 +168,10 @@ type scanner interface {
 func scanSession(s scanner) (*Session, error) {
 	var sess Session
 	var allowedTools string
+	var extraJSON string
 	err := s.Scan(
 		&sess.ID, &sess.AgentType, &sess.AgentSessionID, &sess.Name, &sess.Description,
-		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status,
+		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status, &extraJSON,
 	)
 	if err != nil {
 		return nil, err
@@ -153,6 +180,12 @@ func scanSession(s scanner) (*Session, error) {
 		sess.AllowedTools = strings.Split(allowedTools, ",")
 	} else {
 		sess.AllowedTools = []string{}
+	}
+	if extraJSON != "" && extraJSON != "[]" {
+		_ = json.Unmarshal([]byte(extraJSON), &sess.CliExtraArgs)
+	}
+	if sess.CliExtraArgs == nil {
+		sess.CliExtraArgs = []string{}
 	}
 	if sess.AgentType == "" {
 		sess.AgentType = "claude"

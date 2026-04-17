@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	fiberws "github.com/gofiber/contrib/websocket"
@@ -15,6 +16,17 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/ws"
 )
+
+// webSessionToken Web 登入：Bearer、URL query（供 WebSocket）、或舊版 HttpOnly cookie。
+func webSessionToken(c *fiber.Ctx) string {
+	if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+	}
+	if t := c.Query("token"); t != "" {
+		return t
+	}
+	return c.Cookies("session_token")
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -127,21 +139,14 @@ func main() {
 			return c.Status(500).JSON(fiber.Map{"error": "無法建立 session"})
 		}
 
-		c.Cookie(&fiber.Cookie{
-			Name:     "session_token",
-			Value:    token,
-			MaxAge:   int(sessionTTL.Seconds()),
-			HTTPOnly: true,
-			SameSite: "Strict",
-		})
 		log.Printf("[auth] Web 登入成功（來源: %s）", ip)
-		return c.JSON(fiber.Map{"ok": true})
+		return c.JSON(fiber.Map{"ok": true, "token": token})
 	})
 
 	// POST /auth/logout
 	// 清除 session cookie 與伺服器端 token。
 	app.Post("/auth/logout", func(c *fiber.Ctx) error {
-		token := c.Cookies("session_token")
+		token := webSessionToken(c)
 		if token != "" {
 			sessions.Delete(token)
 		}
@@ -192,7 +197,7 @@ func main() {
 			return c.Status(403).JSON(fiber.Map{"error": "僅允許內網存取"})
 		}
 
-		token := c.Cookies("session_token")
+		token := webSessionToken(c)
 		ok, webTgID := sessions.Validate(token)
 		if !ok {
 			return c.Status(401).JSON(fiber.Map{"error": "請先登入"})
@@ -208,7 +213,7 @@ func main() {
 	sh := api.NewSessionHandler(database)
 	app.Get("/sessions", authMiddleware, sh.List)
 	app.Post("/sessions", authMiddleware, sh.Create)
-	app.Patch("/sessions/:id", authMiddleware, sh.Rename)
+	app.Patch("/sessions/:id", authMiddleware, sh.Patch)
 	app.Delete("/sessions/:id", authMiddleware, sh.Delete)
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)
 

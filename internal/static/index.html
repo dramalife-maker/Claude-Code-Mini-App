@@ -96,24 +96,72 @@ if (isTMA) {
   tgApp.onEvent('contentSafeAreaChanged', updateContentSafeArea);
 }
 
-console.log('[init] isTMA:', isTMA, 'isTelegram:', isTelegram, 'initData len:', initData.length, 'protocol:', location.protocol);
+/** Web 登入 session token（localStorage；後端仍驗證於伺服器端 store） */
+const WEB_SESSION_STORAGE_KEY = 'cc_web_session_token';
 
-// 統一 fetch：TMA 帶 initData，Web 模式 cookie 由瀏覽器自動帶入
+/**
+ * 由目前頁面 URL 推算 SPA 掛載的 base path（無結尾 /）。
+ * 例：/myapp/、/myapp/index.html → /myapp；根目錄 → ''。
+ */
+function getSpaBasePath() {
+  let p = window.location.pathname || '/';
+  if (p.endsWith('/index.html')) {
+    p = p.slice(0, -'/index.html'.length);
+  }
+  p = p.replace(/\/$/, '');
+  if (p === '/' || p === '') return '';
+  return p;
+}
+
+/** API 路徑（必須以 / 開頭）加上 base，供反代剝離前綴時瀏覽器仍打對外完整路徑。 */
+function appPath(path) {
+  const rel = path.startsWith('/') ? path : `/${path}`;
+  const base = getSpaBasePath();
+  if (!base) return rel;
+  return `${base}${rel}`;
+}
+
+function resolveApiUrl(url) {
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return appPath(url);
+  return url;
+}
+
+console.log(
+  '[init] isTMA:', isTMA,
+  'isTelegram:', isTelegram,
+  'initData len:', initData.length,
+  'protocol:', location.protocol,
+  'spaBase:', getSpaBasePath() || '(root)',
+);
+
+// 統一 fetch：TMA 帶 initData；Web 帶 Bearer（localStorage），舊版仍相容後端 Cookie
 const apiFetch = (url, opts = {}) => {
   const headers = { ...(opts.headers || {}) };
   if (isTelegram) {
     headers['X-Telegram-Init-Data'] = initData;
+  } else {
+    try {
+      const t = localStorage.getItem(WEB_SESSION_STORAGE_KEY);
+      if (t) headers['Authorization'] = `Bearer ${t}`;
+    } catch (_) {}
   }
-  return fetch(url, { ...opts, headers });
+  return fetch(resolveApiUrl(url), { ...opts, headers });
 };
 
-// WebSocket URL（自動依 http/https 選 ws/wss）
-// Web 模式：WebSocket 同源請求會自動帶 cookie，無需額外參數
+// WebSocket：同源 ws/wss；TMA 用 query initData；Web 用 query token（瀏覽器無法自訂 WS Header）
 const wsURL = (sessionId) => {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const base = `${proto}://${location.host}/sessions/${sessionId}/ws`;
-  if (isTelegram) return `${base}?initData=${encodeURIComponent(initData)}`;
-  return base;
+  let url = `${proto}://${location.host}${appPath(`/sessions/${sessionId}/ws`)}`;
+  const sep = (u) => (u.includes('?') ? '&' : '?');
+  if (isTelegram) {
+    return `${url}${sep(url)}initData=${encodeURIComponent(initData)}`;
+  }
+  try {
+    const t = localStorage.getItem(WEB_SESSION_STORAGE_KEY);
+    if (t) return `${url}${sep(url)}token=${encodeURIComponent(t)}`;
+  } catch (_) {}
+  return url;
 };
 
 marked.setOptions({
@@ -167,10 +215,68 @@ function permModeOptionsFor(agentType) {
   ];
 }
 
+/**
+ * 建立 Session 時「自訂 CLI 引數」：每行一個 argv，trim 後略過空行。
+ * 路徑含空格時請整段寫在同一行（勿用空格拆成多段）。
+ */
+function parseCliExtraArgs(text) {
+  if (text == null || !String(text).trim()) return [];
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 /** 切換 agent_type 時，若舊的 mode 在新 agent 下不合法，退回 default。 */
 function normalizePermMode(agentType, mode) {
   const valid = permModeOptionsFor(agentType).map((o) => o.value);
   return valid.includes(mode) ? mode : 'default';
+}
+
+/**
+ * 權限模式分段開關（多態切換，取代下拉選單）。
+ * danger 值（跳過授權 / YOLO）選中時以琥珀色強調。
+ */
+function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
+  const opts = permModeOptionsFor(agentType);
+  const t = String(agentType || 'claude').toLowerCase();
+  const ariaLabel =
+    title || (t === 'gemini' ? 'Gemini 核准模式' : '權限模式');
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className={`inline-flex max-w-full flex-wrap items-stretch gap-0.5 rounded-xl border border-gray-700/90 bg-gray-900/85 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${
+        disabled ? 'pointer-events-none opacity-45' : ''
+      }`}
+    >
+      {opts.map((opt) => {
+        const active = value === opt.value;
+        const danger = opt.value === 'bypassPermissions' || opt.value === 'yolo';
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+            className={[
+              'min-h-[2rem] shrink-0 grow-0 px-2 sm:px-2.5 py-1.5 text-center text-[10px] sm:text-xs font-medium leading-tight rounded-lg transition-[color,background-color,box-shadow] duration-150 whitespace-nowrap',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-1 focus-visible:ring-offset-gray-900',
+              active
+                ? danger
+                  ? 'bg-amber-950/95 text-amber-100 ring-1 ring-amber-600/60 shadow-sm'
+                  : 'bg-indigo-600 text-white shadow-sm shadow-indigo-950/40'
+                : 'text-gray-400 hover:bg-gray-800/85 hover:text-gray-200 border border-transparent',
+            ].join(' ')}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 /** 依 CLI runner（agent_type）回傳 badge 的 Tailwind 底色／文字色 */
@@ -218,6 +324,29 @@ function AgentBadgeIcon({ agentType }) {
   );
 }
 
+/** Git 分支角標（與 Agent badge 區隔：橘色系 + git 圖示；長分支名可換行不截斷） */
+function GitBranchBadge({ branch }) {
+  if (!branch) return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 max-w-full min-w-0 text-[10px] px-2 py-0.5 rounded-full font-mono bg-orange-950/65 text-orange-200 border border-orange-800/45"
+      title="Git 分支"
+    >
+      <img
+        src="https://cdn.simpleicons.org/git/F05032"
+        alt=""
+        width={14}
+        height={14}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        className="w-3.5 h-3.5 shrink-0 opacity-95 object-contain self-center"
+      />
+      <span className="break-words [overflow-wrap:anywhere] leading-snug text-left">{branch}</span>
+    </span>
+  );
+}
+
 /** 解析 API 回傳的 last_active（SQLite datetime 字串）為毫秒時間戳 */
 function sessionLastActiveMs(s) {
   if (!s || !s.last_active) return 0;
@@ -243,7 +372,7 @@ function mapMessageRow(m) {
 }
 
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter }) {
+function SessionView({ onEnter, onSessionsLoaded }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -252,6 +381,7 @@ function SessionView({ onEnter }) {
   const [newDir, setNewDir]       = useState('');
   const [newMode, setNewMode]     = useState('default');
   const [newAgent, setNewAgent]   = useState('claude');
+  const [newCliExtra, setNewCliExtra] = useState('');
   const [loading, setLoading]     = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal]   = useState('');
@@ -267,6 +397,7 @@ function SessionView({ onEnter }) {
       const data = await res.json();
       if (Array.isArray(data)) {
         setSessions(data);
+        onSessionsLoaded?.(data);
       } else {
         console.warn('[sessions] unexpected payload', data);
       }
@@ -297,9 +428,10 @@ function SessionView({ onEnter }) {
         work_dir: newDir.trim(),
         permission_mode: newMode,
         agent_type: newAgent,
+        cli_extra_args: newAgent === 'claude' ? parseCliExtraArgs(newCliExtra) : [],
       }),
     });
-    setNewName(''); setNewDir(''); setNewMode('default'); setNewAgent('claude');
+    setNewName(''); setNewDir(''); setNewMode('default'); setNewAgent('claude'); setNewCliExtra('');
     setShowForm(false);
     setLoading(false);
     load();
@@ -353,10 +485,12 @@ function SessionView({ onEnter }) {
         const parts = [
           s.name,
           s.work_dir,
+          s.git_branch,
           s.description,
           s.agent_type,
           s.agent_session_id,
           s.id,
+          ...(Array.isArray(s.cli_extra_args) ? s.cli_extra_args : []),
         ]
           .filter(Boolean)
           .join(' ')
@@ -392,9 +526,26 @@ function SessionView({ onEnter }) {
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0"
            style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}>
         <span className="font-semibold text-indigo-400 text-base">Claude Code</span>
-        <button onClick={() => setShowForm(!showForm)}
-          className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-medium">
-          + 新 Session
+        <button
+          type="button"
+          onClick={() => setShowForm(!showForm)}
+          aria-label={showForm ? '關閉建立表單' : '建立新 Session'}
+          title={showForm ? '關閉' : '新 Session'}
+          className="group relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-950/45 ring-1 ring-white/15 transition hover:scale-[1.06] hover:shadow-indigo-500/25 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+        >
+          <span className="absolute inset-0 rounded-full bg-gradient-to-t from-black/20 to-transparent opacity-0 transition group-hover:opacity-100" aria-hidden />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.25"
+            strokeLinecap="round"
+            className={`relative h-6 w-6 transition-transform duration-200 ease-out ${showForm ? 'rotate-45' : 'group-hover:rotate-90'}`}
+            aria-hidden
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
         </button>
       </div>
 
@@ -434,28 +585,44 @@ function SessionView({ onEnter }) {
           <input value={newDir} onChange={e => setNewDir(e.target.value)}
             placeholder="工作目錄（選填，如 /home/user/project）"
             className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600 font-mono" />
-          {/* 寬螢幕側欄寬度有限：單行四個控制項會溢出，改為兩行 */}
-          <div className="grid grid-cols-2 gap-2 min-w-0">
-            <select value={newAgent}
-              onChange={e => {
+          <div className="min-w-0 space-y-2">
+            <select
+              value={newAgent}
+              onChange={(e) => {
                 const next = e.target.value;
                 setNewAgent(next);
-                setNewMode(prev => normalizePermMode(next, prev));
+                setNewMode((prev) => normalizePermMode(next, prev));
               }}
-              className="min-w-0 max-w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300">
+              className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300"
+            >
               <option value="claude">Claude</option>
               <option value="cursor">Cursor</option>
               <option value="gemini">Gemini</option>
               <option value="codex" disabled>Codex（未支援）</option>
             </select>
-            <select value={newMode} onChange={e => setNewMode(e.target.value)}
-              className="min-w-0 max-w-full bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-300"
-              disabled={newAgent === 'codex'}>
-              {permModeOptionsFor(newAgent).map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
+            <div className="min-w-0">
+              <div className="mb-1 text-[10px] uppercase tracking-wide text-gray-500">權限模式</div>
+              <PermModeSwitch
+                agentType={newAgent}
+                value={newMode}
+                onChange={setNewMode}
+                disabled={newAgent === 'codex'}
+              />
+            </div>
           </div>
+          {newAgent === 'claude' && (
+            <div className="min-w-0 space-y-1">
+              <div className="text-[10px] uppercase tracking-wide text-gray-500">自訂 CLI 引數（選填）</div>
+              <textarea
+                value={newCliExtra}
+                onChange={(e) => setNewCliExtra(e.target.value)}
+                placeholder={'每行一個引數，例如：\n--plugin-dir\n./.claude/plugins/crm\n--plugin-dir\n./.claude/plugins/crm2\n含空格的路徑請寫在同一行。'}
+                rows={5}
+                spellCheck={false}
+                className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-indigo-600 font-mono leading-relaxed"
+              />
+            </div>
+          )}
           <div className="flex flex-wrap gap-2 justify-end">
             <button onClick={create} disabled={loading || !newName.trim()}
               className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white rounded-lg text-sm font-medium shrink-0">
@@ -472,7 +639,7 @@ function SessionView({ onEnter }) {
       {/* Session 列表 */}
       <div className="flex-1 overflow-y-auto app-scroll">
         {sessions.length === 0 ? (
-          <div className="text-center text-gray-600 mt-24 text-sm">尚無 Session，點右上角建立</div>
+          <div className="text-center text-gray-600 mt-24 text-sm px-4">尚無 Session，點右上角圓形按鈕建立</div>
         ) : displaySessions.length === 0 ? (
           <div className="text-center text-gray-600 mt-24 text-sm px-4">沒有符合搜尋條件的 Session</div>
         ) : displaySessions.map(s => (
@@ -490,19 +657,38 @@ function SessionView({ onEnter }) {
                   className="w-full bg-gray-700 border border-indigo-500 rounded px-2 py-1 text-sm text-gray-100 focus:outline-none"
                 />
               ) : (
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="text-sm font-bold text-gray-100 truncate">{s.name || '未命名'}</div>
-                  <span className={`inline-flex items-center gap-1 shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono uppercase ${getAgentBadgeClass(s.agent_type)}`}>
-                    <AgentBadgeIcon agentType={s.agent_type} />
-                    {AGENT_LABEL[s.agent_type] || s.agent_type || 'claude'}
-                  </span>
+                <div className="space-y-1.5 min-w-0">
+                  {/* 名稱獨立一行：完整顯示、依字換行，不與角標橫向擠壓 */}
+                  <div className="text-sm font-bold text-gray-100 break-words [overflow-wrap:anywhere] leading-snug">
+                    {s.name || '未命名'}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className={`inline-flex items-center gap-1 shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono uppercase ${getAgentBadgeClass(s.agent_type)}`}>
+                      <AgentBadgeIcon agentType={s.agent_type} />
+                      {AGENT_LABEL[s.agent_type] || s.agent_type || 'claude'}
+                    </span>
+                    <GitBranchBadge branch={s.git_branch} />
+                    {((s.agent_type || 'claude') !== 'codex') && s.permission_mode && (
+                      <span
+                        className="inline-flex items-center shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono text-gray-300 bg-gray-800/90 border border-gray-700/70"
+                        title="權限模式"
+                      >
+                        {PERM_MODE_LABEL[s.permission_mode] || s.permission_mode}
+                      </span>
+                    )}
+                    {Array.isArray(s.cli_extra_args) && s.cli_extra_args.length > 0 && (
+                      <span
+                        className="inline-flex items-center shrink-0 text-[10px] px-2 py-0.5 rounded-full font-mono text-violet-300 bg-violet-950/50 border border-violet-800/60"
+                        title="已設定自訂 CLI 引數"
+                      >
+                        +{s.cli_extra_args.length} argv
+                      </span>
+                    )}
+                  </div>
                 </div>
               )}
               {s.work_dir && (
                 <div className="text-xs text-gray-500 font-mono mt-0.5 truncate">{s.work_dir}</div>
-              )}
-              {((s.agent_type || 'claude') !== 'codex') && s.permission_mode && (
-                <div className="text-xs text-gray-600 mt-0.5">{PERM_MODE_LABEL[s.permission_mode] || s.permission_mode}</div>
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -540,10 +726,8 @@ function SessionView({ onEnter }) {
 // ── 聊天畫面 ─────────────────────────────────────────────────────────────────
 function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
   const agentType = session.agent_type || 'claude';
-  const isClaude  = agentType === 'claude';
   // Claude / Cursor / Gemini 皆支援 mode 切換（Codex 暫無對應概念）
   const showPermModeSelect = agentType !== 'codex';
-  const permModeOptions = permModeOptionsFor(agentType);
   const [messages, setMessages]   = useState([]);
   const [input, setInput]         = useState('');
   const [state, setState]         = useState('IDLE');
@@ -771,13 +955,16 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
               ←
             </button>
           )}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="font-bold text-indigo-400 text-sm break-words [overflow-wrap:anywhere] leading-snug">
+              {session.name || '未命名'}
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-              <div className="font-bold text-indigo-400 text-sm truncate min-w-0">{session.name || '未命名'}</div>
               <span className={`inline-flex items-center gap-1 shrink-0 text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-mono uppercase ${getAgentBadgeClass(agentType)}`}>
                 <AgentBadgeIcon agentType={agentType} />
                 {agentType}
               </span>
+              <GitBranchBadge branch={session.git_branch} />
               <span className={`text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-full font-mono shrink-0 ${
                 state === 'IDLE'            ? 'bg-green-900 text-green-300' :
                 state === 'THINKING'        ? 'bg-indigo-900 text-indigo-300' :
@@ -786,24 +973,25 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
               }`}>{state}</span>
             </div>
             {session.work_dir && (
-              <div className="text-xs text-gray-500 font-mono truncate mt-0.5">{session.work_dir}</div>
+              <div className="text-xs text-gray-500 font-mono truncate">{session.work_dir}</div>
             )}
           </div>
         </div>
         {showPermModeSelect && (
-          <select
-            value={mode}
-            onChange={e => handleSetMode(e.target.value)}
-            title={agentType === 'gemini'
-              ? '對應 gemini --approval-mode'
-              : agentType === 'cursor'
-              ? '權限模式（bypass：Cursor 會加 --force）'
-              : '權限模式'}
-            className="text-xs bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-gray-300 w-full sm:w-auto sm:min-w-[7.5rem] sm:max-w-[12rem] shrink-0">
-            {permModeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
+          <div className="w-fit max-w-full min-w-0 shrink-0 self-end sm:self-center sm:ml-auto">
+            <PermModeSwitch
+              agentType={agentType}
+              value={mode}
+              onChange={handleSetMode}
+              title={
+                agentType === 'gemini'
+                  ? 'Gemini 核准模式（--approval-mode）'
+                  : agentType === 'cursor'
+                  ? '權限模式（bypass：Cursor 會加 --force）'
+                  : '權限模式'
+              }
+            />
+          </div>
         )}
       </div>
 
@@ -919,13 +1107,19 @@ function PasswordView({ onSuccess }) {
     if (!pwd.trim()) return;
     setLoading(true);
     setError('');
-    const res = await fetch('/auth/login', {
+    const res = await fetch(resolveApiUrl('/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password: pwd }),
     });
     setLoading(false);
     if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (data.token) {
+        try {
+          localStorage.setItem(WEB_SESSION_STORAGE_KEY, data.token);
+        } catch (_) {}
+      }
       onSuccess();
     } else {
       const data = await res.json().catch(() => ({}));
@@ -982,10 +1176,27 @@ function App() {
   // 非 TMA 環境：mount 時試探 cookie 是否仍有效
   const [checking, setChecking] = useState(!isTelegram);
 
+  /** 側欄輪詢 /sessions 時同步目前聊天室 Session 的 git_branch、work_dir */
+  const mergeSessionMetaFromList = useCallback((list) => {
+    if (!Array.isArray(list)) return;
+    setSession((prev) => {
+      if (!prev) return null;
+      const row = list.find((s) => s.id === prev.id);
+      if (!row) return prev;
+      if (row.git_branch === prev.git_branch && row.work_dir === prev.work_dir) return prev;
+      return { ...prev, git_branch: row.git_branch, work_dir: row.work_dir };
+    });
+  }, []);
+
   useEffect(() => {
     if (isTelegram) return;
-    fetch('/sessions').then(res => {
+    apiFetch('/sessions').then((res) => {
       if (res.ok) setAuthed(true);
+      else if (res.status === 401) {
+        try {
+          localStorage.removeItem(WEB_SESSION_STORAGE_KEY);
+        } catch (_) {}
+      }
     }).finally(() => setChecking(false));
   }, []);
 
@@ -1015,13 +1226,13 @@ function App() {
     if (!isWideScreen) {
       return session
         ? <ChatView session={session} onBack={() => setSession(null)} />
-        : <SessionView onEnter={setSession} />;
+        : <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} />;
     }
 
     return (
       <div className="h-screen flex bg-black">
         <aside className="w-[360px] max-w-[40vw] min-w-0 border-r border-gray-800 bg-gray-950 flex flex-col">
-          <SessionView onEnter={setSession} />
+          <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} />
         </aside>
         <main className="flex-1 min-w-0">
           {session ? (

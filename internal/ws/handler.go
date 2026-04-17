@@ -115,6 +115,10 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			pm := s.PermissionMode
 			agSid := s.AgentSessionID
 			wdir := s.WorkDir
+			var cliExtra []string
+			if len(s.CliExtraArgs) > 0 {
+				cliExtra = append([]string(nil), s.CliExtraArgs...)
+			}
 			mu.Unlock()
 
 			msgID, err := database.CreatePendingMessage(sessionID)
@@ -144,10 +148,11 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			}
 
 			opts := agent.RunOptions{
-				Prompt:    prompt,
-				SessionID: agSid,
-				WorkDir:   wdir,
-				ExtraArgs: extra,
+				Prompt:       prompt,
+				SessionID:    agSid,
+				WorkDir:      wdir,
+				ExtraArgs:    extra,
+				CliExtraArgs: cliExtra,
 			}
 
 			runner, err := agent.NewRunner(agentType)

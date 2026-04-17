@@ -14,6 +14,8 @@ type RunOptions struct {
 	SessionID string // 空字串表示新 session
 	WorkDir   string
 	ExtraArgs map[string]string
+	// CliExtraArgs 為使用者自訂的額外 argv（每個元素對應一個命令列引數），由 Session 持久化；僅 Claude runner 會附加。
+	CliExtraArgs []string
 }
 
 // EventType 代表 Runner 送出的事件種類。

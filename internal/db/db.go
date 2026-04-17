@@ -59,6 +59,7 @@ func (db *DB) migrate() error {
 	// 保險：若上述 RENAME 在極舊 DB 失敗，仍可直接補上欄位
 	db.Exec(`ALTER TABLE sessions ADD COLUMN agent_session_id TEXT NOT NULL DEFAULT ''`)
 	db.Exec(`ALTER TABLE sessions ADD COLUMN status TEXT NOT NULL DEFAULT 'idle'`)
+	db.Exec(`ALTER TABLE sessions ADD COLUMN cli_extra_args TEXT NOT NULL DEFAULT '[]'`)
 	db.Exec(`ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'done'`)
 	// 重啟後孤兒 pending：標記為 done，保留已累積內容
 	if _, err := db.Exec(`UPDATE messages SET status = 'done' WHERE status = 'pending'`); err != nil {
