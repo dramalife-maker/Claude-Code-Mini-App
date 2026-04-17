@@ -68,7 +68,6 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			agentType = agent.TypeClaude
 		}
 		agentSessionID := sess.AgentSessionID
-		allowedTools := append([]string(nil), sess.AllowedTools...)
 
 		isClaude := agentType == agent.TypeClaude
 
@@ -98,8 +97,9 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			log.Printf("[ws] 還原 pending_denials for session %s", sessionID)
 		}
 
-		// runAgent：與 WS 解耦，任務在背景執行
-		runAgent := func(prompt string) {
+		// runAgent：與 WS 解耦，任務在背景執行。
+		// allowedOnce：僅「允許此操作」該次 retry 帶入 --allowedTools，不可寫入 DB（否則變成永久 allowlist）。
+		runAgent := func(prompt string, allowedOnce []string) {
 			taskCancel(sessionID)
 			if err := database.FinalizePendingMessagesForSession(sessionID); err != nil {
 				log.Printf("[ws] FinalizePendingMessagesForSession: %v", err)
@@ -113,7 +113,6 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			}
 			mu.Lock()
 			pm := s.PermissionMode
-			at := append([]string(nil), s.AllowedTools...)
 			agSid := s.AgentSessionID
 			wdir := s.WorkDir
 			mu.Unlock()
@@ -137,8 +136,8 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 			if pm != "" {
 				extra[agent.ArgPermissionMode] = pm
 			}
-			if isClaude && len(at) > 0 {
-				extra[agent.ArgAllowedTools] = strings.Join(at, ",")
+			if isClaude && len(allowedOnce) > 0 {
+				extra[agent.ArgAllowedTools] = strings.Join(allowedOnce, ",")
 			}
 			if agentType == agent.TypeCursor && pm == "bypassPermissions" {
 				extra[agent.ArgForce] = "true"
@@ -280,7 +279,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 				if err := database.AddMessage(sessionID, "user", msg.Data); err != nil {
 					log.Printf("[ws] 儲存 user 訊息失敗: %v", err)
 				}
-				runAgent(msg.Data)
+				runAgent(msg.Data, nil)
 
 			case "allow_once":
 				if !isClaude {
@@ -288,24 +287,22 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 					continue
 				}
 				clearPendingDenials(database, sessionID)
-				mu.Lock()
-				existing := make(map[string]bool)
-				for _, t := range allowedTools {
-					existing[t] = true
+				// 清除舊版誤寫入的永久 allowlist（「允許此操作」不應持久化）
+				if err := database.UpdateAllowedTools(sessionID, nil); err != nil {
+					log.Printf("[ws] 清除 allowed_tools 失敗: %v", err)
 				}
+				once := make([]string, 0, len(msg.Tools))
 				for _, t := range msg.Tools {
-					existing[t] = true
+					t = strings.TrimSpace(t)
+					if t != "" {
+						once = append(once, t)
+					}
 				}
-				merged := make([]string, 0, len(existing))
-				for t := range existing {
-					merged = append(merged, t)
+				if len(once) == 0 {
+					log.Printf("[ws] allow_once 無工具名稱，略過")
+					continue
 				}
-				allowedTools = merged
-				mu.Unlock()
-				if err := database.UpdateAllowedTools(sessionID, merged); err != nil {
-					log.Printf("[ws] 更新 allowed_tools 失敗: %v", err)
-				}
-				runAgent("please retry the previous operation")
+				runAgent("please retry the previous operation", once)
 
 			case "set_mode":
 				if agentType != agent.TypeClaude && agentType != agent.TypeCursor && agentType != agent.TypeGemini {
