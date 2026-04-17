@@ -102,6 +102,29 @@ if (isTMA) {
 /** Web 登入 session token（localStorage；後端仍驗證於伺服器端 store） */
 const WEB_SESSION_STORAGE_KEY = 'cc_web_session_token';
 
+/** 桌面版側欄寬度（localStorage，px；與原 max-w-[48vw] 上限一致） */
+const SIDEBAR_WIDTH_STORAGE_KEY = 'cc_sidebar_width_px';
+const SIDEBAR_WIDTH_DEFAULT = 440;
+const SIDEBAR_WIDTH_MIN = 260;
+
+function readStoredSidebarWidthPx() {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch (_) {}
+  return SIDEBAR_WIDTH_DEFAULT;
+}
+
+function clampSidebarWidthPx(w) {
+  const max = Math.max(SIDEBAR_WIDTH_MIN, Math.floor(window.innerWidth * 0.48));
+  return Math.min(Math.max(Math.round(w), SIDEBAR_WIDTH_MIN), max);
+}
+
+function sidebarWidthMaxPx() {
+  return Math.max(SIDEBAR_WIDTH_MIN, Math.floor(window.innerWidth * 0.48));
+}
+
 /**
  * 由目前頁面 URL 推算 SPA 掛載的 base path（無結尾 /）。
  * 例：/myapp/、/myapp/index.html → /myapp；根目錄 → ''。
@@ -282,6 +305,29 @@ function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
   );
 }
 
+/** 權限模式：窄螢幕（app 版）用下拉選單，與 PermModeSwitch 選項一致。 */
+function PermModeSelect({ agentType, value, onChange, disabled, title, id }) {
+  const opts = permModeOptionsFor(agentType);
+  const t = String(agentType || 'claude').toLowerCase();
+  const ariaLabel =
+    title || (t === 'gemini' ? 'Gemini 核准模式' : '權限模式');
+  const selectId = id || `perm-mode-select-${t}`;
+  return (
+    <select
+      id={selectId}
+      aria-label={ariaLabel}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-indigo-600 disabled:opacity-45"
+    >
+      {opts.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  );
+}
+
 /** 依 CLI runner（agent_type）回傳 badge 的 Tailwind 底色／文字色 */
 function getAgentBadgeClass(agentType) {
   const t = String(agentType || 'claude').toLowerCase();
@@ -375,7 +421,7 @@ function mapMessageRow(m) {
 }
 
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded }) {
+function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -534,7 +580,7 @@ function SessionView({ onEnter, onSessionsLoaded }) {
           onClick={() => setShowForm(!showForm)}
           aria-label={showForm ? '關閉建立表單' : '建立新 Session'}
           title={showForm ? '關閉' : '新 Session'}
-          className="group relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 text-white shadow-lg shadow-indigo-950/45 ring-1 ring-white/15 transition hover:scale-[1.06] hover:shadow-indigo-500/25 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
+          className="group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-violet-600 to-indigo-700 text-white shadow-md shadow-indigo-950/40 ring-1 ring-white/15 transition hover:scale-[1.05] hover:shadow-indigo-500/20 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-900"
         >
           <span className="absolute inset-0 rounded-full bg-gradient-to-t from-black/20 to-transparent opacity-0 transition group-hover:opacity-100" aria-hidden />
           <svg
@@ -544,7 +590,7 @@ function SessionView({ onEnter, onSessionsLoaded }) {
             stroke="currentColor"
             strokeWidth="2.25"
             strokeLinecap="round"
-            className={`relative h-6 w-6 transition-transform duration-200 ease-out ${showForm ? 'rotate-45' : 'group-hover:rotate-90'}`}
+            className={`relative h-5 w-5 transition-transform duration-200 ease-out ${showForm ? 'rotate-45' : 'group-hover:rotate-90'}`}
             aria-hidden
           >
             <path d="M12 5v14M5 12h14" />
@@ -605,12 +651,22 @@ function SessionView({ onEnter, onSessionsLoaded }) {
             </select>
             <div className="min-w-0">
               <div className="mb-1 text-[10px] uppercase tracking-wide text-gray-500">權限模式</div>
-              <PermModeSwitch
-                agentType={newAgent}
-                value={newMode}
-                onChange={setNewMode}
-                disabled={newAgent === 'codex'}
-              />
+              {usePermModeDropdown ? (
+                <PermModeSelect
+                  agentType={newAgent}
+                  value={newMode}
+                  onChange={setNewMode}
+                  disabled={newAgent === 'codex'}
+                  id="session-new-perm-mode"
+                />
+              ) : (
+                <PermModeSwitch
+                  agentType={newAgent}
+                  value={newMode}
+                  onChange={setNewMode}
+                  disabled={newAgent === 'codex'}
+                />
+              )}
             </div>
           </div>
           {newAgent === 'claude' && (
@@ -727,7 +783,7 @@ function SessionView({ onEnter, onSessionsLoaded }) {
 }
 
 // ── 聊天畫面 ─────────────────────────────────────────────────────────────────
-function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
+function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false }) {
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Gemini 皆支援 mode 切換（Codex 暫無對應概念）
   const showPermModeSelect = agentType !== 'codex';
@@ -993,19 +1049,44 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
           </div>
         </div>
         {showPermModeSelect && (
-          <div className="w-fit max-w-full min-w-0 shrink-0 self-end sm:self-center sm:ml-auto">
-            <PermModeSwitch
-              agentType={agentType}
-              value={mode}
-              onChange={handleSetMode}
-              title={
-                agentType === 'gemini'
-                  ? 'Gemini 核准模式（--approval-mode）'
-                  : agentType === 'cursor'
-                  ? '權限模式（bypass：Cursor 會加 --force）'
-                  : '權限模式'
-              }
-            />
+          <div
+            className={
+              usePermModeDropdown
+                ? 'w-full min-w-0 shrink-0'
+                : 'w-fit max-w-full min-w-0 shrink-0 self-end sm:self-center sm:ml-auto'
+            }
+          >
+            {usePermModeDropdown ? (
+              <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">權限模式</div>
+            ) : null}
+            {usePermModeDropdown ? (
+              <PermModeSelect
+                agentType={agentType}
+                value={mode}
+                onChange={handleSetMode}
+                title={
+                  agentType === 'gemini'
+                    ? 'Gemini 核准模式（--approval-mode）'
+                    : agentType === 'cursor'
+                    ? '權限模式（bypass：Cursor 會加 --force）'
+                    : '權限模式'
+                }
+                id="chat-perm-mode"
+              />
+            ) : (
+              <PermModeSwitch
+                agentType={agentType}
+                value={mode}
+                onChange={handleSetMode}
+                title={
+                  agentType === 'gemini'
+                    ? 'Gemini 核准模式（--approval-mode）'
+                    : agentType === 'cursor'
+                    ? '權限模式（bypass：Cursor 會加 --force）'
+                    : '權限模式'
+                }
+              />
+            )}
           </div>
         )}
       </div>
@@ -1031,7 +1112,14 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
               }`}
             >
             <div className="text-xs text-gray-500 mb-1">
-              {m.role === 'user' ? '你' : (agentType === 'cursor' ? 'Cursor' : agentType === 'codex' ? 'Codex' : agentType === 'gemini' ? 'Gemini' : 'Claude')}
+              {m.role === 'user' ? (
+                '你'
+              ) : (
+                <span className="inline-flex items-center gap-1.5">
+                  <AgentBadgeIcon agentType={agentType} />
+                  <span>{AGENT_LABEL[agentType] || agentType || 'Claude'}</span>
+                </span>
+              )}
             </div>
             {m.role === 'claude' ? (
               (m.html || showStreamingTail) ? (
@@ -1192,6 +1280,66 @@ function App() {
   // 非 TMA 環境：mount 時試探 cookie 是否仍有效
   const [checking, setChecking] = useState(!isTelegram);
 
+  const [sidebarWidthPx, setSidebarWidthPx] = useState(() =>
+    typeof window !== 'undefined' ? clampSidebarWidthPx(readStoredSidebarWidthPx()) : SIDEBAR_WIDTH_DEFAULT
+  );
+  const lastSidebarWidthRef = useRef(sidebarWidthPx);
+
+  useEffect(() => {
+    lastSidebarWidthRef.current = sidebarWidthPx;
+  }, [sidebarWidthPx]);
+
+  useEffect(() => {
+    const onResize = () => {
+      setSidebarWidthPx((w) => clampSidebarWidthPx(w));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const handleSidebarResizeStart = useCallback((e) => {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    const getX = (ev) => {
+      if (ev.touches && ev.touches.length) return ev.touches[0].clientX;
+      return ev.clientX;
+    };
+    const startX = getX(e);
+    const startW = lastSidebarWidthRef.current;
+
+    const onMove = (ev) => {
+      ev.preventDefault();
+      const x = getX(ev);
+      const next = clampSidebarWidthPx(startW + (x - startX));
+      setSidebarWidthPx(next);
+      lastSidebarWidthRef.current = next;
+    };
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      document.removeEventListener('touchcancel', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try {
+        localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(lastSidebarWidthRef.current));
+      } catch (_) {}
+    };
+
+    if (e.type === 'touchstart') {
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onUp);
+      document.addEventListener('touchcancel', onUp);
+    } else {
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    }
+  }, []);
+
   /** 側欄輪詢 /sessions 時同步目前聊天室 Session 的 git_branch、work_dir */
   const mergeSessionMetaFromList = useCallback((list) => {
     if (!Array.isArray(list)) return;
@@ -1241,16 +1389,35 @@ function App() {
   const renderAuthedLayout = () => {
     if (!isWideScreen) {
       return session
-        ? <ChatView session={session} onBack={() => setSession(null)} />
-        : <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} />;
+        ? <ChatView session={session} onBack={() => setSession(null)} usePermModeDropdown />
+        : <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} usePermModeDropdown />;
     }
 
     return (
-      <div className="h-screen flex bg-black">
-        <aside className="w-[360px] max-w-[40vw] min-w-0 border-r border-gray-800 bg-gray-950 flex flex-col">
+      <div className="h-screen flex bg-black min-w-0">
+        <aside
+          style={{ width: sidebarWidthPx, flexShrink: 0 }}
+          className="min-w-0 bg-gray-950 flex flex-col"
+        >
           <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} />
         </aside>
-        <main className="flex-1 min-w-0">
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuenow={sidebarWidthPx}
+          aria-valuemin={SIDEBAR_WIDTH_MIN}
+          aria-valuemax={sidebarWidthMaxPx()}
+          title="拖曳調整側欄寬度"
+          className="group relative w-3 shrink-0 cursor-col-resize select-none touch-none bg-gray-950 hover:bg-gray-900/90"
+          onMouseDown={handleSidebarResizeStart}
+          onTouchStart={handleSidebarResizeStart}
+        >
+          <span
+            className="pointer-events-none absolute left-1/2 top-0 bottom-0 w-px -translate-x-1/2 bg-gray-800 group-hover:bg-indigo-500/50"
+            aria-hidden
+          />
+        </div>
+        <main className="flex-1 min-w-0 min-h-0">
           {session ? (
             <ChatView session={session} onBack={() => setSession(null)} showBack={false} fullHeight={false} />
           ) : (
