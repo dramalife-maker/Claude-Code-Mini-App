@@ -668,6 +668,10 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
           streamBuf.current = '';
         }
 
+        if (msg.type === 'user_message') {
+          setMessages(prev => [...prev, { role: 'user', content: msg.content }]);
+        }
+
         if (msg.type === 'delta') {
           streamBuf.current += msg.content;
           const html = parseMarkdown(streamBuf.current);
@@ -723,12 +727,8 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true }) {
       setInput('');
       return;
     }
-    setMessages(prev => [...prev, { role: 'user', content: trimmed }]);
     const sent = send({ type: 'input', data: trimmed });
-    if (!sent) {
-      setMessages(prev => prev.slice(0, -1));
-      return;
-    }
+    if (!sent) return;
     setInput('');
   };
 

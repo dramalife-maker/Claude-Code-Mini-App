@@ -279,6 +279,7 @@ func NewHandler(database *db.DB, botToken string) func(*fiberws.Conn) {
 				if err := database.AddMessage(sessionID, "user", msg.Data); err != nil {
 					log.Printf("[ws] 儲存 user 訊息失敗: %v", err)
 				}
+				broadcast(serverMsg{Type: "user_message", Content: msg.Data})
 				runAgent(msg.Data, nil)
 
 			case "allow_once":
