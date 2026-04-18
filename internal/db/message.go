@@ -22,11 +22,16 @@ func (db *DB) AddMessage(sessionID, role, content string) error {
 	return err
 }
 
-// CreatePendingMessage 建立一筆串流中的 assistant 訊息（content 空、status=pending）
+// CreatePendingMessage inserts an empty assistant row with status=pending.
 func (db *DB) CreatePendingMessage(sessionID string) (int64, error) {
+	return db.CreatePendingMessageWithRole(sessionID, "claude")
+}
+
+// CreatePendingMessageWithRole inserts an empty row for the given role (claude, shell, ...).
+func (db *DB) CreatePendingMessageWithRole(sessionID, role string) (int64, error) {
 	res, err := db.Exec(
-		`INSERT INTO messages (session_id, role, content, status) VALUES (?, 'claude', '', ?)`,
-		sessionID, MessageStatusPending,
+		`INSERT INTO messages (session_id, role, content, status) VALUES (?, ?, '', ?)`,
+		sessionID, role, MessageStatusPending,
 	)
 	if err != nil {
 		return 0, err
@@ -34,7 +39,7 @@ func (db *DB) CreatePendingMessage(sessionID string) (int64, error) {
 	return res.LastInsertId()
 }
 
-// AppendMessageContent 將 delta 累加到 pending 訊息
+// AppendMessageContent appends text to a pending message.
 func (db *DB) AppendMessageContent(msgID int64, delta string) error {
 	if delta == "" {
 		return nil
@@ -46,14 +51,13 @@ func (db *DB) AppendMessageContent(msgID int64, delta string) error {
 	return err
 }
 
-// FinalizeMessage 將訊息標記為完成
+// FinalizeMessage marks a message as done.
 func (db *DB) FinalizeMessage(msgID int64) error {
 	_, err := db.Exec(`UPDATE messages SET status = ? WHERE id = ?`, MessageStatusDone, msgID)
 	return err
 }
 
-// ResetPendingMessages 將所有 status=pending 的訊息標為 done。
-// 伺服器啟動時呼叫，修復 crash 留下的殘留訊息。
+// ResetPendingMessages marks all pending rows done (server startup cleanup).
 func (db *DB) ResetPendingMessages() error {
 	_, err := db.Exec(
 		`UPDATE messages SET status = ? WHERE status = ?`,
@@ -62,7 +66,7 @@ func (db *DB) ResetPendingMessages() error {
 	return err
 }
 
-// FinalizePendingMessagesForSession 將該 session 所有 pending 標為 done（新回合前或中斷時）
+// FinalizePendingMessagesForSession marks pending rows done for one session.
 func (db *DB) FinalizePendingMessagesForSession(sessionID string) error {
 	_, err := db.Exec(
 		`UPDATE messages SET status = ? WHERE session_id = ? AND status = ?`,

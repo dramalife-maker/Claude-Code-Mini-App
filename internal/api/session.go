@@ -76,6 +76,7 @@ func (h *SessionHandler) Create(c *fiber.Ctx) error {
 		PermissionMode string   `json:"permission_mode"`
 		AgentType      string   `json:"agent_type"`
 		CliExtraArgs   []string `json:"cli_extra_args"`
+		InputMode      string   `json:"input_mode"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
@@ -87,7 +88,7 @@ func (h *SessionHandler) Create(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
-	s, err := h.db.CreateSession(body.Name, body.Description, body.WorkDir, body.PermissionMode, body.AgentType, cliExtra)
+	s, err := h.db.CreateSession(body.Name, body.Description, body.WorkDir, body.PermissionMode, body.AgentType, cliExtra, body.InputMode)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}

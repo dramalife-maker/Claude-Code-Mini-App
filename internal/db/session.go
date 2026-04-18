@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Session 層級狀態（供列表角標與背景任務）
+// Session-level status for sidebar badges and background tasks.
 const (
 	SessionStatusIdle            = "idle"
 	SessionStatusRunning         = "running"
@@ -21,24 +21,32 @@ type Session struct {
 	Name           string   `json:"name"`
 	Description    string   `json:"description"`
 	WorkDir        string   `json:"work_dir"`
-	// GitBranch 非 DB 欄位，僅於 API 序列化時由後端填入（目前分支名稱）。
+	// GitBranch is not persisted; filled by API from git when serializing.
 	GitBranch      string   `json:"git_branch,omitempty"`
 	PermissionMode string   `json:"permission_mode"`
 	AllowedTools   []string `json:"allowed_tools"`
 	PendingDenials string   `json:"pending_denials"`
 	LastActive     string   `json:"last_active"`
 	Status         string   `json:"status"`
-	// CliExtraArgs 為自訂 CLI 引數（每個元素一個 argv），JSON 存於 cli_extra_args。
+	// CliExtraArgs: optional argv list, stored as JSON in cli_extra_args.
 	CliExtraArgs []string `json:"cli_extra_args"`
+	// InputMode: "agent" (AI chat) or "shell" (local commands).
+	InputMode string `json:"input_mode"`
 }
 
-func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string) (*Session, error) {
+func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string, inputMode string) (*Session, error) {
 	id := uuid.New().String()
 	if permissionMode == "" {
 		permissionMode = "default"
 	}
 	if agentType == "" {
 		agentType = "claude"
+	}
+	if inputMode == "" {
+		inputMode = "agent"
+	}
+	if inputMode != "agent" && inputMode != "shell" {
+		inputMode = "agent"
 	}
 	extraJSON := "[]"
 	if len(cliExtraArgs) > 0 {
@@ -49,8 +57,8 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 		extraJSON = string(b)
 	}
 	_, err := db.Exec(
-		`INSERT INTO sessions (id, name, description, work_dir, permission_mode, agent_type, cli_extra_args) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, name, description, workDir, permissionMode, agentType, extraJSON,
+		`INSERT INTO sessions (id, name, description, work_dir, permission_mode, agent_type, cli_extra_args, input_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, name, description, workDir, permissionMode, agentType, extraJSON, inputMode,
 	)
 	if err != nil {
 		return nil, err
@@ -60,14 +68,14 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 
 func (db *DB) GetSession(id string) (*Session, error) {
 	row := db.QueryRow(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args FROM sessions WHERE id = ?`, id,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode FROM sessions WHERE id = ?`, id,
 	)
 	return scanSession(row)
 }
 
 func (db *DB) ListSessions() ([]*Session, error) {
 	rows, err := db.Query(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args FROM sessions ORDER BY last_active DESC`,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode FROM sessions ORDER BY last_active DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -101,7 +109,7 @@ func (db *DB) UpdateSessionName(id, name string) error {
 	return err
 }
 
-// UpdateSessionCliExtraArgs 更新自訂 CLI 引數（整段覆寫，JSON 陣列）。
+// UpdateSessionCliExtraArgs replaces the whole custom CLI argv JSON array.
 func (db *DB) UpdateSessionCliExtraArgs(id string, cliExtraArgs []string) error {
 	b, err := json.Marshal(cliExtraArgs)
 	if err != nil {
@@ -114,7 +122,7 @@ func (db *DB) UpdateSessionCliExtraArgs(id string, cliExtraArgs []string) error 
 	return err
 }
 
-// UpdateAgentSessionID 更新 session 中由 AI 工具回傳的原生 session id（例如 Claude 的 session_id）。
+// UpdateAgentSessionID stores the native tool session id (e.g. Claude session_id).
 func (db *DB) UpdateAgentSessionID(id, agentSessionID string) error {
 	_, err := db.Exec(
 		`UPDATE sessions SET agent_session_id = ?, last_active = datetime('now') WHERE id = ?`,
@@ -152,8 +160,7 @@ func (db *DB) TouchSession(id string) error {
 	return err
 }
 
-// ResetRunningSessions 將所有 status=running 的 session 重設為 idle。
-// 伺服器啟動時呼叫，修復 crash 留下的殘留狀態。
+// ResetRunningSessions sets status=running sessions back to idle on server start.
 func (db *DB) ResetRunningSessions() error {
 	_, err := db.Exec(
 		`UPDATE sessions SET status = ? WHERE status = ?`,
@@ -162,11 +169,23 @@ func (db *DB) ResetRunningSessions() error {
 	return err
 }
 
-// UpdateSessionStatus 更新背景任務／授權狀態（idle | running | awaiting_confirm）
+// UpdateSessionStatus updates idle | running | awaiting_confirm.
 func (db *DB) UpdateSessionStatus(id, status string) error {
 	_, err := db.Exec(
 		`UPDATE sessions SET status = ?, last_active = datetime('now') WHERE id = ?`,
 		status, id,
+	)
+	return err
+}
+
+// UpdateSessionInputMode sets input_mode to agent or shell.
+func (db *DB) UpdateSessionInputMode(id, mode string) error {
+	if mode != "agent" && mode != "shell" {
+		mode = "agent"
+	}
+	_, err := db.Exec(
+		`UPDATE sessions SET input_mode = ?, last_active = datetime('now') WHERE id = ?`,
+		mode, id,
 	)
 	return err
 }
@@ -181,7 +200,7 @@ func scanSession(s scanner) (*Session, error) {
 	var extraJSON string
 	err := s.Scan(
 		&sess.ID, &sess.AgentType, &sess.AgentSessionID, &sess.Name, &sess.Description,
-		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status, &extraJSON,
+		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status, &extraJSON, &sess.InputMode,
 	)
 	if err != nil {
 		return nil, err
@@ -202,6 +221,9 @@ func scanSession(s scanner) (*Session, error) {
 	}
 	if sess.Status == "" {
 		sess.Status = SessionStatusIdle
+	}
+	if sess.InputMode == "" {
+		sess.InputMode = "agent"
 	}
 	return &sess, nil
 }
