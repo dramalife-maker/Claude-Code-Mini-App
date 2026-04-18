@@ -17,8 +17,9 @@ type Result struct {
 	ExitCode int
 }
 
-// Run 在 workDir 執行一行指令（Windows: cmd /C；其他: sh -c）。
-func Run(ctx context.Context, workDir, line string) (*Result, error) {
+// RunBuffered 在 workDir 執行一行指令並一次讀回輸出（Windows: cmd /C；其他: sh -c）。
+// 與 runner.Run（串流）並存時請用此名，避免與 Run(ctx, RunOptions, cb) 衝突。
+func RunBuffered(ctx context.Context, workDir, line string) (*Result, error) {
 	line = strings.TrimSpace(line)
 	if line == "" {
 		return nil, fmt.Errorf("指令為空")
