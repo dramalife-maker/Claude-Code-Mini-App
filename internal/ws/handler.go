@@ -17,8 +17,8 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/claude"
 	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/cursor"
-	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/gemini"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
+	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/gemini"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/shell"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
 )
@@ -52,12 +52,12 @@ func resolveShellWorkDir(session *db.Session) (absDir string, err error) {
 }
 
 const (
-	StateIdle                   = "IDLE"
-	StateThinking               = "THINKING"
-	StateStreaming              = "STREAMING"
-	StateAwaitingConfirm        = "AWAITING_CONFIRM"
-	StateAwaitingShellConfirm   = "AWAITING_SHELL_CONFIRM"
-	StateShellExec              = "SHELL_EXEC"
+	StateIdle                 = "IDLE"
+	StateThinking             = "THINKING"
+	StateStreaming            = "STREAMING"
+	StateAwaitingConfirm      = "AWAITING_CONFIRM"
+	StateAwaitingShellConfirm = "AWAITING_SHELL_CONFIRM"
+	StateShellExec            = "SHELL_EXEC"
 )
 
 type clientMsg struct {
