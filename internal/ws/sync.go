@@ -64,10 +64,11 @@ func buildSyncPayload(database *db.DB, sessionID string) (SyncPayload, error) {
 	}
 	uiState := computeWSState(sess, msgs)
 	type row struct {
-		ID      int64  `json:"id"`
-		Role    string `json:"role"`
-		Content string `json:"content"`
-		Status  string `json:"status"`
+		ID         int64  `json:"id"`
+		Role       string `json:"role"`
+		Content    string `json:"content"`
+		ResultText string `json:"result_text,omitempty"`
+		Status     string `json:"status"`
 	}
 	out := make([]row, 0, len(msgs))
 	for _, m := range msgs {
@@ -75,7 +76,7 @@ func buildSyncPayload(database *db.DB, sessionID string) (SyncPayload, error) {
 		if st == "" {
 			st = db.MessageStatusDone
 		}
-		out = append(out, row{ID: m.ID, Role: m.Role, Content: m.Content, Status: st})
+		out = append(out, row{ID: m.ID, Role: m.Role, Content: m.Content, ResultText: m.ResultText, Status: st})
 	}
 	raw, err := json.Marshal(out)
 	if err != nil {

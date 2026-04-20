@@ -52,12 +52,13 @@ type ToolCall struct {
 
 // Event 是 Runner 透過 callback 回傳的統一事件結構。
 type Event struct {
-	Type      EventType
-	Text      string             // delta 文字
-	SessionID string             // session_init / done 時帶入
-	Denials   []PermissionDenial // 僅 Claude 有
-	Tool      *ToolCall          // tool_started / tool_completed 時帶入
-	Err       error              // error 時帶入
+	Type       EventType
+	Text       string             // delta 文字
+	SessionID  string             // session_init / done 時帶入
+	ResultText string             // 僅 done：CLI 最終 result 行若帶純文字摘要／輸出（stream-json 之 result 欄位）
+	Denials    []PermissionDenial // 僅 Claude 有
+	Tool       *ToolCall          // tool_started / tool_completed 時帶入
+	Err        error              // error 時帶入
 }
 
 // EventCallback 是 Runner 每收到一個事件都會呼叫一次的 callback。

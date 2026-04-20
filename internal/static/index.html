@@ -604,11 +604,69 @@ function mapMessageRow(m) {
     id: m.id,
     role,
     content,
+    resultText: m.result_text || '',
     status,
     html: role === 'claude' ? (content ? parseMarkdown(content) : null) : null,
     streaming: pending,
     exitCode: role === 'shell' ? parseShellExitCode(content) : undefined,
   };
+}
+
+/**
+ * 以 document.execCommand('copy') 複製純文字（相容非安全上下文，不使用 navigator.clipboard）。
+ */
+function copyTextExecCommand(text) {
+  const t = text == null ? '' : String(text);
+  if (!t) return false;
+  let ta;
+  try {
+    ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    return document.execCommand('copy');
+  } catch (e) {
+    return false;
+  } finally {
+    if (ta && ta.parentNode) ta.parentNode.removeChild(ta);
+  }
+}
+
+/** 訊息氣泡用複製按鈕（複製 m.content 原始文字） */
+function MessageCopyButton({ text, className }) {
+  const [copied, setCopied] = useState(false);
+  const empty = !String(text || '').trim();
+  const onClick = (e) => {
+    e.stopPropagation();
+    if (empty) return;
+    if (copyTextExecCommand(text)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={empty}
+      title={copied ? '已複製' : '複製'}
+      aria-label={copied ? '已複製到剪貼簿' : '複製訊息'}
+      className={className}
+    >
+      {copied ? (
+        <span className="text-[10px] font-medium leading-none">已複製</span>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 opacity-70 hover:opacity-100" aria-hidden>
+          <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+        </svg>
+      )}
+    </button>
+  );
 }
 
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
@@ -1227,6 +1285,30 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
           setPermTools(msg.tools || []);
         }
 
+        if (msg.type === 'message_result_text') {
+          const rid = msg.id;
+          const rt = msg.content != null ? String(msg.content) : '';
+          setMessages((prev) => {
+            let idx = prev.findIndex((m) => m.id != null && rid != null && m.id === rid);
+            if (idx < 0) {
+              for (let i = prev.length - 1; i >= 0; i--) {
+                if (prev[i].role === 'claude') {
+                  idx = i;
+                  break;
+                }
+              }
+            }
+            if (idx < 0) return prev;
+            const copy = [...prev];
+            copy[idx] = {
+              ...copy[idx],
+              resultText: rt,
+              id: copy[idx].id != null ? copy[idx].id : rid,
+            };
+            return copy;
+          });
+        }
+
         if (msg.type === 'input_mode_changed') {
           setInputMode(msg.value);
           serverInputAppliedRef.current = msg.value;
@@ -1550,20 +1632,30 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                 m.role === 'user' ? 'bubble-user' : m.role === 'shell' ? 'bubble-shell' : 'bubble-claude'
               }`}
             >
-            <div className="text-xs text-gray-500 mb-1">
-              {m.role === 'user' ? (
-                '你'
-              ) : m.role === 'shell' ? (
-                <span className="inline-flex items-center gap-1 font-mono text-amber-500/80">
-                  <span>&gt;_</span>
-                  <span>{shellType || 'shell'}</span>
-                </span>
-              ) : (
-                <span className="inline-flex items-center gap-1.5">
-                  <AgentBadgeIcon agentType={agentType} />
-                  <span>{AGENT_LABEL[agentType] || agentType || 'Claude'}</span>
-                </span>
-              )}
+            <div className="flex items-start justify-between gap-2 mb-1 min-w-0">
+              <div className="text-xs text-gray-500 min-w-0">
+                {m.role === 'user' ? (
+                  '你'
+                ) : m.role === 'shell' ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-amber-500/80">
+                    <span>&gt;_</span>
+                    <span>{shellType || 'shell'}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5">
+                    <AgentBadgeIcon agentType={agentType} />
+                    <span>{AGENT_LABEL[agentType] || agentType || 'Claude'}</span>
+                  </span>
+                )}
+              </div>
+              <MessageCopyButton
+                text={
+                  m.role === 'claude' && String(m.resultText || '').trim() !== ''
+                    ? m.resultText
+                    : (m.content || '').trim()
+                }
+                className="shrink-0 p-1 rounded-md text-gray-400 hover:text-gray-200 hover:bg-gray-800/80 disabled:opacity-30 disabled:pointer-events-none -mt-0.5"
+              />
             </div>
             {m.role === 'claude' ? (
               (m.html || showStreamingTail) ? (

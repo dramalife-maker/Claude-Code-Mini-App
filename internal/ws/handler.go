@@ -395,6 +395,13 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts) func(*fibe
 						mu.Unlock()
 
 						if !permDenied {
+							rt := strings.TrimSpace(e.ResultText)
+							if rt != "" {
+								if err := database.UpdateMessageResultText(msgID, rt); err != nil {
+									log.Printf("[ws] UpdateMessageResultText: %v", err)
+								}
+								broadcast(serverMsg{Type: "message_result_text", ID: msgID, Content: rt})
+							}
 							if err := database.FinalizeMessage(msgID); err != nil {
 								log.Printf("[ws] FinalizeMessage: %v", err)
 							}

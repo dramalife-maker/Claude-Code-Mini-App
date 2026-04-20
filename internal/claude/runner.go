@@ -103,7 +103,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
 
-	streamStartSent := false
+	var st streamState
 	lineCount := 0
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -132,7 +132,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			log.Printf("[claude]   └─ permission_denials=%d 項", len(e.PermissionDenials))
 		}
 
-		r.dispatch(e, cb, &streamStartSent)
+		r.dispatch(e, cb, &st)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -152,8 +152,15 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	return waitErr
 }
 
+// streamState 追蹤單次 Run 的串流進度（同一則 assistant 可能先 delta 再送完整 assistant，後者需略過）。
+type streamState struct {
+	streamStartSent bool
+	// gotStreamTextDelta 表示已透過 content_block_delta 送出至少一則文字（與下方 assistant 全文重複）
+	gotStreamTextDelta bool
+}
+
 // dispatch 將 Claude 專屬 StreamEvent 轉換為 agent.Event 送給 cb。
-func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, streamStartSent *bool) {
+func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *streamState) {
 	switch e.Type {
 	case "system":
 		if e.Subtype == "init" && e.SessionID != "" {
@@ -166,27 +173,31 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, streamStartSen
 		}
 		switch e.Event.Type {
 		case "content_block_start":
-			if e.Event.ContentBlock != nil && e.Event.ContentBlock.Type == "text" && !*streamStartSent {
-				*streamStartSent = true
+			if e.Event.ContentBlock != nil && e.Event.ContentBlock.Type == "text" && !st.streamStartSent {
+				st.streamStartSent = true
 				cb(agent.Event{Type: agent.EventStreamStart})
 			}
 		case "content_block_delta":
 			if e.Event.Delta != nil && e.Event.Delta.Type == "text_delta" && e.Event.Delta.Text != "" {
-				if !*streamStartSent {
-					*streamStartSent = true
+				if !st.streamStartSent {
+					st.streamStartSent = true
 					cb(agent.Event{Type: agent.EventStreamStart})
 				}
+				st.gotStreamTextDelta = true
 				cb(agent.Event{Type: agent.EventDelta, Text: e.Event.Delta.Text})
 			}
 		}
 
 	case "assistant":
+		// 已透過 content_block_delta 累積內容時，勿再送完整 assistant（與 delta 全文重複，中間易夾大量換行）。
+		// 僅有 content_block_start、尚無任何 text_delta 時仍須採用 assistant 全文。
+		if st.gotStreamTextDelta {
+			break
+		}
 		text := e.TextContent()
 		if text != "" {
-			if !*streamStartSent {
-				*streamStartSent = true
-				cb(agent.Event{Type: agent.EventStreamStart})
-			}
+			st.streamStartSent = true
+			cb(agent.Event{Type: agent.EventStreamStart})
 			cb(agent.Event{Type: agent.EventDelta, Text: text})
 		}
 
@@ -202,7 +213,11 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, streamStartSen
 			}
 			cb(agent.Event{Type: agent.EventPermDenied, Denials: denials, SessionID: e.SessionID})
 		}
-		cb(agent.Event{Type: agent.EventDone, SessionID: e.SessionID})
+		cb(agent.Event{
+			Type:       agent.EventDone,
+			SessionID:  e.SessionID,
+			ResultText: strings.TrimSpace(e.Result),
+		})
 	}
 }
 

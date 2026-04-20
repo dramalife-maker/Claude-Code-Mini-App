@@ -7,6 +7,94 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 )
 
+func TestDispatch_streamTextDeltaThenAssistantSkipped(t *testing.T) {
+	t.Parallel()
+	r := &Runner{}
+	var st streamState
+	var deltas []string
+	cb := func(e agent.Event) {
+		if e.Type == agent.EventDelta {
+			deltas = append(deltas, e.Text)
+		}
+	}
+	r.dispatch(&StreamEvent{
+		Type: "stream_event",
+		Event: &APIEvent{
+			Type: "content_block_delta",
+			Delta: &Delta{Type: "text_delta", Text: "hello"},
+		},
+	}, cb, &st)
+	r.dispatch(&StreamEvent{
+		Type:    "assistant",
+		Message: &AssistantMessage{Content: []MessageContent{{Type: "text", Text: "hello"}}},
+	}, cb, &st)
+	if len(deltas) != 1 || deltas[0] != "hello" {
+		t.Fatalf("應僅保留串流 delta，略過重複 assistant，got deltas=%v", deltas)
+	}
+}
+
+func TestDispatch_assistantOnlyNoStream(t *testing.T) {
+	t.Parallel()
+	r := &Runner{}
+	var st streamState
+	var deltas []string
+	cb := func(e agent.Event) {
+		if e.Type == agent.EventDelta {
+			deltas = append(deltas, e.Text)
+		}
+	}
+	r.dispatch(&StreamEvent{
+		Type:    "assistant",
+		Message: &AssistantMessage{Content: []MessageContent{{Type: "text", Text: "only-assistant"}}},
+	}, cb, &st)
+	if len(deltas) != 1 || deltas[0] != "only-assistant" {
+		t.Fatalf("無串流時應採用 assistant 全文，got deltas=%v", deltas)
+	}
+}
+
+func TestDispatch_resultEmitsDoneWithResultText(t *testing.T) {
+	t.Parallel()
+	r := &Runner{}
+	var st streamState
+	var done *agent.Event
+	cb := func(ev agent.Event) {
+		if ev.Type == agent.EventDone {
+			ev := ev
+			done = &ev
+		}
+	}
+	r.dispatch(&StreamEvent{Type: "result", SessionID: "sid-1", Result: "final CLI result line"}, cb, &st)
+	if done == nil || done.ResultText != "final CLI result line" || done.SessionID != "sid-1" {
+		t.Fatalf("EventDone 應帶入 Result 欄位，got %+v", done)
+	}
+}
+
+func TestDispatch_contentBlockStartWithoutDeltaThenAssistant(t *testing.T) {
+	t.Parallel()
+	r := &Runner{}
+	var st streamState
+	var deltas []string
+	cb := func(e agent.Event) {
+		if e.Type == agent.EventDelta {
+			deltas = append(deltas, e.Text)
+		}
+	}
+	r.dispatch(&StreamEvent{
+		Type: "stream_event",
+		Event: &APIEvent{
+			Type:         "content_block_start",
+			ContentBlock: &ContentBlock{Type: "text"},
+		},
+	}, cb, &st)
+	r.dispatch(&StreamEvent{
+		Type:    "assistant",
+		Message: &AssistantMessage{Content: []MessageContent{{Type: "text", Text: "fallback"}}},
+	}, cb, &st)
+	if len(deltas) != 1 || deltas[0] != "fallback" {
+		t.Fatalf("僅有 block_start、尚無 text_delta 時仍應採用 assistant，got deltas=%v", deltas)
+	}
+}
+
 func TestBuildClaudeArgs(t *testing.T) {
 	t.Parallel()
 

@@ -8,12 +8,13 @@ const (
 )
 
 type Message struct {
-	ID        int64  `json:"id"`
-	SessionID string `json:"session_id"`
-	Role      string `json:"role"`
-	Content   string `json:"content"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID         int64  `json:"id"`
+	SessionID  string `json:"session_id"`
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ResultText string `json:"result_text,omitempty"` // stream-json 最終 result 行文字（若有）；複製時優先
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
 }
 
 func (db *DB) AddMessage(sessionID, role, content string) error {
@@ -69,6 +70,18 @@ func (db *DB) AppendMessageContent(msgID int64, delta string) error {
 	return err
 }
 
+// UpdateMessageResultText 寫入 CLI 最終 result 欄位（僅在仍為 pending 時寫入）。
+func (db *DB) UpdateMessageResultText(msgID int64, resultText string) error {
+	if resultText == "" {
+		return nil
+	}
+	_, err := db.Exec(
+		`UPDATE messages SET result_text = ? WHERE id = ? AND status = ?`,
+		resultText, msgID, MessageStatusPending,
+	)
+	return err
+}
+
 // FinalizeMessage marks a message as done.
 func (db *DB) FinalizeMessage(msgID int64) error {
 	_, err := db.Exec(`UPDATE messages SET status = ? WHERE id = ?`, MessageStatusDone, msgID)
@@ -104,7 +117,7 @@ func (db *DB) ClearMessages(sessionID string) error {
 
 func (db *DB) ListMessages(sessionID string) ([]*Message, error) {
 	rows, err := db.Query(
-		`SELECT id, session_id, role, content, status, created_at FROM messages WHERE session_id = ? ORDER BY id ASC`,
+		`SELECT id, session_id, role, content, status, created_at, COALESCE(result_text, '') FROM messages WHERE session_id = ? ORDER BY id ASC`,
 		sessionID,
 	)
 	if err != nil {
@@ -115,7 +128,7 @@ func (db *DB) ListMessages(sessionID string) ([]*Message, error) {
 	var msgs []*Message
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &m.Status, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.SessionID, &m.Role, &m.Content, &m.Status, &m.CreatedAt, &m.ResultText); err != nil {
 			return nil, err
 		}
 		if m.Status == "" {
