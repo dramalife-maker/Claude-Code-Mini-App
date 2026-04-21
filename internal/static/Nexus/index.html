@@ -725,8 +725,11 @@ function ForwardModal({
   onClose,
   currentSessionId,
   onForwarded,
+  allSessions,
   usePermModeDropdown = false,
 }) {
+  const allSessionsRef = useRef(allSessions);
+  useEffect(() => { allSessionsRef.current = allSessions; }, [allSessions]);
   const [sessionsList, setSessionsList] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
@@ -740,6 +743,13 @@ function ForwardModal({
   const [forwardModel, setForwardModel] = useState('');
   const [busy, setBusy] = useState(false);
   const [errText, setErrText] = useState('');
+
+  useEffect(() => {
+    if (!payload) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [payload]);
 
   useEffect(() => {
     if (!payload) return;
@@ -757,24 +767,32 @@ function ForwardModal({
     setNewMode('default');
     setNewCliExtra('');
     setForwardModel('');
-    (async () => {
-      setLoadingSessions(true);
-      try {
-        const res = await apiFetch('/sessions');
-        if (!res.ok) throw new Error('無法載入會話列表');
-        const data = await res.json();
-        const list = Array.isArray(data) ? data : [];
-        const sorted = sortSessionsByWorkDirThenName(list);
-        setSessionsList(sorted);
-        const targets = sorted.filter((s) => s.id !== currentSessionId);
-        setSelectedId(targets[0]?.id ?? 'new');
-        setCopyFromId(sorted[0]?.id ?? '');
-      } catch (e) {
-        setErrText(e.message || String(e));
-      } finally {
-        setLoadingSessions(false);
-      }
-    })();
+    const inherited = allSessionsRef.current;
+    if (Array.isArray(inherited) && inherited.length > 0) {
+      setSessionsList(inherited);
+      const targets = inherited.filter((s) => s.id !== currentSessionId);
+      setSelectedId(targets[0]?.id ?? 'new');
+      setCopyFromId(inherited[0]?.id ?? '');
+    } else {
+      (async () => {
+        setLoadingSessions(true);
+        try {
+          const res = await apiFetch('/sessions');
+          if (!res.ok) throw new Error('無法載入會話列表');
+          const data = await res.json();
+          const list = Array.isArray(data) ? data : [];
+          const sorted = sortSessionsByWorkDirThenName(list);
+          setSessionsList(sorted);
+          const targets = sorted.filter((s) => s.id !== currentSessionId);
+          setSelectedId(targets[0]?.id ?? 'new');
+          setCopyFromId(sorted[0]?.id ?? '');
+        } catch (e) {
+          setErrText(e.message || String(e));
+        } finally {
+          setLoadingSessions(false);
+        }
+      })();
+    }
   }, [payload, currentSessionId]);
 
   useEffect(() => {
@@ -1054,7 +1072,7 @@ function ForwardModal({
 }
 
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false }) {
+function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePermModeDropdown = false }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -1186,26 +1204,71 @@ function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false })
     const out = [...list];
     const cmpName = (a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant');
     const cmpAgent = (a, b) => (a.agent_type || '').localeCompare(b.agent_type || '');
-    out.sort((a, b) => {
-      const wd = cmpSessionWorkDir(a, b);
-      if (wd !== 0) return wd;
-      switch (sessionSort) {
-        case 'last_active_asc':
-          return sessionLastActiveMs(a) - sessionLastActiveMs(b);
-        case 'last_active_desc':
-          return sessionLastActiveMs(b) - sessionLastActiveMs(a);
-        case 'name_asc':
-          return cmpName(a, b);
-        case 'name_desc':
-          return cmpName(b, a);
-        case 'agent_asc':
-          return cmpAgent(a, b) || cmpName(a, b);
-        default:
-          return 0;
+    if (sessionSort === 'last_active_asc' || sessionSort === 'last_active_desc') {
+      const groupMaxMs = new Map();
+      for (const s of out) {
+        const k = String(s.work_dir != null ? String(s.work_dir).trim() : '').toLowerCase();
+        const t = sessionLastActiveMs(s);
+        if (!groupMaxMs.has(k) || t > groupMaxMs.get(k)) groupMaxMs.set(k, t);
       }
-    });
+      const sign = sessionSort === 'last_active_desc' ? 1 : -1;
+      out.sort((a, b) => {
+        const ka = String(a.work_dir != null ? String(a.work_dir).trim() : '').toLowerCase();
+        const kb = String(b.work_dir != null ? String(b.work_dir).trim() : '').toLowerCase();
+        const gd = sign * ((groupMaxMs.get(kb) ?? 0) - (groupMaxMs.get(ka) ?? 0));
+        if (gd !== 0) return gd;
+        return sign * (sessionLastActiveMs(b) - sessionLastActiveMs(a));
+      });
+    } else {
+      out.sort((a, b) => {
+        const wd = cmpSessionWorkDir(a, b);
+        if (wd !== 0) return wd;
+        switch (sessionSort) {
+          case 'name_asc':  return cmpName(a, b);
+          case 'name_desc': return cmpName(b, a);
+          case 'agent_asc': return cmpAgent(a, b) || cmpName(a, b);
+          default: return 0;
+        }
+      });
+    }
     return out;
   }, [sessions, sessionSearch, sessionSort]);
+
+  const sortedSessionsForForward = useMemo(() => {
+    const out = [...(Array.isArray(sessions) ? sessions : [])];
+    const cmpName = (a, b) => (a.name || '').localeCompare(b.name || '', 'zh-Hant');
+    const cmpAgent = (a, b) => (a.agent_type || '').localeCompare(b.agent_type || '');
+    if (sessionSort === 'last_active_asc' || sessionSort === 'last_active_desc') {
+      const groupMaxMs = new Map();
+      for (const s of out) {
+        const k = String(s.work_dir != null ? String(s.work_dir).trim() : '').toLowerCase();
+        const t = sessionLastActiveMs(s);
+        if (!groupMaxMs.has(k) || t > groupMaxMs.get(k)) groupMaxMs.set(k, t);
+      }
+      const sign = sessionSort === 'last_active_desc' ? 1 : -1;
+      out.sort((a, b) => {
+        const ka = String(a.work_dir != null ? String(a.work_dir).trim() : '').toLowerCase();
+        const kb = String(b.work_dir != null ? String(b.work_dir).trim() : '').toLowerCase();
+        const gd = sign * ((groupMaxMs.get(kb) ?? 0) - (groupMaxMs.get(ka) ?? 0));
+        if (gd !== 0) return gd;
+        return sign * (sessionLastActiveMs(b) - sessionLastActiveMs(a));
+      });
+    } else {
+      out.sort((a, b) => {
+        const wd = cmpSessionWorkDir(a, b);
+        if (wd !== 0) return wd;
+        switch (sessionSort) {
+          case 'name_asc':  return cmpName(a, b);
+          case 'name_desc': return cmpName(b, a);
+          case 'agent_asc': return cmpAgent(a, b) || cmpName(a, b);
+          default: return 0;
+        }
+      });
+    }
+    return out;
+  }, [sessions, sessionSort]);
+
+  useEffect(() => { onSortedSessionsChange?.(sortedSessionsForForward); }, [sortedSessionsForForward]);
 
   const groupedSessions = useMemo(() => {
     if (!groupByDir) return null;
@@ -1222,9 +1285,14 @@ function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false })
       const kb = String(b[0]);
       if (ka === unset && kb !== unset) return 1;
       if (ka !== unset && kb === unset) return -1;
+      if (sessionSort === 'last_active_asc' || sessionSort === 'last_active_desc') {
+        const maxA = Math.max(0, ...a[1].map(sessionLastActiveMs));
+        const maxB = Math.max(0, ...b[1].map(sessionLastActiveMs));
+        if (maxA !== maxB) return sessionSort === 'last_active_desc' ? maxB - maxA : maxA - maxB;
+      }
       return ka.localeCompare(kb, undefined, { numeric: true, sensitivity: 'base' });
     });
-  }, [groupByDir, displaySessions]);
+  }, [groupByDir, displaySessions, sessionSort]);
 
   const sessionSearchActive = sessionSearch.trim().length > 0;
 
@@ -1546,7 +1614,7 @@ function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false })
 }
 
 // ── 聊天畫面 ─────────────────────────────────────────────────────────────────
-function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession }) {
+function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession, allSessions }) {
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Gemini 皆支援 mode 切換（Codex 暫無對應概念）
@@ -2277,6 +2345,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
         payload={forwardModal}
         onClose={() => setForwardModal(null)}
         currentSessionId={session.id}
+        allSessions={allSessions}
         usePermModeDropdown={usePermModeDropdown}
         onForwarded={({ messageKey, targetSession, jump }) => {
           setForwardHints((prev) => ({
@@ -2433,6 +2502,8 @@ function App() {
     }
   }, []);
 
+  const [sidebarSortedSessions, setSidebarSortedSessions] = useState([]);
+
   /** 側欄輪詢 /sessions 時同步目前聊天室 Session 的 git_branch、work_dir */
   const mergeSessionMetaFromList = useCallback((list) => {
     if (!Array.isArray(list)) return;
@@ -2489,8 +2560,8 @@ function App() {
   const renderAuthedLayout = () => {
     if (!isWideScreen) {
       return session
-        ? <ChatView session={session} onBack={() => setSession(null)} usePermModeDropdown onJumpToSession={setSession} />
-        : <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} usePermModeDropdown />;
+        ? <ChatView session={session} onBack={() => setSession(null)} usePermModeDropdown onJumpToSession={setSession} allSessions={sidebarSortedSessions} />
+        : <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} usePermModeDropdown />;
     }
 
     return (
@@ -2499,7 +2570,7 @@ function App() {
           style={{ width: sidebarWidthPx, flexShrink: 0 }}
           className="min-w-0 flex flex-col border-r border-cyan-500/10 bg-slate-950/50 backdrop-blur-sm"
         >
-          <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} />
+          <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} />
         </aside>
         <div
           role="separator"
@@ -2519,7 +2590,7 @@ function App() {
         </div>
         <main className="flex-1 min-w-0 min-h-0 bg-[#060a12]/90">
           {session ? (
-            <ChatView session={session} onBack={() => setSession(null)} showBack={false} fullHeight={false} onJumpToSession={setSession} />
+            <ChatView session={session} onBack={() => setSession(null)} showBack={false} fullHeight={false} onJumpToSession={setSession} allSessions={sidebarSortedSessions} />
           ) : (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-500 text-sm px-6">
               <div className="nexus-display text-lg font-semibold text-slate-400">選擇 Session</div>
