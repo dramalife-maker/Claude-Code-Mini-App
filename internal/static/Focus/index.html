@@ -111,9 +111,11 @@
       to { opacity: 1; transform: translateY(0); }
     }
     .focus-card-enter { animation: focus-fade-in 0.4s ease-out both; }
+    /* 用 Telegram 提供的視口高度變數；鍵盤彈出時自動縮小，解決 iOS 空白間隙問題 */
+    .h-app { height: var(--tg-viewport-height, 100svh); }
   </style>
 </head>
-<body class="h-screen focus-body">
+<body class="h-app focus-body">
 
 <script type="text/babel">
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } = React;
@@ -1398,7 +1400,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
   );
 
   return (
-    <div className="flex flex-col h-screen min-w-0 overflow-hidden">
+    <div className="flex flex-col h-app min-w-0 overflow-hidden">
       {/* 頂欄：玻璃質感 + 雙行標題 */}
       <div
         className="flex items-center justify-between px-4 py-3 shrink-0 border-b border-amber-500/10 bg-slate-950/40 backdrop-blur-xl"
@@ -2015,7 +2017,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   }, [input, state]);
 
   return (
-    <div className={`flex flex-col ${fullHeight ? 'h-screen' : 'h-full'}`}>
+    <div className={`flex flex-col ${fullHeight ? 'h-app' : 'h-full'}`}>
       {/* 頂欄：僅返回 + 標題（資訊移至下方狀態列） */}
       <header
         className="shrink-0 border-b border-amber-500/15 bg-zinc-950/40 backdrop-blur-md"
@@ -2396,7 +2398,7 @@ function PasswordView({ onSuccess }) {
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen px-4">
+    <div className="flex items-center justify-center min-h-full px-4">
       <div className="w-full max-w-sm space-y-5 rounded-3xl border border-amber-500/15 bg-slate-950/60 backdrop-blur-xl p-8 shadow-2xl shadow-amber-950/20">
         <div className="text-center space-y-1">
           <div className="focus-display text-2xl font-bold bg-gradient-to-r from-amber-100 to-orange-200 bg-clip-text text-transparent">Claude Code</div>
@@ -2547,7 +2549,7 @@ function App() {
 
   if (checking) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-app">
         <div className="flex items-center gap-2 text-amber-400/90 text-sm font-medium">
           <span className="inline-flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
           載入中…
@@ -2564,7 +2566,7 @@ function App() {
     }
 
     return (
-      <div className="h-screen flex bg-[#0c0a09] min-w-0">
+      <div className="h-app flex bg-[#0c0a09] min-w-0">
         <aside
           style={{ width: sidebarWidthPx, flexShrink: 0 }}
           className="min-w-0 flex flex-col border-r border-amber-500/10 bg-slate-950/50 backdrop-blur-sm"
@@ -2615,6 +2617,6 @@ function App() {
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 
-<div id="root" class="h-screen"></div>
+<div id="root" class="h-app"></div>
 </body>
 </html>

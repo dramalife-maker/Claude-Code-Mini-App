@@ -17,6 +17,8 @@
   <style>
     :root { --tg-content-safe-top: 0px; }
     body { background: #0f0f0f; color: #e5e5e5; font-family: system-ui, sans-serif; }
+    /* 用 Telegram 提供的視口高度變數；鍵盤彈出時自動縮小，解決 iOS 空白間隙問題 */
+    .h-app { height: var(--tg-viewport-height, 100svh); }
     /* 寬螢幕沿用 Tailwind text-sm（與聊天室一致）；僅窄螢幕強制 16px，避免 iOS 聚焦輸入時自動縮放 */
     @media (max-width: 767px) {
       input, textarea, select { font-size: 16px !important; }
@@ -77,7 +79,7 @@
     }
   </style>
 </head>
-<body class="h-screen">
+<body class="h-app">
 
 <script type="text/babel">
 const { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } = React;
@@ -1477,7 +1479,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
   );
 
   return (
-    <div className="flex flex-col h-screen min-w-0 overflow-hidden">
+    <div className="flex flex-col h-app min-w-0 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0"
            style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}>
@@ -2172,7 +2174,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   }, [input, state]);
 
   return (
-    <div className={`flex flex-col ${fullHeight ? 'h-screen' : 'h-full'}`}>
+    <div className={`flex flex-col ${fullHeight ? 'h-app' : 'h-full'}`}>
       {/* Header：app 版權限為單行（標籤＋下拉），並以頂部分隔線區隔會話資訊 */}
       <div className="flex flex-col gap-1.5 px-4 py-2 bg-gray-900 border-b border-gray-800 shrink-0 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
            style={{ paddingTop: 'calc(0.5rem + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}>
@@ -2554,7 +2556,7 @@ function PasswordView({ onSuccess }) {
   };
 
   return (
-    <div className="flex items-center justify-center h-screen">
+    <div className="flex items-center justify-center h-app">
       <div className="w-72 space-y-4">
         <div className="text-center">
           <div className="text-indigo-400 text-2xl font-bold mb-1">Claude Code</div>
@@ -2703,7 +2705,7 @@ function App() {
   }, []);
 
   if (checking) {
-    return <div className="flex items-center justify-center h-screen"><div className="text-gray-500 text-sm">載入中…</div></div>;
+    return <div className="flex items-center justify-center h-app"><div className="text-gray-500 text-sm">載入中…</div></div>;
   }
 
   const renderAuthedLayout = () => {
@@ -2714,7 +2716,7 @@ function App() {
     }
 
     return (
-      <div className="h-screen flex bg-black min-w-0">
+      <div className="h-app flex bg-black min-w-0">
         <aside
           style={{ width: sidebarWidthPx, flexShrink: 0 }}
           className="min-w-0 bg-gray-950 flex flex-col"
@@ -2764,6 +2766,6 @@ function App() {
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
 
-<div id="root" class="h-screen"></div>
+<div id="root" class="h-app"></div>
 </body>
 </html>
