@@ -119,6 +119,18 @@ function readStoredSidebarWidthPx() {
   return SIDEBAR_WIDTH_DEFAULT;
 }
 
+/** Session 列表「依工作目錄分組」開關（localStorage） */
+const SESSION_LIST_GROUP_BY_DIR_KEY = 'cc_session_list_group_by_dir';
+
+function readStoredGroupByDir() {
+  try {
+    const raw = localStorage.getItem(SESSION_LIST_GROUP_BY_DIR_KEY);
+    if (raw === '1' || raw === 'true') return true;
+    if (raw === '0' || raw === 'false') return false;
+  } catch (_) {}
+  return false;
+}
+
 function clampSidebarWidthPx(w) {
   const max = Math.max(SIDEBAR_WIDTH_MIN, Math.floor(window.innerWidth * 0.48));
   return Math.min(Math.max(Math.round(w), SIDEBAR_WIDTH_MIN), max);
@@ -1124,7 +1136,7 @@ function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false })
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
-  const [groupByDir, setGroupByDir] = useState(false);
+  const [groupByDir, setGroupByDir] = useState(() => readStoredGroupByDir());
   const [collapsedDirs, setCollapsedDirs] = useState(() => new Set());
   const [showForm, setShowForm]   = useState(false);
   const [newName, setNewName]     = useState('');
@@ -1438,7 +1450,15 @@ function SessionView({ onEnter, onSessionsLoaded, usePermModeDropdown = false })
           />
           <button
             type="button"
-            onClick={() => setGroupByDir((v) => !v)}
+            onClick={() => {
+              setGroupByDir((v) => {
+                const next = !v;
+                try {
+                  localStorage.setItem(SESSION_LIST_GROUP_BY_DIR_KEY, next ? '1' : '0');
+                } catch (_) {}
+                return next;
+              });
+            }}
             aria-pressed={groupByDir}
             title={groupByDir ? '關閉依目錄分組' : '依工作目錄分組'}
             aria-label={groupByDir ? '關閉依目錄分組' : '依工作目錄分組'}
