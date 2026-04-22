@@ -324,6 +324,18 @@ const SESSION_STATE_LABEL = {
 const INPUT_MODE_STORAGE_PREFIX = 'cc_input_mode:';
 const INPUT_MODE_LEGACY_KEY = 'cc_input_mode';
 
+/** 輸入框 `/` 觸發之 slash 命令清單（可選 `modes` 限定 inputMode，省略則全部顯示） */
+const SLASH_COMMANDS = [
+  {
+    command: '/reset',
+    description: '清除對話 context（等同 /clear）',
+  },
+  {
+    command: '/clear',
+    description: '清除對話 context（等同 /reset）',
+  },
+];
+
 function inputModeStorageKey(sessionId) {
   return INPUT_MODE_STORAGE_PREFIX + String(sessionId || '');
 }
@@ -1615,6 +1627,44 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
   );
 }
 
+/** Slash 命令選單（Nexus 主題） */
+function SlashCommandMenu({ items, activeIndex, onSelect }) {
+  const listRef = useRef(null);
+  useLayoutEffect(() => {
+    const root = listRef.current;
+    const el = root?.querySelector?.(`[data-slash-idx="${activeIndex}"]`);
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex, items]);
+  return (
+    <div
+      ref={listRef}
+      role="listbox"
+      aria-label="Slash 命令"
+      className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-48 overflow-y-auto app-scroll rounded-2xl border border-cyan-500/20 bg-slate-950/95 py-1 shadow-lg backdrop-blur-sm"
+    >
+      {items.map((c, i) => (
+        <button
+          key={c.command}
+          type="button"
+          role="option"
+          aria-selected={i === activeIndex}
+          data-slash-idx={i}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onSelect(c.command)}
+          className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-slate-800/90 ${
+            i === activeIndex ? 'bg-cyan-950/40' : ''
+          }`}
+        >
+          <span className="shrink-0 font-mono text-cyan-300">{c.command}</span>
+          <span className="min-w-0 flex-1 text-slate-400">{c.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ── 聊天畫面 ─────────────────────────────────────────────────────────────────
 function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession, allSessions }) {
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
@@ -1631,11 +1681,14 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const [shellRequest, setShellRequest] = useState(null);
   const [forwardModal, setForwardModal] = useState(null);
   const [forwardHints, setForwardHints] = useState({});
+  const [slashMenuItems, setSlashMenuItems] = useState([]);
+  const [slashActiveIdx, setSlashActiveIdx] = useState(0);
   const wsRef     = useRef(null);
   const bottomRef = useRef(null);
   const chatScrollRef = useRef(null);
   const chatNearBottomRef = useRef(true);
   const chatInputRef = useRef(null);
+  const slashInputWrapRef = useRef(null);
   const streamBuf = useRef('');
   const connGenRef = useRef(0);
   const activeSessionRef = useRef(session.id);
@@ -1705,6 +1758,8 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     setPermTools([]);
     setShellRequest(null);
     setInput('');
+    setSlashMenuItems([]);
+    setSlashActiveIdx(0);
     const im =
       session.input_mode === 'shell' || session.input_mode === 'agent'
         ? session.input_mode
@@ -1956,13 +2011,15 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     return true;
   }, [send, agentType, mode, inputMode, showPermModeSelect]);
 
-  const handleSend = () => {
-    const trimmed = input.trim();
+  const handleSend = (overrideText) => {
+    const raw = overrideText !== undefined && overrideText !== null ? String(overrideText) : input;
+    const trimmed = raw.trim();
     if (!trimmed || state !== 'IDLE') return;
     if (trimmed === '/reset' || trimmed === '/clear') {
       if (!flushPendingModes()) return;
       send({ type: 'reset_context' });
       setInput('');
+      setSlashMenuItems([]);
       return;
     }
     if (!flushPendingModes()) return;
@@ -1971,10 +2028,44 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       : send({ type: 'input', data: trimmed });
     if (!sent) return;
     setInput('');
+    setSlashMenuItems([]);
+  };
+
+  const handleSlashSelect = (command) => {
+    setInput(command);
+    setSlashMenuItems([]);
+    handleSend(command);
   };
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    const slashMenuOpen = slashMenuItems.length > 0;
+    if (slashMenuOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashActiveIdx((i) => Math.min(i + 1, slashMenuItems.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashActiveIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const item = slashMenuItems[slashActiveIdx];
+        if (item) handleSlashSelect(item.command);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSlashMenuItems([]);
+        return;
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
   };
 
   const handleAllowOnce = () => {
@@ -1998,6 +2089,36 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
 
   const isDisabled = state !== 'IDLE';
   const modeSwitchDisabled = state !== 'IDLE';
+  const slashMenuOpen = slashMenuItems.length > 0;
+
+  useEffect(() => {
+    if (isDisabled) setSlashMenuItems([]);
+  }, [isDisabled]);
+
+  useEffect(() => {
+    if (!slashMenuOpen) return;
+    const onDocMouseDown = (e) => {
+      if (slashInputWrapRef.current && !slashInputWrapRef.current.contains(e.target)) {
+        setSlashMenuItems([]);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [slashMenuOpen]);
+
+  useEffect(() => {
+    if (!input.startsWith('/')) {
+      setSlashMenuItems([]);
+      return;
+    }
+    const q = input.toLowerCase();
+    setSlashMenuItems(
+      SLASH_COMMANDS.filter(
+        (c) => (!c.modes || c.modes.includes(inputMode)) && c.command.toLowerCase().startsWith(q)
+      )
+    );
+    setSlashActiveIdx(0);
+  }, [inputMode]);
 
   const setInputModePersist = (mode) => {
     setInputMode(mode);
@@ -2315,21 +2436,46 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                 </svg>
               )}
             </button>
-            <textarea
-              ref={chatInputRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              disabled={isDisabled}
-              placeholder={
-                inputMode === 'shell'
-                  ? '輸入指令，例如 git status（左側圖示切回 Agent）'
-                  : '輸入與 Agent 對話…（左側圖示切到 Shell）'
-              }
-              rows={1}
-              className="flex-1 min-w-0 w-full resize-none overflow-y-auto app-scroll bg-slate-900/75 border border-cyan-500/15 rounded-2xl px-4 py-3 text-sm leading-relaxed text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400/45 focus:ring-1 focus:ring-cyan-500/20 disabled:opacity-40 min-h-[2.75rem] max-h-[min(40vh,12rem)] box-border shadow-inner shadow-black/20"
-            />
-            <button type="button" onClick={handleSend} disabled={isDisabled || !input.trim()}
+            <div className="relative flex-1 min-w-0" ref={slashInputWrapRef}>
+              {slashMenuOpen && (
+                <SlashCommandMenu
+                  items={slashMenuItems}
+                  activeIndex={slashActiveIdx}
+                  onSelect={handleSlashSelect}
+                />
+              )}
+              <textarea
+                ref={chatInputRef}
+                value={input}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setInput(value);
+                  if (value.startsWith('/')) {
+                    const q = value.toLowerCase();
+                    setSlashMenuItems(
+                      SLASH_COMMANDS.filter(
+                        (c) =>
+                          (!c.modes || c.modes.includes(inputMode)) &&
+                          c.command.toLowerCase().startsWith(q)
+                      )
+                    );
+                    setSlashActiveIdx(0);
+                  } else {
+                    setSlashMenuItems([]);
+                  }
+                }}
+                onKeyDown={handleKeyDown}
+                disabled={isDisabled}
+                placeholder={
+                  inputMode === 'shell'
+                    ? '輸入指令，例如 git status（左側圖示切回 Agent）'
+                    : '輸入與 Agent 對話…（左側圖示切到 Shell）'
+                }
+                rows={1}
+                className="flex-1 min-w-0 w-full resize-none overflow-y-auto app-scroll bg-slate-900/75 border border-cyan-500/15 rounded-2xl px-4 py-3 text-sm leading-relaxed text-slate-100 placeholder-slate-500 focus:outline-none focus:border-cyan-400/45 focus:ring-1 focus:ring-cyan-500/20 disabled:opacity-40 min-h-[2.75rem] max-h-[min(40vh,12rem)] box-border shadow-inner shadow-black/20"
+              />
+            </div>
+            <button type="button" onClick={() => handleSend()} disabled={isDisabled || !input.trim()}
               aria-label="送出"
               title="送出（Enter）"
               className="shrink-0 self-end flex items-center justify-center w-12 h-12 min-h-[2.75rem] rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-600 hover:brightness-110 disabled:opacity-30 text-slate-950 shadow-lg shadow-cyan-950/40 transition-all"
