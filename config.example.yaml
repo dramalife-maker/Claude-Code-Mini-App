@@ -25,6 +25,10 @@ web:
 # true = 跳過所有驗證（僅限本機開發）
 no_auth: false
 
+# 供其他 agent（MCP client）呼叫 /mcp 的固定 service token；留空則 /mcp 停用。
+# 用法：Authorization: Bearer <mcp_token>
+# mcp_token: "change-me-too"
+
 # 任務結束時的 Telegram 推播（錯誤／中斷）
 notify:
   on_error: true

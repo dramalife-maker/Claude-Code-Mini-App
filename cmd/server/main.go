@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"strings"
@@ -9,11 +10,13 @@ import (
 
 	fiberws "github.com/gofiber/contrib/websocket"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/api"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/auth"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/config"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
+	mymcp "github.com/jerry12122/Claude-Code-Mini-App/internal/mcp"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/version"
@@ -201,7 +204,17 @@ func main() {
 			return c.Next()
 		}
 
-		// 方式二：Web session cookie（限內網 IP）
+		// 方式二：MCP service token（固定密鑰，供其他 agent 呼叫 /mcp，不限 IP、不過期）
+		if cfg.McpToken != "" {
+			if h := c.Get("Authorization"); strings.HasPrefix(h, "Bearer ") {
+				token := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
+				if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.McpToken)) == 1 {
+					return c.Next()
+				}
+			}
+		}
+
+		// 方式三：Web session cookie（限內網 IP）
 		ip := auth.RealIP(c)
 		if !auth.IsAllowed(ip, allowedNets) {
 			log.Printf("[auth] 拒絕非內網 IP: %s", ip)
@@ -257,6 +270,14 @@ func main() {
 		PromptPreviewLen: cfg.Notify.PromptPreviewLen,
 	}
 	app.Get("/sessions/:id/ws", authMiddleware, fiberws.New(ws.NewHandler(database, cfg.BotToken, shellOpts, quotaSvc, notifyCfg)))
+
+	// MCP：讓其他 agent 透過 Streamable HTTP 操作本服務（需設定 mcp_token 才會啟用）
+	if cfg.McpToken != "" {
+		mcpHandler := mymcp.NewHTTPHandler(database, quotaSvc, cfg.Server.Port, cfg.McpToken)
+		app.Post("/mcp", authMiddleware, adaptor.HTTPHandler(mcpHandler))
+	} else {
+		log.Println("[mcp] mcp_token 未設定，/mcp 停用")
+	}
 
 	if cfg.NoAuth {
 		log.Println("⚠️  no_auth: true，已跳過 Telegram 驗證（僅限開發環境）")

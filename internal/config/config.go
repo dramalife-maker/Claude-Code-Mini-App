@@ -15,6 +15,8 @@ type Config struct {
 	DB             DB      `mapstructure:"db"`
 	Shell          Shell   `mapstructure:"shell"`
 	Notify         Notify  `mapstructure:"notify"`
+	// McpToken 供 MCP client（其他 agent）認證 /mcp endpoint 的固定 service token；空字串表示停用 /mcp。
+	McpToken string `mapstructure:"mcp_token"`
 }
 
 // Notify 任務結束時的 Telegram 推播設定。
