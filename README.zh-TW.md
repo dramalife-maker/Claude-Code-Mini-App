@@ -2,7 +2,7 @@
 
 > 用手機 Telegram 遠端操控伺服器上的 AI 編碼 CLI。**單一 Go 二進位**同時提供 REST、WebSocket 與 UI，無需獨立前端建置。
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
 
 [English](README.md)
 
@@ -27,6 +27,7 @@ cp config.example.yaml config.yaml   # 填 bot_token、whitelist_tg_ids
 - **權限流程** — Claude 遭拒時可「允許一次」或切換模式
 - **驗證** — Telegram `initData` + 白名單；可選內網密碼登入
 - **選用 Shell** — 於 `work_dir` 執行指令（預設關閉）
+- **MCP server** — 透過 Streamable HTTP（`POST /mcp`）讓其他 agent 操作 session（預設關閉）
 
 ## 為什麼用這個？
 
@@ -55,6 +56,7 @@ Telegram Mini App / 瀏覽器
 
 - 勿將含真實憑證的設定提交版本庫；生產環境勿開 `no_auth`。
 - **`shell.enabled`** 會讓已驗證使用者在主機上執行 shell — 僅在可信網路啟用。白名單規則：[`docs/spec/shell-allowlist-schema.md`](docs/spec/shell-allowlist-schema.md)。
+- **`mcp_token`** 持有者可完全操控所有 session（含 shell）— 比照 `bot_token` 等級保管，`/mcp` 僅在可信網路開放。
 
 ## 文件
 

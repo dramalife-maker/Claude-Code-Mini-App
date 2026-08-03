@@ -2,7 +2,7 @@
 
 > Remote AI coding CLIs from your phone via Telegram. **One Go binary** — REST, WebSocket, and UI, no separate frontend build.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
 
 [繁體中文](README.zh-TW.md)
 
@@ -27,6 +27,7 @@ cp config.example.yaml config.yaml   # set bot_token, whitelist_tg_ids
 - **Permissions** — Claude denial flow; approve once or switch mode from the UI
 - **Auth** — Telegram `initData` + allowlist; optional web login on private IPs
 - **Optional shell** — Run commands in `work_dir` (off by default)
+- **MCP server** — Expose sessions to other agents over Streamable HTTP (`POST /mcp`, off by default)
 
 ## Why this?
 
@@ -55,6 +56,7 @@ Each user message spawns a short-lived subprocess. Details: [`docs/spec/plan.md`
 
 - Keep real secrets out of git; never use `no_auth` in production.
 - **`shell.enabled`** grants shell access on the host to authenticated users — enable only on trusted networks. Allowlist rules: [`docs/spec/shell-allowlist-schema.md`](docs/spec/shell-allowlist-schema.md).
+- **`mcp_token`** grants full session control (including shell) to any client holding it — treat it like `bot_token` and only expose `/mcp` on trusted networks.
 
 ## Documentation
 
