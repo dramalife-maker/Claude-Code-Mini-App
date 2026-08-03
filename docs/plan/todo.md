@@ -14,4 +14,4 @@
 - [ ] 支援更多 AI 工具 (例如 OpenAI o1, deepseek 等，若有 CLI)
 - [ ] 檔案總管功能 (瀏覽 work_dir 檔案)
 - [ ] 系統資源監控 (CPU/Memory 狀態)
-- [ ] Kiro ACP：後端 `kiroacp` 保留；前端選項已隱藏，待上游修好 `session/load` 再啟用（`docs/plan/todo/kiro-output-markdown-and-acp.md`）
+- [x] Kiro ACP：前端已重新啟用（需 kiro-cli >= 2.16.0；`session/load` PoC 通過，見 `poc/kiro-cli/acp_same_cwd_resume_poc.js`／`docs/plan/done/kiro-output-markdown-and-acp.md`）

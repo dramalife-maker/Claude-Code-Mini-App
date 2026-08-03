@@ -950,7 +950,7 @@ function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = fa
   const age = formatQuotaAge(quota.updated_at);
   const title = [text, age, quota.error].filter(Boolean).join(' · ');
   const textCls = quota.error ? 'text-amber-400' : quota.stale ? 'text-gray-500' : 'text-gray-400';
-  const compactMaxW = String(agentType || '').toLowerCase() === 'kiro' ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
+  const compactMaxW = ['kiro', 'kiroacp'].includes(String(agentType || '').toLowerCase()) ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
   const chipCls = compact
     ? 'inline-flex items-center shrink-0 ' + compactMaxW + ' px-2 py-1 rounded-md bg-[oklch(0.24_0.02_264)] '
     : 'inline-flex items-center gap-0.5 min-w-0 max-w-full ';
@@ -1486,6 +1486,7 @@ function ForwardModal({
                     <option value="claude">Claude</option>
                     <option value="cursor">Cursor</option>
                     <option value="kiro">Kiro</option>
+                    <option value="kiroacp">Kiro ACP</option>
                     <option value="codex">Codex</option>
                   </select>
                 </div>
@@ -1514,7 +1515,7 @@ function ForwardModal({
                       agentType={newAgent}
                       value={newMode}
                       onChange={setNewMode}
-                      disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                      disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                       id="forward-new-perm-mode-classic"
                       className="w-full py-2 text-xs"
                     />
@@ -1523,7 +1524,7 @@ function ForwardModal({
                       agentType={newAgent}
                       value={newMode}
                       onChange={setNewMode}
-                      disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                      disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                     />
                   )}
                 </div>
@@ -1992,6 +1993,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
               <option value="claude">Claude</option>
               <option value="cursor">Cursor</option>
               <option value="kiro">Kiro</option>
+              <option value="kiroacp">Kiro ACP</option>
               <option value="codex">Codex</option>
             </select>
             <div className="min-w-0">
@@ -2002,7 +2004,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
                     agentType={newAgent}
                     value={newMode}
                     onChange={setNewMode}
-                    disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                    disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                     id="session-new-perm-mode"
                     className="flex-1 min-w-0 py-2"
                   />
@@ -2014,7 +2016,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
                     agentType={newAgent}
                     value={newMode}
                     onChange={setNewMode}
-                    disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                    disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                   />
                 </>
               )}
@@ -2307,7 +2309,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex 暫無對應概念）
-  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro';
+  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro' && agentType !== 'kiroacp';
   const [messages, setMessages]   = useState([]);
   const [input, setInput]         = useState('');
   const [state, setState]         = useState('IDLE');

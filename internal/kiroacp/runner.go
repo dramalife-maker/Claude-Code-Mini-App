@@ -6,6 +6,7 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
@@ -24,8 +25,8 @@ func init() {
 // 每則訊息 spawn 一次子進程：initialize → session/new|load → session/prompt → kill。
 // 不重用 internal/kiro 的 --list-sessions / TTY 行解析。
 //
-// 已知限制（POC 實測 kiro-cli 2.12.1）：session/load 目前會 timeout，
-// 因此跨進程 resume 可能失敗；首回合 session/new 與單回合 prompt 已驗證通過。
+// session/load：kiro-cli 2.16.0+ 跨進程 resume 已通過 PoC（同／異 cwd 皆可）；
+// 需 kiro-cli >= 2.16.0（2.12.1 會 timeout，見 GitHub kirodotdev/Kiro#6753）。
 type Runner struct{}
 
 func (r *Runner) Name() string { return agent.TypeKiroACP }
@@ -80,8 +81,14 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		cb(agent.Event{Type: agent.EventStreamStart})
 	}
 
+	// ACP v1：session/load 必須以 session/update 回放歷史。
+	// 本專案 UI／DB 已有完整對話，若把回放當成 EventDelta 會寫進「本則新回覆」，
+	// 造成複誦且隨回合雪球變大。load 期間關閉轉發；prompt 階段再開。
+	var acceptUpdates atomic.Bool
+	acceptUpdates.Store(true)
+
 	cl.onUpdate = func(body sessionUpdateBody) {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || !acceptUpdates.Load() {
 			return
 		}
 		switch body.SessionUpdate {
@@ -154,15 +161,19 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			Model:     modelSnapshot(sess),
 		})
 	} else {
-		// POC：session/load 在 2.12.1 常 timeout；設較短逾時並回明確錯誤。
+		// session/load：2.16.0 實測 ~0.5s；20s 足夠容錯慢磁碟／冷啟動。
+		// 關閉 update 轉發，避免歷史回放寫入本則回覆。
+		acceptUpdates.Store(false)
 		loadCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 		raw, err := cl.call(loadCtx, "session/load", map[string]any{
-			"sessionId": sessionID,
-			"cwd":       cwd,
+			"sessionId":  sessionID,
+			"cwd":        cwd,
+			"mcpServers": []any{},
 		})
 		cancel()
+		acceptUpdates.Store(true)
 		if err != nil {
-			err = fmt.Errorf("kiroacp: session/load 失敗（POC 已知限制，跨進程 resume 可能不可用）: %w", err)
+			err = fmt.Errorf("kiroacp: session/load 失敗（需 kiro-cli >= 2.16.0）: %w", err)
 			log.Printf("[kiroacp] %v", err)
 			cb(agent.Event{Type: agent.EventError, Err: err})
 			return err

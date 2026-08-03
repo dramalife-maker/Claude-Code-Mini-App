@@ -414,7 +414,7 @@ function formatKiroCreditUsed(displayText) {
 
 function formatQuotaCompact(displayText, agentType) {
   if (!displayText || displayText === '—') return '';
-  if (String(agentType || '').toLowerCase() === 'kiro') {
+  if (String(agentType || '').toLowerCase() === 'kiro' || String(agentType || '').toLowerCase() === 'kiroacp') {
     const kiro = formatKiroCreditUsed(displayText);
     if (kiro) return kiro;
   }
@@ -562,7 +562,7 @@ function permModeOptionsFor(agentType) {
       { value: 'yolo', label: 'YOLO（全自動）⚠️' },
     ];
   }
-  if (t === 'kiro' || t === 'codex') {
+  if (t === 'kiro' || t === 'kiroacp' || t === 'codex') {
     return [{ value: 'default', label: '預設（固定）' }];
   }
   return [
@@ -764,6 +764,7 @@ function getAgentBadgeClass(agentType) {
     codex: 'bg-slate-950/40 text-slate-200 ring-1 ring-slate-500/20',
     antigravity: 'bg-sky-950/45 text-sky-200 ring-1 ring-sky-400/25',
     kiro: 'bg-purple-950/50 text-purple-200 ring-1 ring-purple-400/25',
+    kiroacp: 'bg-fuchsia-950/50 text-fuchsia-200 ring-1 ring-fuchsia-400/25',
   };
   return map[t] || 'bg-zinc-700/50 text-zinc-200 ring-1 ring-white/10';
 }
@@ -793,7 +794,8 @@ const AGENT_BADGE_INLINE_SVG = {
 };
 
 function AgentBadgeIcon({ agentType }) {
-  const t = String(agentType || 'claude').toLowerCase();
+  const t0 = String(agentType || 'claude').toLowerCase();
+  const t = t0 === 'kiroacp' ? 'kiro' : t0;
   const inline = AGENT_BADGE_INLINE_SVG[t];
   if (inline) {
     return (
@@ -848,7 +850,7 @@ function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = fa
   const age = formatQuotaAge(quota.updated_at);
   const title = [text, age, quota.error].filter(Boolean).join(' · ');
   const textCls = quota.error ? 'text-amber-300' : quota.stale ? 'text-zinc-600' : 'text-zinc-500';
-  const compactMaxW = String(agentType || '').toLowerCase() === 'kiro' ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
+  const compactMaxW = ['kiro', 'kiroacp'].includes(String(agentType || '').toLowerCase()) ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
   const chipCls = compact
     ? 'inline-flex items-center shrink-0 ' + compactMaxW + ' px-1.5 py-0.5 rounded-md border border-zinc-700/45 bg-zinc-900/45 '
     : 'inline-flex items-center gap-0.5 min-w-0 max-w-full ';
@@ -1275,6 +1277,7 @@ function ForwardModal({
                     <option value="claude">Claude</option>
                     <option value="cursor">Cursor</option>
                     <option value="kiro">Kiro</option>
+                    <option value="kiroacp">Kiro ACP</option>
                     <option value="codex">Codex</option>
                   </select>
                 </div>
@@ -1303,7 +1306,7 @@ function ForwardModal({
                       agentType={newAgent}
                       value={newMode}
                       onChange={setNewMode}
-                      disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                      disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                       id="forward-new-perm-mode-focus"
                       className="w-full py-2 text-xs"
                     />
@@ -1312,7 +1315,7 @@ function ForwardModal({
                       agentType={newAgent}
                       value={newMode}
                       onChange={setNewMode}
-                      disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                      disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                     />
                   )}
                 </div>
@@ -1819,6 +1822,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
               <option value="claude">Claude</option>
               <option value="cursor">Cursor</option>
               <option value="kiro">Kiro</option>
+              <option value="kiroacp">Kiro ACP</option>
               <option value="codex">Codex</option>
             </select>
             <div className="min-w-0">
@@ -1829,7 +1833,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
                     agentType={newAgent}
                     value={newMode}
                     onChange={setNewMode}
-                    disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                    disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                     id="session-new-perm-mode-focus"
                     className="flex-1 min-w-0 py-2"
                   />
@@ -1841,7 +1845,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
                     agentType={newAgent}
                     value={newMode}
                     onChange={setNewMode}
-                    disabled={newAgent === 'codex' || newAgent === 'kiro'}
+                    disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
                   />
                 </>
               )}
@@ -2038,7 +2042,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex 暫無對應概念）
-  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro';
+  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro' && agentType !== 'kiroacp';
   const [messages, setMessages]   = useState([]);
   const [input, setInput]         = useState('');
   const [state, setState]         = useState('IDLE');

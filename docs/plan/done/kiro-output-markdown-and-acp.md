@@ -1,8 +1,8 @@
 # Kiro 回覆可讀性與 ACP 調查結論
 
-> 狀態：調查完成；問題 A parser 已修；**ACP POC 通過並已整合實驗 agent `kiroacp`**（`session/load` resume 仍為已知限制）  
-> 日期：2026-07-14（調查）／2026-07-17（ACP POC + 整合）  
-> 實測環境：`kiro-cli-chat 2.12.1`、SQLite `claude-miniapp.db`  
+> 狀態：調查完成；問題 A parser 已修；**ACP 已整合並重新啟用**（`session/load` 在 kiro-cli 2.16.0+ 通過）  
+> 日期：2026-07-14（調查）／2026-07-17（ACP POC + 整合）／2026-08-03（resume 複測通過、前端重啟用）  
+> 實測環境：`kiro-cli-chat 2.12.1`（初測）→ `2.16.0`（跨進程 resume 通過）、SQLite `claude-miniapp.db`  
 > 關聯：`docs/spec/kiro-cli.md`、`internal/kiro/`、`internal/kiroacp/`、`poc/kiro-cli/`
 
 ---
@@ -185,15 +185,15 @@ ACP 分開工具與文字後，若不接線，結構化工具事件仍會落地�
 1. ~~在已登入環境跑 ACP POC~~ → 已通過（見 `poc/kiro-cli/acp_roundtrip.js`）。
 2. ~~整合實驗 runner~~ → agent type `kiroacp`（`internal/kiroacp`）。
 3. **對照測試**：新建 Session 選 **Kiro ACP** vs **Kiro**，同 prompt 比 Markdown／工具雜訊。
-4. **調查／修復 `session/load`**：目前跨進程 resume timeout；多輪對話前需解此限制（或改同進程常駐）。
+4. ~~調查／修復 `session/load`~~ → 2.16.0 跨進程同 cwd resume 通過（`poc/kiro-cli/acp_same_cwd_resume_poc.js`）；前端選項已重啟用。
 5. 穩定後更新 `docs/spec/kiro-cli.md`，文件歸檔 `docs/plan/done/`。
 
 ### 如何手動對照
 
-1. `kiro-cli whoami` 確認已登入；重啟 miniapp server。
+1. `kiro-cli whoami` 確認已登入；`kiro-cli --version` ≥ 2.16.0；重啟 miniapp server。
 2. 新建 Session → agent **Kiro ACP**，work_dir 指到真實 repo。
 3. 請它讀檔並用 code fence 貼程式碼：正文應無 `Reading file:`，且應有 `` ``` ``。
-4. 第二則訊息若失敗並提示 `session/load`，即為已知 resume 限制。
+4. 第二則訊息應能 `session/load` 延續對話（密語／上下文記憶）。
 
 ---
 
@@ -202,4 +202,4 @@ ACP 分開工具與文字後，若不接線，結構化工具事件仍會落地�
 - 不上小模型做全文 Markdown 重寫。
 - 不以 heuristic 當長期治本（ACP 為主路徑）。
 - 不強制所有 agent 改常駐進程；Claude 仍維持 spawn 模式。
-- **暫緩**：依賴 `session/load` 的多輪 ACP（待上游或改常駐進程）。
+- ~~暫緩：依賴 `session/load` 的多輪 ACP~~ → 已解除（2.16.0+）。
