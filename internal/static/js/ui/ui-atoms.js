@@ -387,7 +387,7 @@ function sessionStatusDotClass(s) {
   const st = String(s && s.status || '').toLowerCase();
   if (st === 'running') return 'ra-status-dot running';
   if (st === 'awaiting_confirm') return 'ra-status-dot awaiting';
-  if (st === 'idle' || st === '') return '';
+  if (st === 'idle' || st === '') return 'ra-status-dot idle';
   return 'ra-status-dot done';
 }
 

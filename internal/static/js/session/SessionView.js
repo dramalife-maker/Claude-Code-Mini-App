@@ -231,15 +231,21 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
     setShowForm(true);
   };
 
-  const renderSessionRow = (s, groupIndent) => {
+  const renderSessionRow = (s) => {
     const active = activeSessionId != null && s.id === activeSessionId;
     const extraArgN = Array.isArray(s.cli_extra_args) ? s.cli_extra_args.length : 0;
+    const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
+    // ponytail: 單行放不下權限模式 chip，只保留危險模式的警示符號
+    const danger = permModeIsDanger(s.permission_mode);
+    const rowTitle = [agentLabel, s.git_branch, extraArgN > 0 ? `+${extraArgN} CLI 引數` : '']
+      .filter(Boolean)
+      .join(' · ');
     return (
-      <div key={s.id} className={groupIndent ? '' : ''}>
-        <div
-          onClick={() => renamingId !== s.id && onEnter(s)}
-          className={'ra-session-card group/card' + (active ? ' active' : '')}
-        >
+      <div
+        key={s.id}
+        onClick={() => renamingId !== s.id && onEnter(s)}
+        className={'ra-session-card group/card' + (active ? ' active' : '')}
+      >
           {renamingId === s.id ? (
             <input
               ref={renameInputRef}
@@ -251,68 +257,51 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
               className="w-full bg-[oklch(0.19_0.02_264)] border border-violet-500 rounded-lg px-2 py-1 text-sm text-[oklch(0.94_0.01_264)] focus:outline-none"
             />
           ) : (
-            <>
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="flex-1 min-w-0 text-[13.5px] font-semibold text-[oklch(0.92_0.01_264)] truncate leading-snug">
-                  {s.name || '未命名'}
-                </span>
-                {String(s.status || '').toLowerCase() !== 'idle' && String(s.status || '') !== '' ? (
-                  <span className={sessionStatusDotClass(s)} title={sessionStatusLabel(s)} />
-                ) : null}
-                <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
-                  <button
-                    type="button"
-                    onClick={(e) => startRename(s, e)}
-                    aria-label="重新命名"
-                    title="重新命名"
-                    className="text-[oklch(0.5_0.01_264)] hover:text-violet-400 p-1 rounded transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5" aria-hidden="true">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => del(s.id, e)}
-                    aria-label="刪除"
-                    title="刪除"
-                    className="text-[oklch(0.5_0.01_264)] hover:text-red-400 p-1 rounded transition-colors inline-flex items-center justify-center"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
-                      <path d="M3 6h18" />
-                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                      <path d="M10 11v6" />
-                      <path d="M14 11v6" />
-                    </svg>
-                  </button>
-                </div>
+            <div className="flex items-center gap-2 min-w-0" title={rowTitle}>
+              <span className={`inline-flex shrink-0 items-center justify-center w-[22px] h-[22px] rounded-[6px] ${getAgentBadgeClass(s.agent_type)}`} title={agentLabel}>
+                <AgentBadgeIcon agentType={s.agent_type} />
+              </span>
+              <span className="flex-1 min-w-0 text-[13.5px] font-semibold text-[oklch(0.92_0.01_264)] truncate leading-snug">
+                {s.name || '未命名'}
+              </span>
+              {danger ? (
+                <span className="shrink-0 text-[11px] text-amber-400" title={PERM_MODE_LABEL[s.permission_mode] || s.permission_mode}>⚠</span>
+              ) : null}
+              <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={(e) => startRename(s, e)}
+                  aria-label="重新命名"
+                  title="重新命名"
+                  className="text-[oklch(0.5_0.01_264)] hover:text-violet-400 p-1 rounded transition-colors"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => del(s.id, e)}
+                  aria-label="刪除"
+                  title="刪除"
+                  className="text-[oklch(0.5_0.01_264)] hover:text-red-400 p-1 rounded transition-colors inline-flex items-center justify-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5" aria-hidden="true">
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                    <path d="M10 11v6" />
+                    <path d="M14 11v6" />
+                  </svg>
+                </button>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                <span className={`inline-flex items-center gap-1 shrink-0 text-[11px] px-[7px] py-[3px] rounded-md font-semibold ${getAgentBadgeClass(s.agent_type)}`}>
-                  <AgentBadgeIcon agentType={s.agent_type} />
-                  {AGENT_LABEL[s.agent_type] || s.agent_type || 'claude'}
-                </span>
-                {s.git_branch ? (
-                  <span className="inline-flex items-center text-[11px] px-[7px] py-[3px] rounded-md text-[oklch(0.6_0.01_264)] bg-[oklch(0.24_0.02_264)] truncate max-w-[9rem]" title={s.git_branch}>
-                    {s.git_branch}
-                  </span>
-                ) : null}
-                {extraArgN > 0 ? (
-                  <span className="inline-flex items-center text-[11px] px-[7px] py-[3px] rounded-md text-[oklch(0.5_0.01_264)] bg-[oklch(0.24_0.02_264)]" title="自訂 CLI 引數">
-                    +{extraArgN}
-                  </span>
-                ) : null}
-                {((s.agent_type || 'claude') !== 'codex') && s.permission_mode && s.permission_mode !== 'default' ? (
-                  <span className="inline-flex items-center text-[11px] px-[7px] py-[3px] rounded-md text-[oklch(0.6_0.01_264)] bg-[oklch(0.24_0.02_264)]" title="權限模式">
-                    {PERM_MODE_LABEL[s.permission_mode] || s.permission_mode}
-                  </span>
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
+              <span
+                className={sessionStatusDotClass(s) + ' sm:group-hover/card:opacity-0 transition-opacity'}
+                title={sessionStatusLabel(s)}
+              />
+            </div>
+        )}
       </div>
     );
   };
@@ -462,41 +451,55 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
           groupedSessions.map(([dirKey, dirSessions]) => {
             const expanded = sessionSearchActive || !collapsedDirs.has(dirKey);
             const shortLabel = workDirGroupShortLabel(dirKey);
+            // 同一 work_dir 即同一 git working tree，分支必然相同，取第一筆即可
+            const dirBranch = (dirSessions.find((s) => s.git_branch) || {}).git_branch;
             return (
               <div key={dirKey} className="space-y-0">
-                <div className="flex w-full min-w-0 items-center gap-1 px-2 py-1.5 mt-2 transition-colors hover:bg-violet-500/[0.06]">
+                <div className="group/dir flex w-full min-w-0 items-center gap-1 px-2 py-1.5 mt-2 transition-colors hover:bg-violet-500/[0.06]">
                   <button
                     type="button"
                     onClick={() => toggleDirCollapsed(dirKey)}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-[oklch(0.13_0.02_264)]"
+                    className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-1 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 focus-visible:ring-offset-1 focus-visible:ring-offset-[oklch(0.13_0.02_264)]"
                   >
-                    <span className="shrink-0 text-[oklch(0.5_0.01_264)] w-4 text-center text-[10px]" aria-hidden>
+                    <span className="shrink-0 text-[oklch(0.5_0.01_264)] w-3 text-center text-[10px]" aria-hidden>
                       {expanded ? '▾' : '▸'}
                     </span>
+                    <span className="shrink-0 text-[13px] leading-none" aria-hidden>📁</span>
                     <span
-                      className="min-w-0 flex-1 truncate text-[12px] uppercase tracking-[0.4px] text-[oklch(0.6_0.01_264)] font-bold"
-                      title={dirKey}
+                      className="min-w-0 flex-1 truncate text-[12.5px] text-[oklch(0.72_0.01_264)] font-bold"
+                      title={dirKey + (expanded ? '' : `（${dirSessions.length}）`)}
                     >
                       {shortLabel}
                     </span>
-                    <span className="shrink-0 rounded-full bg-[oklch(0.22_0.02_264)] px-2 py-0.5 text-[11px] font-mono text-[oklch(0.45_0.01_264)]">
-                      {dirSessions.length}
-                    </span>
                   </button>
+                  {dirBranch ? (
+                    <span
+                      className="ra-mono shrink-0 max-w-[8rem] truncate text-[11px] text-[oklch(0.5_0.01_264)]"
+                      title={dirBranch}
+                    >
+                      {dirBranch}
+                    </span>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => openNewSessionForDir(dirKey)}
-                    className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-violet-400 hover:bg-violet-500/10 hover:text-violet-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                    aria-label="在此目錄建立新 Session"
+                    title="在此目錄建立新 Session"
+                    className="shrink-0 rounded-md px-1.5 py-1 text-[13px] leading-none font-semibold text-violet-400 hover:bg-violet-500/10 hover:text-violet-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50 sm:opacity-0 sm:group-hover/dir:opacity-100 transition-opacity"
                   >
-                    + 新增
+                    ＋
                   </button>
                 </div>
-                {expanded && dirSessions.map((s) => renderSessionRow(s, true))}
+                {expanded && (
+                  <div className="ml-[18px] border-l border-[oklch(0.26_0.02_264)] pl-2.5">
+                    {dirSessions.map((s) => renderSessionRow(s))}
+                  </div>
+                )}
               </div>
             );
           })
         ) : (
-          displaySessions.map((s) => renderSessionRow(s, false))
+          displaySessions.map((s) => renderSessionRow(s))
         )}
       </div>
     </div>
