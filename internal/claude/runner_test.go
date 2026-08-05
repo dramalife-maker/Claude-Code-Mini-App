@@ -285,6 +285,22 @@ func TestBuildClaudeArgs(t *testing.T) {
 				"--allowedTools", "Edit",
 			},
 		},
+		{
+			name: "model 與 effort",
+			opts: agent.RunOptions{
+				ExtraArgs: map[string]string{
+					agent.ArgPermissionMode: "default",
+					agent.ArgModel:          "sonnet",
+					agent.ArgEffort:         "high",
+				},
+			},
+			want: []string{
+				"-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+				"--permission-mode", "default",
+				"--model", "sonnet",
+				"--effort", "high",
+			},
+		},
 	}
 
 	for _, tt := range tests {

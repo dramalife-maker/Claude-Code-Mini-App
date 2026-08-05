@@ -168,6 +168,32 @@ func (d *deps) setPermissionMode(_ context.Context, _ *gomcp.CallToolRequest, in
 	return nil, okOut{OK: true}, nil
 }
 
+// --- set_model / set_effort ---
+
+type setModelIn struct {
+	SessionID string `json:"session_id"`
+	Model     string `json:"model" jsonschema:"要用的 model id/別名；空字串＝不指定，交由 CLI 用預設"`
+}
+
+func (d *deps) setModel(_ context.Context, _ *gomcp.CallToolRequest, in setModelIn) (*gomcp.CallToolResult, okOut, error) {
+	if err := d.reg.SetModel(in.SessionID, in.Model); err != nil {
+		return nil, okOut{}, err
+	}
+	return nil, okOut{OK: true}, nil
+}
+
+type setEffortIn struct {
+	SessionID string `json:"session_id"`
+	Effort    string `json:"effort" jsonschema:"low/medium/high/xhigh/max；空字串＝不指定，交由 CLI 用預設；cursor 不支援會被忽略"`
+}
+
+func (d *deps) setEffort(_ context.Context, _ *gomcp.CallToolRequest, in setEffortIn) (*gomcp.CallToolResult, okOut, error) {
+	if err := d.reg.SetEffort(in.SessionID, in.Effort); err != nil {
+		return nil, okOut{}, err
+	}
+	return nil, okOut{OK: true}, nil
+}
+
 // --- interrupt ---
 
 func (d *deps) interrupt(_ context.Context, _ *gomcp.CallToolRequest, in sessionIDIn) (*gomcp.CallToolResult, okOut, error) {
@@ -226,6 +252,8 @@ func registerTools(s *gomcp.Server, d *deps) {
 	gomcp.AddTool(s, &gomcp.Tool{Name: "get_status", Description: "查詢 session 目前狀態與累積回覆內容"}, d.getStatus)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "respond_permission", Description: "回覆待授權的工具請求（allow_once/deny_once）"}, d.respondPermission)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "set_permission_mode", Description: "切換 session 的權限模式"}, d.setPermissionMode)
+	gomcp.AddTool(s, &gomcp.Tool{Name: "set_model", Description: "切換 session 的 model"}, d.setModel)
+	gomcp.AddTool(s, &gomcp.Tool{Name: "set_effort", Description: "切換 session 的 effort（推理強度）"}, d.setEffort)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "interrupt", Description: "中斷目前執行中的任務"}, d.interrupt)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "shell_exec", Description: "非阻塞執行 shell 指令；立刻回傳，用 get_status 輪詢輸出"}, d.shellExec)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "get_quota", Description: "查詢 provider 用量配額"}, d.getQuota)

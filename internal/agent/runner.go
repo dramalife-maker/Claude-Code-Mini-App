@@ -98,4 +98,10 @@ const (
 	// Cursor Agent / Gemini 共用
 	ArgModel = "model" // --model <m>
 	ArgForce = "force" // Cursor: --force，值為 "true"/"1" 表示開啟
+
+	// ArgEffort 為推理強度（low/medium/high/xhigh/max）。
+	// Claude/Kiro/KiroACP：--effort <level>
+	// Codex：轉成 -c model_reasoning_effort=<level>（無獨立旗標）
+	// Cursor：不支援獨立旗標，忽略
+	ArgEffort = "effort"
 )

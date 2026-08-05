@@ -40,6 +40,9 @@ type Session struct {
 	// ActiveModelSource 對應 internal/model.Source 字串。
 	ActiveModelSource string `json:"active_model_source,omitempty"`
 	ActiveModelAt     string `json:"active_model_at,omitempty"`
+	// Model/Effort 為使用者要求值（空字串＝不指定，交給 CLI 用預設）。
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
 }
 
 func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string, inputMode string) (*Session, error) {
@@ -76,14 +79,14 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 
 func (db *DB) GetSession(id string) (*Session, error) {
 	row := db.QueryRow(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at FROM sessions WHERE id = ?`, id,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort FROM sessions WHERE id = ?`, id,
 	)
 	return scanSession(row)
 }
 
 func (db *DB) ListSessions() ([]*Session, error) {
 	rows, err := db.Query(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at FROM sessions ORDER BY last_active DESC`,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort FROM sessions ORDER BY last_active DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -204,6 +207,24 @@ func (db *DB) UpdateSessionActiveModel(id, modelName, source string) error {
 	return err
 }
 
+// UpdateModel 更新 session 要求的 model（空字串＝不指定）。
+func (db *DB) UpdateModel(id, model string) error {
+	_, err := db.Exec(
+		`UPDATE sessions SET model = ?, last_active = datetime('now') WHERE id = ?`,
+		model, id,
+	)
+	return err
+}
+
+// UpdateEffort 更新 session 要求的 effort（空字串＝不指定）。
+func (db *DB) UpdateEffort(id, effort string) error {
+	_, err := db.Exec(
+		`UPDATE sessions SET effort = ?, last_active = datetime('now') WHERE id = ?`,
+		effort, id,
+	)
+	return err
+}
+
 // UpdateSessionInputMode sets input_mode to agent or shell.
 func (db *DB) UpdateSessionInputMode(id, mode string) error {
 	if mode != "agent" && mode != "shell" {
@@ -227,7 +248,7 @@ func scanSession(s scanner) (*Session, error) {
 	err := s.Scan(
 		&sess.ID, &sess.AgentType, &sess.AgentSessionID, &sess.Name, &sess.Description,
 		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status, &extraJSON, &sess.InputMode, &sess.ShellPending,
-		&sess.ActiveModel, &sess.ActiveModelSource, &sess.ActiveModelAt,
+		&sess.ActiveModel, &sess.ActiveModelSource, &sess.ActiveModelAt, &sess.Model, &sess.Effort,
 	)
 	if err != nil {
 		return nil, err

@@ -91,6 +91,40 @@ func TestBuildArgsResume(t *testing.T) {
 	}
 }
 
+func TestBuildArgsModelAndEffort(t *testing.T) {
+	args := buildArgs(agent.RunOptions{
+		Prompt:  "hello",
+		WorkDir: "/tmp/wd",
+		ExtraArgs: map[string]string{
+			agent.ArgModel:  "gpt-5.5",
+			agent.ArgEffort: "high",
+		},
+	})
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"-m gpt-5.5", "-c model_reasoning_effort=high"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in %q", want, joined)
+		}
+	}
+}
+
+func TestBuildArgsResumeModelAndEffort(t *testing.T) {
+	args := buildArgs(agent.RunOptions{
+		Prompt:    "continue",
+		SessionID: "thread-uuid",
+		ExtraArgs: map[string]string{
+			agent.ArgModel:  "gpt-5.5",
+			agent.ArgEffort: "high",
+		},
+	})
+	joined := strings.Join(args, " ")
+	for _, want := range []string{"-m gpt-5.5", "-c model_reasoning_effort=high"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in %q", want, joined)
+		}
+	}
+}
+
 func TestActivityLabel(t *testing.T) {
 	if ActivityLabel("command_execution") != "執行指令中…" {
 		t.Fatal("command_execution label")

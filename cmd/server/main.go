@@ -12,16 +12,66 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/api"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/auth"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/claude"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/codex"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/config"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/cursor"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/kiro"
 	mymcp "github.com/jerry12122/Claude-Code-Mini-App/internal/mcp"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/version"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/ws"
 )
+
+// syncModelOptions 啟動時抓各 agent 目前可用的模型清單並同步進 model_options 表。
+// 任一 agent 取得失敗只記 log、不影響其他 agent，也不擋伺服器啟動。
+func syncModelOptions(database *db.DB) {
+	apply := func(agentType string, live []db.ModelOption, err error) {
+		if err != nil {
+			log.Printf("[startup] 取得 %s model 清單失敗，略過: %v", agentType, err)
+			return
+		}
+		if err := database.SyncModelOptions(agentType, live); err != nil {
+			log.Printf("[startup] SyncModelOptions(%s) 失敗: %v", agentType, err)
+		}
+	}
+
+	claudeOpts := make([]db.ModelOption, 0)
+	for _, e := range claude.ModelOptions() {
+		claudeOpts = append(claudeOpts, db.ModelOption{ModelID: e.ModelID, Label: e.Label})
+	}
+	apply(agent.TypeClaude, claudeOpts, nil)
+
+	ctx := context.Background()
+
+	cursorEntries, err := cursor.FetchModelOptions(ctx)
+	cursorOpts := make([]db.ModelOption, 0, len(cursorEntries))
+	for _, e := range cursorEntries {
+		cursorOpts = append(cursorOpts, db.ModelOption{ModelID: e.ModelID, Label: e.Label})
+	}
+	apply(agent.TypeCursor, cursorOpts, err)
+
+	codexEntries, err := codex.FetchModelOptions()
+	codexOpts := make([]db.ModelOption, 0, len(codexEntries))
+	for _, e := range codexEntries {
+		codexOpts = append(codexOpts, db.ModelOption{ModelID: e.ModelID, Label: e.Label})
+	}
+	apply(agent.TypeCodex, codexOpts, err)
+
+	// kiroacp（ACP 協定版）跟 kiro 共用同一顆 kiro-cli 二進位，模型清單視為相同。
+	kiroEntries, err := kiro.FetchModelOptions(ctx)
+	kiroOpts := make([]db.ModelOption, 0, len(kiroEntries))
+	for _, e := range kiroEntries {
+		kiroOpts = append(kiroOpts, db.ModelOption{ModelID: e.ModelID, Label: e.Label})
+	}
+	apply(agent.TypeKiro, kiroOpts, err)
+	apply(agent.TypeKiroACP, kiroOpts, err)
+}
 
 // webSessionToken Web 登入：Bearer、URL query（供 WebSocket）、或舊版 HttpOnly cookie。
 func webSessionToken(c *fiber.Ctx) string {
@@ -66,6 +116,7 @@ func main() {
 	if err := database.ResetPendingMessages(); err != nil {
 		log.Printf("[startup] ResetPendingMessages 失敗: %v", err)
 	}
+	syncModelOptions(database)
 
 	// 將 config.yaml 中的白名單寫入 DB
 	for _, id := range cfg.WhitelistTgIDs {
@@ -240,6 +291,7 @@ func main() {
 	app.Patch("/sessions/:id", authMiddleware, sh.Patch)
 	app.Delete("/sessions/:id", authMiddleware, sh.Delete)
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)
+	app.Get("/model-options/:agentType", authMiddleware, sh.ModelOptions)
 
 	quotaSvc := quota.NewService()
 	go quotaSvc.Warmup(context.Background())

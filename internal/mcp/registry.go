@@ -200,6 +200,14 @@ func (r *Registry) SetPermissionMode(sessionID, mode string) error {
 	return r.send(sessionID, map[string]string{"type": "set_mode", "mode": mode})
 }
 
+func (r *Registry) SetModel(sessionID, model string) error {
+	return r.send(sessionID, map[string]string{"type": "set_model", "model": model})
+}
+
+func (r *Registry) SetEffort(sessionID, effort string) error {
+	return r.send(sessionID, map[string]string{"type": "set_effort", "effort": effort})
+}
+
 func (r *Registry) Interrupt(sessionID string) error {
 	st, err := r.ensure(sessionID)
 	if err != nil {

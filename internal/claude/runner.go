@@ -62,6 +62,12 @@ func buildClaudeArgs(opts agent.RunOptions) []string {
 				args = append(args, "--allowedTools", tool)
 			}
 		}
+		if m := strings.TrimSpace(opts.ExtraArgs[agent.ArgModel]); m != "" {
+			args = append(args, "--model", m)
+		}
+		if effort := strings.TrimSpace(opts.ExtraArgs[agent.ArgEffort]); effort != "" {
+			args = append(args, "--effort", effort)
+		}
 	}
 	return args
 }

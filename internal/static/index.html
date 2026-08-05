@@ -837,6 +837,62 @@ function PermModeSelect({ agentType, value, onChange, disabled, title, id, class
   );
 }
 
+const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+const selectBaseClass = (className) => [
+  className != null && String(className).trim() !== '' ? '' : 'w-full ',
+  'min-w-0 rounded-lg px-3 py-1.5 text-sm focus:outline-none disabled:opacity-45 transition-[color,background-color,border-color,box-shadow] duration-150',
+  'border border-gray-700 bg-gray-800 text-gray-200 focus:border-violet-600',
+  className || '',
+].join(' ').replace(/\s+/g, ' ').trim();
+
+/** Model 下拉選單：選項打 GET /model-options/:agentType，固定含「預設（不指定）」。 */
+function ModelSelect({ agentType, value, onChange, disabled, id, className }) {
+  const [opts, setOpts] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/model-options/${encodeURIComponent(agentType)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => { if (!cancelled) setOpts(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setOpts([]); });
+    return () => { cancelled = true; };
+  }, [agentType]);
+  return (
+    <select
+      id={id || `model-select-${agentType}`}
+      aria-label="Model"
+      value={value || ''}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={selectBaseClass(className)}
+    >
+      <option value="">預設（不指定）</option>
+      {opts.map((opt) => (
+        <option key={opt.model_id} value={opt.model_id}>{opt.label}</option>
+      ))}
+    </select>
+  );
+}
+
+/** Effort 下拉選單：固定 low/medium/high/xhigh/max，含「預設（不指定）」。Cursor 不支援，呼叫端不應渲染。 */
+function EffortSelect({ value, onChange, disabled, id, className }) {
+  return (
+    <select
+      id={id || 'effort-select'}
+      aria-label="Effort"
+      value={value || ''}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={selectBaseClass(className)}
+    >
+      <option value="">預設（不指定）</option>
+      {EFFORT_OPTIONS.map((v) => (
+        <option key={v} value={v}>{v}</option>
+      ))}
+    </select>
+  );
+}
+
 /** 依 CLI runner（agent_type）回傳 badge 的 Tailwind 底色／文字色 */
 
 function sessionStatusDotClass(s) {
@@ -2170,6 +2226,11 @@ function ChatSessionHeader({
   mode,
   modeSwitchDisabled,
   onPermModeChange,
+  showEffortSelect,
+  modelSel,
+  effortSel,
+  onModelChange,
+  onEffortChange,
 }) {
   const expanded = !headerCollapsed;
   const showPerm = showPermModeSelect && inputMode === 'agent';
@@ -2250,6 +2311,27 @@ function ChatSessionHeader({
             )}
           </div>
         ) : null}
+        {expanded ? (
+          <div className="mt-2.5 flex gap-2">
+            <ModelSelect
+              agentType={agentType}
+              value={modelSel}
+              onChange={onModelChange}
+              disabled={modeSwitchDisabled}
+              id="chat-model-mobile"
+              className="flex-1 py-2"
+            />
+            {showEffortSelect ? (
+              <EffortSelect
+                value={effortSel}
+                onChange={onEffortChange}
+                disabled={modeSwitchDisabled}
+                id="chat-effort-mobile"
+                className="flex-1 py-2"
+              />
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {/* 桌面：標題 + 副標 | 權限分段（設計 1a） */}
@@ -2279,27 +2361,46 @@ function ChatSessionHeader({
             ) : null}
           </div>
         </div>
-        {showPerm ? (
-          usePermModeDropdown ? (
-            <PermModeSelect
-              agentType={agentType}
-              value={mode}
-              onChange={onPermModeChange}
+        <div className="flex items-center gap-2">
+          <ModelSelect
+            agentType={agentType}
+            value={modelSel}
+            onChange={onModelChange}
+            disabled={modeSwitchDisabled}
+            id="chat-model"
+            className="min-w-[9rem]"
+          />
+          {showEffortSelect ? (
+            <EffortSelect
+              value={effortSel}
+              onChange={onEffortChange}
               disabled={modeSwitchDisabled}
-              title={permTitle}
-              id="chat-perm-mode"
-              className="min-w-[11rem]"
+              id="chat-effort"
+              className="min-w-[7rem]"
             />
-          ) : (
-            <PermModeSwitch
-              agentType={agentType}
-              value={mode}
-              onChange={onPermModeChange}
-              disabled={modeSwitchDisabled}
-              title={permTitle}
-            />
-          )
-        ) : null}
+          ) : null}
+          {showPerm ? (
+            usePermModeDropdown ? (
+              <PermModeSelect
+                agentType={agentType}
+                value={mode}
+                onChange={onPermModeChange}
+                disabled={modeSwitchDisabled}
+                title={permTitle}
+                id="chat-perm-mode"
+                className="min-w-[11rem]"
+              />
+            ) : (
+              <PermModeSwitch
+                agentType={agentType}
+                value={mode}
+                onChange={onPermModeChange}
+                disabled={modeSwitchDisabled}
+                title={permTitle}
+              />
+            )
+          ) : null}
+        </div>
       </div>
     </div>
   );
@@ -2310,11 +2411,14 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex 暫無對應概念）
   const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro' && agentType !== 'kiroacp';
+  const showEffortSelect = agentType !== 'cursor';
   const [messages, setMessages]   = useState([]);
   const [input, setInput]         = useState('');
   const [state, setState]         = useState('IDLE');
   const [permTools, setPermTools] = useState([]);
   const [mode, setMode]           = useState(() => normalizePermMode(agentType, session.permission_mode || 'default'));
+  const [modelSel, setModelSel]   = useState(() => session.model || '');
+  const [effortSel, setEffortSel] = useState(() => session.effort || '');
   const [histLoaded, setHistLoaded] = useState(false);
   const [inputMode, setInputMode] = useState(() => readInputModeForSession(session.id));
   const [shellType, setShellType] = useState('bash');
@@ -2344,6 +2448,8 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   /** 後端已套用的權限／輸入模式（送出時若與畫面選擇不同才送 set_mode／set_input_mode） */
   const serverPermAppliedRef = useRef(null);
   const serverInputAppliedRef = useRef(null);
+  const serverModelAppliedRef = useRef(null);
+  const serverEffortAppliedRef = useRef(null);
   const { collapsed: headerCollapsed, toggle: toggleHeader, setCollapsed: setHeaderCollapsed } = useChatHeaderCollapsed();
 
   const syncChatNearBottom = useCallback(() => {
@@ -2440,10 +2546,14 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     const pm = normalizePermMode(agentType, session.permission_mode || 'default');
     serverInputAppliedRef.current = im;
     serverPermAppliedRef.current = pm;
+    serverModelAppliedRef.current = session.model || '';
+    serverEffortAppliedRef.current = session.effort || '';
     setInputMode(im);
     setMode(pm);
+    setModelSel(session.model || '');
+    setEffortSel(session.effort || '');
     setShellPendingCmd(null);
-  }, [session.id, session.permission_mode, agentType, session.input_mode]);
+  }, [session.id, session.permission_mode, session.model, session.effort, agentType, session.input_mode]);
 
   const prevChatStateRef = useRef(null);
   // 歷史載入完成＝畫面就緒，將 focus 預設在輸入框
@@ -2838,8 +2948,16 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       if (!send({ type: 'set_input_mode', mode: wantInput })) return false;
       serverInputAppliedRef.current = wantInput;
     }
+    if (modelSel !== serverModelAppliedRef.current) {
+      if (!send({ type: 'set_model', model: modelSel })) return false;
+      serverModelAppliedRef.current = modelSel;
+    }
+    if (showEffortSelect && effortSel !== serverEffortAppliedRef.current) {
+      if (!send({ type: 'set_effort', effort: effortSel })) return false;
+      serverEffortAppliedRef.current = effortSel;
+    }
     return true;
-  }, [send, agentType, mode, inputMode, showPermModeSelect]);
+  }, [send, agentType, mode, inputMode, showPermModeSelect, modelSel, effortSel, showEffortSelect]);
 
   const handleSend = (overrideText) => {
     const raw = overrideText !== undefined && overrideText !== null ? String(overrideText) : input;
@@ -2922,6 +3040,9 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const handlePermModeDraftChange = (newMode) => {
     setMode(normalizePermMode(agentType, newMode));
   };
+  /** 僅更新畫面選擇，送出訊息時才會送 set_model / set_effort */
+  const handleModelDraftChange = (newModel) => setModelSel(newModel);
+  const handleEffortDraftChange = (newEffort) => setEffortSel(newEffort);
   /** 授權面板「允許並記住」：須立即寫入後端並重試 */
   const handlePermModeCommitNow = (newMode) => {
     const n = normalizePermMode(agentType, newMode);
@@ -3016,6 +3137,11 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
         mode={mode}
         modeSwitchDisabled={modeSwitchDisabled}
         onPermModeChange={handlePermModeDraftChange}
+        showEffortSelect={showEffortSelect}
+        modelSel={modelSel}
+        effortSel={effortSel}
+        onModelChange={handleModelDraftChange}
+        onEffortChange={handleEffortDraftChange}
       />
 
       {/* 訊息列表 */}

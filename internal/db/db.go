@@ -56,6 +56,14 @@ func (db *DB) migrate() error {
 			created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
 			UNIQUE (work_dir_key, command)
 		);
+		CREATE TABLE IF NOT EXISTS model_options (
+			id         INTEGER PRIMARY KEY AUTOINCREMENT,
+			agent_type TEXT    NOT NULL,
+			model_id   TEXT    NOT NULL,
+			label      TEXT    NOT NULL,
+			enabled    INTEGER NOT NULL DEFAULT 1,
+			UNIQUE (agent_type, model_id)
+		);
 	`)
 	if err != nil {
 		return err
@@ -91,6 +99,9 @@ func (db *DB) migrate() error {
 	tryAlter(`ALTER TABLE sessions ADD COLUMN active_model TEXT NOT NULL DEFAULT ''`)
 	tryAlter(`ALTER TABLE sessions ADD COLUMN active_model_source TEXT NOT NULL DEFAULT ''`)
 	tryAlter(`ALTER TABLE sessions ADD COLUMN active_model_at TEXT NOT NULL DEFAULT ''`)
+	// model/effort：使用者要求值（空字串＝不指定，交給 CLI 用預設）
+	tryAlter(`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
+	tryAlter(`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`)
 
 	return nil
 }

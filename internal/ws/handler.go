@@ -67,10 +67,12 @@ const (
 )
 
 type clientMsg struct {
-	Type  string   `json:"type"`
-	Data  string   `json:"data,omitempty"`
-	Tools []string `json:"tools,omitempty"`
-	Mode  string   `json:"mode,omitempty"`
+	Type   string   `json:"type"`
+	Data   string   `json:"data,omitempty"`
+	Tools  []string `json:"tools,omitempty"`
+	Mode   string   `json:"mode,omitempty"`
+	Model  string   `json:"model,omitempty"`
+	Effort string   `json:"effort,omitempty"`
 }
 
 type serverMsg struct {
@@ -338,6 +340,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			if m := model.ParseModelFromCliArgs(cliExtra); m != "" {
 				extra[agent.ArgModel] = m
+			}
+			if s.Model != "" {
+				extra[agent.ArgModel] = s.Model
+			}
+			if s.Effort != "" && agentType != agent.TypeCursor {
+				extra[agent.ArgEffort] = s.Effort
 			}
 
 			opts := agent.RunOptions{
@@ -946,6 +954,24 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 				log.Println("[ws] permission mode:", msg.Mode)
+
+			case "set_model":
+				if err := database.UpdateModel(sessionID, strings.TrimSpace(msg.Model)); err != nil {
+					log.Printf("[ws] UpdateModel: %v", err)
+				}
+				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
+				log.Println("[ws] model:", msg.Model)
+
+			case "set_effort":
+				if agentType == agent.TypeCursor {
+					log.Printf("[ws] agent=%s: set_effort ignored", agentType)
+					continue
+				}
+				if err := database.UpdateEffort(sessionID, strings.TrimSpace(msg.Effort)); err != nil {
+					log.Printf("[ws] UpdateEffort: %v", err)
+				}
+				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
+				log.Println("[ws] effort:", msg.Effort)
 
 			case "reset_context":
 				taskCancel(sessionID)

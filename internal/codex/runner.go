@@ -168,6 +168,9 @@ func buildArgs(opts agent.RunOptions) []string {
 			if m := strings.TrimSpace(opts.ExtraArgs[agent.ArgModel]); m != "" {
 				args = append(args, "-m", m)
 			}
+			if effort := strings.TrimSpace(opts.ExtraArgs[agent.ArgEffort]); effort != "" {
+				args = append(args, "-c", "model_reasoning_effort="+effort)
+			}
 		}
 		args = append(args, opts.Prompt)
 		return args
@@ -181,6 +184,9 @@ func buildArgs(opts agent.RunOptions) []string {
 	if opts.ExtraArgs != nil {
 		if m := strings.TrimSpace(opts.ExtraArgs[agent.ArgModel]); m != "" {
 			args = append(args, "-m", m)
+		}
+		if effort := strings.TrimSpace(opts.ExtraArgs[agent.ArgEffort]); effort != "" {
+			args = append(args, "-c", "model_reasoning_effort="+effort)
 		}
 	}
 	args = append(args, opts.Prompt)

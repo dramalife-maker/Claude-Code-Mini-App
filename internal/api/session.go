@@ -114,6 +114,16 @@ func (h *SessionHandler) List(c *fiber.Ctx) error {
 	return c.JSON(sessions)
 }
 
+// ModelOptions GET /model-options/:agentType — 回傳該 agent 目前啟用的 model 選項。
+func (h *SessionHandler) ModelOptions(c *fiber.Ctx) error {
+	agentType := strings.TrimSpace(c.Params("agentType"))
+	opts, err := h.db.ListModelOptions(agentType)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(opts)
+}
+
 func (h *SessionHandler) Create(c *fiber.Ctx) error {
 	var body struct {
 		Name           string   `json:"name"`
