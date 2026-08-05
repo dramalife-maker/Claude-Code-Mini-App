@@ -1,0 +1,782 @@
+function SessionStateChip({ state, activityHint, compact, className = '' }) {
+  const label = compact
+    ? (state === 'THINKING' && activityHint ? '思考' : (SESSION_STATE_LABEL[state] || state))
+    : (state === 'THINKING' && activityHint ? activityHint : (SESSION_STATE_LABEL[state] || state));
+  const dot =
+    state === 'IDLE' || state === 'SHELL_IDLE' ? 'bg-[oklch(0.7_0.15_155)]' :
+    state === 'THINKING' || state === 'STREAMING' || state === 'SHELL_EXEC' || state === 'SHELL_RUNNING' ? 'bg-[oklch(0.75_0.15_70)]' :
+    'bg-[oklch(0.75_0.15_70)]';
+  return (
+    <span
+      title={state}
+      className={'inline-flex items-center gap-1.5 shrink-0 text-[11px] px-[7px] py-[3px] rounded-md font-semibold ' + sessionStateChipClass(state) + ' ' + className}
+    >
+      <span className={'w-1.5 h-1.5 rounded-full shrink-0 ' + dot} aria-hidden />
+      {label}
+    </span>
+  );
+}
+
+function HeaderToggleButton({ expanded, onToggle, className = '' }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-label={expanded ? '收合頂欄' : '展開頂欄'}
+      className={'sm:hidden shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-gray-800/70 transition-colors ' + className}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={'w-4 h-4 transition-transform duration-150 ' + (expanded ? 'rotate-180' : '')} aria-hidden>
+        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+      </svg>
+    </button>
+  );
+}
+
+function AgentIconChip({ agentType, className = '' }) {
+  const t = String(agentType || 'claude').toLowerCase();
+  return (
+    <span
+      className={'inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-md border border-gray-700/55 ' + getAgentBadgeClass(agentType) + ' ' + className}
+      title={AGENT_LABEL[t] || t}
+    >
+      <AgentBadgeIcon agentType={agentType} />
+    </span>
+  );
+}
+
+function PermModeIconChip({ agentType, value, onClick, disabled, className = '' }) {
+  const label = permModeLabelFor(agentType, value);
+  const danger = permModeIsDanger(value);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={'權限：' + label + '（點擊展開）'}
+      aria-label={'權限：' + label}
+      className={
+        'inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-md border transition-colors ' +
+        (danger
+          ? 'border-amber-700/65 bg-amber-950/55 text-amber-300 hover:bg-amber-950/75'
+          : 'border-gray-700/55 bg-gray-800/70 text-gray-400 hover:text-gray-200 hover:bg-gray-800') +
+        (disabled ? ' opacity-45 pointer-events-none' : '') +
+        ' ' + className
+      }
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3" aria-hidden>
+        <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+      </svg>
+    </button>
+  );
+}
+
+const INPUT_MODE_STORAGE_PREFIX = 'cc_input_mode:';
+/** 舊版單一全域鍵，僅在該 session 尚無專用紀錄時作為向後相容讀取 */
+const INPUT_MODE_LEGACY_KEY = 'cc_input_mode';
+
+/** 輸入框 `/` 觸發之 slash 命令清單（可選 `modes` 限定 inputMode，省略則全部顯示） */
+const SLASH_COMMANDS = [
+  {
+    command: '/reset',
+    description: '清除對話 context（等同 /clear）',
+  },
+  {
+    command: '/clear',
+    description: '清除對話 context（等同 /reset）',
+  },
+];
+
+function inputModeStorageKey(sessionId) {
+  return INPUT_MODE_STORAGE_PREFIX + String(sessionId || '');
+}
+
+const DRAFT_INPUT_STORAGE_PREFIX = 'cc_draft_input:';
+
+function draftInputStorageKey(sessionId) {
+  return DRAFT_INPUT_STORAGE_PREFIX + String(sessionId || '');
+}
+
+function clearDraftInputForSession(sessionId) {
+  try {
+    localStorage.removeItem(draftInputStorageKey(sessionId));
+  } catch (_) {}
+}
+
+/** 依 session 從 localStorage 讀取輸入模式；該 session 未設定或無效時預設 agent */
+function readInputModeForSession(sessionId) {
+  try {
+    const v = localStorage.getItem(inputModeStorageKey(sessionId));
+    if (v === 'shell' || v === 'agent') return v;
+    const legacy = localStorage.getItem(INPUT_MODE_LEGACY_KEY);
+    if (legacy === 'shell' || legacy === 'agent') return legacy;
+  } catch (_) {}
+  return 'agent';
+}
+
+/**
+ * 依 agent_type 回傳可用的 permission_mode 下拉選項。
+ * - Claude / Cursor: default / acceptEdits / bypassPermissions
+ * - Antigravity: default / auto_edit / plan / yolo（對應 CLI --approval-mode）
+ * - Codex: 暫不支援
+ * 所有值共用 DB 欄位 `permission_mode`，後端各 runner 自行解釋。
+ */
+function permModeOptionsFor(agentType) {
+  const t = String(agentType || 'claude').toLowerCase();
+  if (t === 'antigravity') {
+    return [
+      { value: 'default', label: '預設' },
+      { value: 'auto_edit', label: '自動編輯' },
+      { value: 'plan', label: '規劃模式' },
+      { value: 'yolo', label: 'YOLO（全自動）⚠️' },
+    ];
+  }
+  if (t === 'kiro' || t === 'kiroacp' || t === 'codex') {
+    return [{ value: 'default', label: '預設（固定）' }];
+  }
+  return [
+    { value: 'default', label: '預設' },
+    { value: 'acceptEdits', label: '自動編輯' },
+    { value: 'bypassPermissions', label: '跳過授權 ⚠️' },
+  ];
+}
+
+/**
+ * 建立 Session 時「自訂 CLI 引數」：每行一個 argv，trim 後略過空行。
+ * 路徑含空格時請整段寫在同一行（勿用空格拆成多段）。
+ */
+function parseCliExtraArgs(text) {
+  if (text == null || !String(text).trim()) return [];
+  return String(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function extractModelFromCliArgs(parts) {
+  if (!Array.isArray(parts)) return '';
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i] === '--model' || parts[i] === '-m') return String(parts[i + 1] || '').trim();
+  }
+  return '';
+}
+
+function cliArgsWithoutModel(parts) {
+  if (!Array.isArray(parts)) return [];
+  const out = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i] === '--model' || parts[i] === '-m') {
+      i++;
+      continue;
+    }
+    out.push(parts[i]);
+  }
+  return out;
+}
+
+function mergeModelIntoCliExtraLines(cliText, modelVal) {
+  const baseParts = parseCliExtraArgs(cliText);
+  const stripped = [];
+  for (let i = 0; i < baseParts.length; i++) {
+    if (baseParts[i] === '--model' || baseParts[i] === '-m') {
+      i++;
+      continue;
+    }
+    stripped.push(baseParts[i]);
+  }
+  const m = String(modelVal || '').trim();
+  if (m) {
+    stripped.push('--model', m);
+  }
+  return stripped.join('\n');
+}
+
+function buildForwardUserPrompt(note, originalBody) {
+  const n = String(note || '').trim();
+  const o = String(originalBody || '').trim();
+  if (!n) return o;
+  return `${n}\n\n---\n（以下為規劃內容）\n\n${o}`;
+}
+
+function sendPromptViaEphemeralWS(sessionId, text) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const settle = (fn) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    let opened = false;
+    const ws = new WebSocket(wsURL(sessionId));
+    const timer = setTimeout(() => {
+      try {
+        ws.close();
+      } catch (_) {}
+      settle(() => reject(new Error('連線逾時')));
+    }, 20000);
+    ws.onopen = () => {
+      opened = true;
+      try {
+        ws.send(JSON.stringify({ type: 'input', data: text }));
+      } catch (e) {
+        settle(() => reject(e));
+        try {
+          ws.close();
+        } catch (_) {}
+        return;
+      }
+      setTimeout(() => {
+        try {
+          ws.close();
+        } catch (_) {}
+      }, 80);
+    };
+    ws.onerror = () => settle(() => reject(new Error('WebSocket 錯誤')));
+    ws.onclose = () => {
+      if (opened) settle(() => resolve());
+      else settle(() => reject(new Error('無法連線')));
+    };
+  });
+}
+
+/** 切換 agent_type 時，若舊的 mode 在新 agent 下不合法，退回 default。 */
+function normalizePermMode(agentType, mode) {
+  const valid = permModeOptionsFor(agentType).map((o) => o.value);
+  return valid.includes(mode) ? mode : 'default';
+}
+
+/**
+ * 權限模式分段開關（多態切換，取代下拉選單）。
+ * danger 值（跳過授權 / YOLO）選中時以琥珀色強調。
+ */
+function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
+  const opts = permModeOptionsFor(agentType);
+  const t = String(agentType || 'claude').toLowerCase();
+  const ariaLabel =
+    title || (t === 'antigravity' ? 'Antigravity 核准模式' : '權限模式');
+  return (
+    <div
+      role="radiogroup"
+      aria-label={ariaLabel}
+      className={`inline-flex max-w-full flex-wrap items-stretch gap-0.5 rounded-[9px] border border-[oklch(0.28_0.02_264)] bg-[oklch(0.19_0.02_264)] p-[3px] ${
+        disabled ? 'pointer-events-none opacity-45' : ''
+      }`}
+    >
+      {opts.map((opt) => {
+        const active = value === opt.value;
+        const danger = opt.value === 'bypassPermissions' || opt.value === 'yolo';
+        const label = opt.label;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+            className={[
+              'min-h-[2rem] shrink-0 grow-0 px-3 py-1.5 text-center text-xs font-semibold leading-tight rounded-[7px] transition-[color,background-color] duration-150 whitespace-nowrap',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50',
+              active
+                ? danger
+                  ? 'bg-[oklch(0.75_0.15_70_/16%)] text-[oklch(0.75_0.15_70)] font-bold'
+                  : 'bg-[oklch(0.62_0.19_275_/18%)] text-[oklch(0.85_0.08_275)]'
+                : 'text-[oklch(0.55_0.01_264)] hover:text-[oklch(0.85_0.01_264)]',
+            ].join(' ')}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** 權限模式：窄螢幕（app 版）用下拉選單，與 PermModeSwitch 選項一致。danger 值會套用琥珀邊框（與分段按鈕語意一致）。 */
+function PermModeSelect({ agentType, value, onChange, disabled, title, id, className }) {
+  const opts = permModeOptionsFor(agentType);
+  const t = String(agentType || 'claude').toLowerCase();
+  const ariaLabel =
+    title || (t === 'antigravity' ? 'Antigravity 核准模式' : '權限模式');
+  const selectId = id || `perm-mode-select-${t}`;
+  const danger = value === 'bypassPermissions' || value === 'yolo';
+  const widthClass = className != null && String(className).trim() !== '' ? '' : 'w-full ';
+  return (
+    <select
+      id={selectId}
+      aria-label={ariaLabel}
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={[
+        widthClass,
+        'min-w-0 rounded-lg px-3 py-1.5 text-sm focus:outline-none disabled:opacity-45 transition-[color,background-color,border-color,box-shadow] duration-150',
+        danger
+          ? 'border border-amber-600/75 bg-amber-950/45 text-amber-50 shadow-sm shadow-amber-950/35 focus:border-amber-500 focus:ring-1 focus:ring-amber-600/35'
+          : 'border border-gray-700 bg-gray-800 text-gray-200 focus:border-violet-600',
+        className || '',
+      ].join(' ').replace(/\s+/g, ' ').trim()}
+    >
+      {opts.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  );
+}
+
+const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+const selectBaseClass = (className) => [
+  className != null && String(className).trim() !== '' ? '' : 'w-full ',
+  'min-w-0 rounded-lg px-3 py-1.5 text-sm focus:outline-none disabled:opacity-45 transition-[color,background-color,border-color,box-shadow] duration-150',
+  'border border-gray-700 bg-gray-800 text-gray-200 focus:border-violet-600',
+  className || '',
+].join(' ').replace(/\s+/g, ' ').trim();
+
+/** Model 下拉選單：選項打 GET /model-options/:agentType，固定含「預設（不指定）」。 */
+function ModelSelect({ agentType, value, onChange, disabled, id, className }) {
+  const [opts, setOpts] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/model-options/${encodeURIComponent(agentType)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((list) => { if (!cancelled) setOpts(Array.isArray(list) ? list : []); })
+      .catch(() => { if (!cancelled) setOpts([]); });
+    return () => { cancelled = true; };
+  }, [agentType]);
+  return (
+    <select
+      id={id || `model-select-${agentType}`}
+      aria-label="Model"
+      value={value || ''}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={selectBaseClass(className)}
+    >
+      <option value="">預設（不指定）</option>
+      {opts.map((opt) => (
+        <option key={opt.model_id} value={opt.model_id}>{opt.label}</option>
+      ))}
+    </select>
+  );
+}
+
+/** Effort 下拉選單：固定 low/medium/high/xhigh/max，含「預設（不指定）」。Cursor 不支援，呼叫端不應渲染。 */
+function EffortSelect({ value, onChange, disabled, id, className }) {
+  return (
+    <select
+      id={id || 'effort-select'}
+      aria-label="Effort"
+      value={value || ''}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      className={selectBaseClass(className)}
+    >
+      <option value="">預設（不指定）</option>
+      {EFFORT_OPTIONS.map((v) => (
+        <option key={v} value={v}>{v}</option>
+      ))}
+    </select>
+  );
+}
+
+/** 依 CLI runner（agent_type）回傳 badge 的 Tailwind 底色／文字色 */
+
+function sessionStatusDotClass(s) {
+  const st = String(s && s.status || '').toLowerCase();
+  if (st === 'running') return 'ra-status-dot running';
+  if (st === 'awaiting_confirm') return 'ra-status-dot awaiting';
+  if (st === 'idle' || st === '') return '';
+  return 'ra-status-dot done';
+}
+
+function sessionStatusLabel(s) {
+  const st = String(s && s.status || '').toLowerCase();
+  if (st === 'running') return '執行中';
+  if (st === 'awaiting_confirm') return '待授權';
+  if (st === 'idle') return '待命';
+  return '已完成';
+}
+
+function getAgentBadgeClass(agentType) {
+  const t = String(agentType || 'claude').toLowerCase();
+  const map = {
+    claude: 'bg-orange-500/20 text-orange-300',
+    cursor: 'bg-emerald-500/20 text-emerald-300',
+    codex: 'bg-slate-500/20 text-slate-300',
+    antigravity: 'bg-sky-500/20 text-sky-300',
+    kiro: 'bg-fuchsia-500/20 text-fuchsia-300',
+    kiroacp: 'bg-fuchsia-500/20 text-fuchsia-300',
+  };
+  return map[t] || 'bg-[oklch(0.24_0.02_264)] text-[oklch(0.65_0.01_264)]';
+}
+
+/**
+ * 廠商圖示：Simple Icons CDN（https://cdn.simpleicons.org/{slug}/{hex}）
+ * slug 見 https://simpleicons.org/ ；色碼與 badge 文字色對齊（無 #）
+ */
+const AGENT_BADGE_ICON_CDN = {
+  claude: { slug: 'claude', color: 'fed7aa' },
+  cursor: { slug: 'cursor', color: '6ee7b7' },
+  antigravity: { slug: 'google', color: '7dd3fc' },
+};
+
+/** Simple Icons 已移除 openai / amazonwebservices，改內嵌 path（simple-icons@14，CC0） */
+const AGENT_BADGE_INLINE_SVG = {
+  codex: {
+    viewBox: '0 0 24 24',
+    color: '#e2e8f0',
+    path: 'M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z',
+  },
+  kiro: {
+    viewBox: '0 0 24 24',
+    color: '#d8b4fe',
+    path: 'M6.763 10.036c0 .296.032.535.088.71.064.176.144.368.256.576.04.063.056.127.056.183 0 .08-.048.16-.152.24l-.503.335a.383.383 0 0 1-.208.072c-.08 0-.16-.04-.239-.112a2.47 2.47 0 0 1-.287-.375 6.18 6.18 0 0 1-.248-.471c-.622.734-1.405 1.101-2.347 1.101-.67 0-1.205-.191-1.596-.574-.391-.384-.59-.894-.59-1.533 0-.678.239-1.23.726-1.644.487-.415 1.133-.623 1.955-.623.272 0 .551.024.846.064.296.04.6.104.918.176v-.583c0-.607-.127-1.03-.375-1.277-.255-.248-.686-.367-1.3-.367-.28 0-.568.031-.863.103-.295.072-.583.16-.862.272a2.287 2.287 0 0 1-.28.104.488.488 0 0 1-.127.023c-.112 0-.168-.08-.168-.247v-.391c0-.128.016-.224.056-.28a.597.597 0 0 1 .224-.167c.279-.144.614-.264 1.005-.36a4.84 4.84 0 0 1 1.246-.151c.95 0 1.644.216 2.091.647.439.43.662 1.085.662 1.963v2.586zm-3.24 1.214c.263 0 .534-.048.822-.144.287-.096.543-.271.758-.51.128-.152.224-.32.272-.512.047-.191.08-.423.08-.694v-.335a6.66 6.66 0 0 0-.735-.136 6.02 6.02 0 0 0-.75-.048c-.535 0-.926.104-1.19.32-.263.215-.39.518-.39.917 0 .375.095.655.295.846.191.2.47.296.838.296zm6.41.862c-.144 0-.24-.024-.304-.08-.064-.048-.12-.16-.168-.311L7.586 5.55a1.398 1.398 0 0 1-.072-.32c0-.128.064-.2.191-.2h.783c.151 0 .255.025.31.08.065.048.113.16.16.312l1.342 5.284 1.245-5.284c.04-.16.088-.264.151-.312a.549.549 0 0 1 .32-.08h.638c.152 0 .256.025.32.08.063.048.12.16.151.312l1.261 5.348 1.381-5.348c.048-.16.104-.264.16-.312a.52.52 0 0 1 .311-.08h.743c.127 0 .2.065.2.2 0 .04-.009.08-.017.128a1.137 1.137 0 0 1-.056.2l-1.923 6.17c-.048.16-.104.263-.168.311a.51.51 0 0 1-.303.08h-.687c-.151 0-.255-.024-.32-.08-.063-.056-.119-.16-.15-.32l-1.238-5.148-1.23 5.14c-.04.16-.087.264-.15.32-.065.056-.177.08-.32.08zm10.256.215c-.415 0-.83-.048-1.229-.143-.399-.096-.71-.2-.918-.32-.128-.071-.215-.151-.247-.223a.563.563 0 0 1-.048-.224v-.407c0-.167.064-.247.183-.247.048 0 .096.008.144.024.048.016.12.048.2.08.271.12.566.215.878.279.319.064.63.096.95.096.502 0 .894-.088 1.165-.264a.86.86 0 0 0 .415-.758.777.777 0 0 0-.215-.559c-.144-.151-.416-.287-.807-.415l-1.157-.36c-.583-.183-1.014-.454-1.277-.813a1.902 1.902 0 0 1-.4-1.158c0-.335.073-.63.216-.886.144-.255.335-.479.575-.654.24-.184.51-.32.83-.415.32-.096.655-.136 1.006-.136.175 0 .359.008.535.032.183.024.35.056.518.088.16.04.312.08.455.127.144.048.256.096.336.144a.69.69 0 0 1 .24.2.43.43 0 0 1 .071.263v.375c0 .168-.064.256-.184.256a.83.83 0 0 1-.303-.096 3.652 3.652 0 0 0-1.532-.311c-.455 0-.815.071-1.062.223-.248.152-.375.383-.375.71 0 .224.08.416.24.567.159.152.454.304.877.44l1.134.358c.574.184.99.44 1.237.767.247.327.367.702.367 1.117 0 .343-.072.655-.207.926-.144.272-.336.511-.583.703-.248.2-.543.343-.886.447-.36.111-.734.167-1.142.167zM21.698 16.207c-2.626 1.94-6.442 2.969-9.722 2.969-4.598 0-8.74-1.7-11.87-4.526-.247-.223-.024-.527.272-.351 3.384 1.963 7.559 3.153 11.877 3.153 2.914 0 6.114-.607 9.06-1.852.439-.2.814.287.383.607zM22.792 14.961c-.336-.43-2.22-.207-3.074-.103-.255.032-.295-.192-.063-.36 1.5-1.053 3.967-.75 4.254-.399.287.36-.08 2.826-1.485 4.007-.215.184-.423.088-.327-.151.32-.79 1.03-2.57.695-2.994z',
+  },
+};
+
+function AgentBadgeIcon({ agentType }) {
+  const t0 = String(agentType || 'claude').toLowerCase();
+  const t = t0 === 'kiroacp' ? 'kiro' : t0;
+  const inline = AGENT_BADGE_INLINE_SVG[t];
+  if (inline) {
+    return (
+      <svg
+        viewBox={inline.viewBox}
+        width={14}
+        height={14}
+        aria-hidden="true"
+        className="w-3.5 h-3.5 shrink-0 opacity-95"
+        fill={inline.color}
+      >
+        <path d={inline.path} />
+      </svg>
+    );
+  }
+  const cfg = AGENT_BADGE_ICON_CDN[t] || { slug: 'anthropic', color: 'd1d5db' };
+  const src = `https://cdn.simpleicons.org/${cfg.slug}/${cfg.color}`;
+  return (
+    <img
+      src={src}
+      alt=""
+      width={14}
+      height={14}
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      className="w-3.5 h-3.5 shrink-0 opacity-95 object-contain [content-visibility:auto]"
+      onError={(e) => {
+        e.currentTarget.removeAttribute('src');
+        e.currentTarget.style.display = 'none';
+      }}
+    />
+  );
+}
+
+function formatQuotaAge(iso) {
+  if (!iso) return '';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60) return '剛剛更新';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + ' 分鐘前';
+  return Math.floor(min / 60) + ' 小時前';
+}
+
+/** 帳戶 quota %（後端已組好 display_text） */
+function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = false, agentType = '' }) {
+  const text = quota && quota.display_text;
+  if (!text || text === '—') return null;
+  const shown = compact ? formatQuotaCompact(text, agentType) : text;
+  if (!shown) return null;
+  const age = formatQuotaAge(quota.updated_at);
+  const title = [text, age, quota.error].filter(Boolean).join(' · ');
+  const textCls = quota.error ? 'text-amber-400' : quota.stale ? 'text-gray-500' : 'text-gray-400';
+  const compactMaxW = ['kiro', 'kiroacp'].includes(String(agentType || '').toLowerCase()) ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
+  const chipCls = compact
+    ? 'inline-flex items-center shrink-0 ' + compactMaxW + ' px-2 py-1 rounded-md bg-[oklch(0.24_0.02_264)] '
+    : 'inline-flex items-center gap-0.5 min-w-0 max-w-full ';
+  return (
+    <span className={chipCls + className} title={title}>
+      <span className={'text-[10px] font-mono truncate ' + textCls}>{shown}</span>
+      {!compact && onRefresh ? (
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={refreshing}
+          className={'shrink-0 text-[10px] px-0.5 ' + (refreshing ? 'text-violet-400 animate-spin' : 'text-gray-500 hover:text-gray-300')}
+          title="刷新帳戶用量"
+        >
+          ↻
+        </button>
+      ) : null}
+    </span>
+  );
+}
+
+/** Session 目前 model（後端已組好 display_text） */
+function ModelBadge({ model, className = '' }) {
+  const text = model && model.display_text;
+  if (!text || text === '—') return null;
+  const title = [text, model.source, model.updated_at].filter(Boolean).join(' · ');
+  return (
+    <span className={'inline-flex items-center min-w-0 max-w-full ' + className} title={title}>
+      <span className="text-[10px] sm:text-xs font-mono truncate text-violet-300/90">{text}</span>
+    </span>
+  );
+}
+
+/** Git 分支角標（compact：單行截斷；展開：truncate 上限避免撐高 header） */
+function GitBranchBadge({ branch, compact = false }) {
+  if (!branch) return null;
+  return (
+    <span
+      className={
+        'inline-flex items-center gap-1 min-w-0 text-[11px] px-[7px] py-[3px] rounded-md bg-[oklch(0.24_0.02_264)] text-[oklch(0.6_0.01_264)] shrink-0 ' +
+        (compact ? 'max-w-[5.5rem]' : 'max-w-[min(12rem,42vw)] sm:max-w-[14rem]')
+      }
+      title={'Git 分支：' + branch}
+    >
+      <span className="truncate leading-none">{branch}</span>
+    </span>
+  );
+}
+
+/** 解析 API 回傳的 last_active（SQLite datetime 字串）為毫秒時間戳 */
+function sessionLastActiveMs(s) {
+  if (!s || !s.last_active) return 0;
+  const raw = String(s.last_active).trim();
+  const t = Date.parse(raw.includes('T') ? raw : raw.replace(' ', 'T'));
+  return Number.isNaN(t) ? 0 : t;
+}
+
+/** 解析訊息 created_at（SQLite datetime / ISO）為 Date；無效則回 null */
+function parseMessageCreatedAt(raw) {
+  if (raw == null || raw === '') return null;
+  const s = String(raw).trim();
+  // SQLite datetime('now') 為 UTC 且無時區後綴；補 Z 以免被當成本地時間
+  let normalized = s;
+  if (!s.includes('T')) normalized = s.replace(' ', 'T');
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized)) normalized += 'Z';
+  const t = Date.parse(normalized);
+  if (Number.isNaN(t)) return null;
+  return new Date(t);
+}
+
+/** 聊天氣泡下方時間：今日僅 HH:mm；昨日「昨天 HH:mm」；同年 M/D HH:mm；跨年 YYYY/M/D HH:mm */
+function formatMessageTime(raw) {
+  const d = parseMessageCreatedAt(raw);
+  if (!d) return '';
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (dayDiff === 0) return hm;
+  if (dayDiff === 1) return `昨天 ${hm}`;
+  if (d.getFullYear() === now.getFullYear()) {
+    return `${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+  }
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${hm}`;
+}
+
+/** 目錄分組標頭：顯示路徑最後兩段，避免過長 */
+function workDirGroupShortLabel(dirKey) {
+  const unset = '（未設定工作目錄）';
+  if (!dirKey || dirKey === unset) return unset;
+  const p = String(dirKey).replace(/[/\\]+$/, '');
+  const parts = p.split(/[/\\]/).filter(Boolean);
+  if (parts.length === 0) return dirKey;
+  if (parts.length === 1) return parts[0];
+  return `${parts[parts.length - 2]}/${parts[parts.length - 1]}`;
+}
+
+/** 路徑最後一段，作為預設 Session 名稱 */
+function workDirBasename(dirKey) {
+  const unset = '（未設定工作目錄）';
+  if (!dirKey || dirKey === unset) return '';
+  const p = String(dirKey).replace(/[/\\]+$/, '');
+  const parts = p.split(/[/\\]/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
+/** 依工作目錄排序用：空白路徑置底，其餘依路徑 localeCompare（numeric）。 */
+function cmpSessionWorkDir(a, b) {
+  const da = String(a.work_dir != null ? String(a.work_dir).trim() : '').toLowerCase();
+  const db = String(b.work_dir != null ? String(b.work_dir).trim() : '').toLowerCase();
+  if (!da && db) return 1;
+  if (da && !db) return -1;
+  return da.localeCompare(db, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+function sortSessionsByWorkDirThenName(sessions) {
+  if (!Array.isArray(sessions)) return [];
+  return [...sessions].sort((a, b) => {
+    const wd = cmpSessionWorkDir(a, b);
+    if (wd !== 0) return wd;
+    return String(a.name || '').localeCompare(String(b.name || ''), 'zh-Hant');
+  });
+}
+
+function parseShellExitCode(content) {
+  const m = content.match(/\[exit (-?\d+)\]\n?$/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function ShellOutput({ content, exitCode, streaming }) {
+  const strippedContent = content.replace(/\n?\[exit -?\d+\]\n?$/, '');
+  const resolvedExitCode = exitCode != null ? exitCode : (!streaming ? parseShellExitCode(content) : null);
+  const lines = strippedContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  return (
+    <div>
+      <pre className="text-xs font-mono whitespace-pre-wrap break-words leading-relaxed overflow-x-auto max-w-full">
+        {lines.map((line, i) => {
+          const nl = i < lines.length - 1 ? '\n' : '';
+          if (line.startsWith('[stderr] ')) return <span key={i} className="text-red-400">{line.slice(9)}{nl}</span>;
+          if (line.startsWith('[error] '))  return <span key={i} className="text-red-400">{line}{nl}</span>;
+          if (line === '[interrupted]')     return <span key={i} className="text-yellow-400">{line}{nl}</span>;
+          return <span key={i} className="text-gray-200">{line}{nl}</span>;
+        })}
+        {streaming && <span className="text-amber-400 animate-pulse">▌</span>}
+      </pre>
+      {!streaming && resolvedExitCode != null && (
+        <div className={`mt-1.5 inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded ${resolvedExitCode === 0 ? 'bg-green-900/60 text-green-300' : 'bg-red-900/60 text-red-300'}`}>
+          {resolvedExitCode === 0 ? '✓' : '✗'} exit {resolvedExitCode}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InputModeTab({ value, onChange, disabled }) {
+  const tabs = [{ v: 'agent', label: 'AI 代理' }, { v: 'shell', label: 'Shell' }];
+  return (
+    <div
+      role="radiogroup"
+      aria-label="輸入模式"
+      className={`inline-flex max-w-full flex-wrap items-stretch gap-0.5 rounded-xl border border-gray-700/90 bg-gray-900/85 p-0.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${disabled ? 'pointer-events-none opacity-45' : ''}`}
+    >
+      {tabs.map(({ v, label }) => {
+        const active = value === v;
+        const isShell = v === 'shell';
+        return (
+          <button
+            key={v}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={disabled}
+            onClick={() => onChange(v)}
+            className={[
+              'min-h-[2rem] shrink-0 grow-0 px-2 sm:px-2.5 py-1.5 text-center text-[10px] sm:text-xs font-medium leading-tight rounded-lg transition-[color,background-color,box-shadow] duration-150 whitespace-nowrap',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-1 focus-visible:ring-offset-gray-900',
+              active
+                ? isShell
+                  ? 'bg-amber-950/95 text-amber-100 ring-1 ring-amber-600/60 shadow-sm'
+                  : 'bg-violet-600 text-white shadow-sm shadow-violet-950/40'
+                : 'text-gray-400 hover:bg-gray-800/85 hover:text-gray-200 border border-transparent',
+            ].join(' ')}
+          >
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModeToggleBtn({ value, onChange, disabled, showLabel = false, agentLabel = 'Claude' }) {
+  const isShell = value === 'shell';
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(isShell ? 'agent' : 'shell')}
+      disabled={disabled}
+      title={isShell ? '切換到 AI 代理模式' : '切換到 Shell 模式'}
+      aria-label={isShell ? 'Shell 模式，點擊切換至 AI 代理' : 'AI 代理模式，點擊切換至 Shell'}
+      className={'ra-cmd-badge' + (isShell ? ' shell' : '') + (disabled ? ' opacity-40 pointer-events-none' : '')}
+    >
+      {isShell ? ('>_ ' + (showLabel ? 'Shell' : '')) : ('✦' + (showLabel ? (' ' + agentLabel) : ''))}
+    </button>
+  );
+}
+
+/** 將 API / sync 的訊息列轉成 ChatView 用的物件（含 pending 串流） */
+function mapMessageRow(m) {
+  const role = m.role;
+  const status = m.status || 'done';
+  const pending = status === 'pending';
+  const resultText = m.result_text || '';
+  const content = (m.content || '').trim() || resultText;
+  return {
+    id: m.id,
+    role,
+    content,
+    resultText,
+    status,
+    createdAt: m.created_at || m.createdAt || null,
+    html: role === 'claude' ? (content ? parseMarkdown(content) : null) : null,
+    streaming: pending,
+    exitCode: role === 'shell' ? parseShellExitCode(content) : undefined,
+  };
+}
+
+/**
+ * 以 document.execCommand('copy') 複製純文字（相容非安全上下文，不使用 navigator.clipboard）。
+ */
+function copyTextExecCommand(text) {
+  const t = text == null ? '' : String(text);
+  if (!t) return false;
+  let ta;
+  try {
+    ta = document.createElement('textarea');
+    ta.value = t;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    return document.execCommand('copy');
+  } catch (e) {
+    return false;
+  } finally {
+    if (ta && ta.parentNode) ta.parentNode.removeChild(ta);
+  }
+}
+
+/** 訊息氣泡用複製按鈕（複製 m.content 原始文字） */
+function MessageCopyButton({ text, className }) {
+  const [copied, setCopied] = useState(false);
+  const empty = !String(text || '').trim();
+  const onClick = (e) => {
+    e.stopPropagation();
+    if (empty) return;
+    if (copyTextExecCommand(text)) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={empty}
+      title={copied ? '已複製' : '複製'}
+      aria-label={copied ? '已複製到剪貼簿' : '複製訊息'}
+      className={className}
+    >
+      {copied ? (
+        <span className="text-[10px] font-medium leading-none">已複製</span>
+      ) : (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5 opacity-70 hover:opacity-100" aria-hidden>
+          <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+

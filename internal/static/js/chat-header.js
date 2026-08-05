@@ -1,0 +1,240 @@
+/** Slash 命令選單：顯示於輸入框上方，鍵盤 ↑↓、Enter、點擊選取 */
+function SlashCommandMenu({ items, activeIndex, onSelect }) {
+  const listRef = useRef(null);
+  useLayoutEffect(() => {
+    const root = listRef.current;
+    const el = root?.querySelector?.(`[data-slash-idx="${activeIndex}"]`);
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex, items]);
+  return (
+    <div
+      ref={listRef}
+      role="listbox"
+      aria-label="Slash 命令"
+      className="absolute bottom-full left-0 right-0 z-20 mb-1 max-h-48 overflow-y-auto app-scroll rounded-lg border border-gray-700 bg-gray-800/98 py-1 shadow-lg backdrop-blur-sm"
+    >
+      {items.map((c, i) => (
+        <button
+          key={c.command}
+          type="button"
+          role="option"
+          aria-selected={i === activeIndex}
+          data-slash-idx={i}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onSelect(c.command)}
+          className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-gray-700/80 ${
+            i === activeIndex ? 'bg-gray-700' : ''
+          }`}
+        >
+          <span className="shrink-0 font-mono text-violet-300">{c.command}</span>
+          <span className="min-w-0 flex-1 text-gray-400">{c.description}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── 聊天畫面 ─────────────────────────────────────────────────────────────────
+
+function ChatSessionHeader({
+  session,
+  showBack,
+  onBack,
+  agentType,
+  state,
+  activityHint,
+  sessionModel,
+  quota,
+  quotaRefreshing,
+  onQuotaRefresh,
+  headerCollapsed,
+  onToggleHeader,
+  onExpandHeader,
+  showPermModeSelect,
+  inputMode,
+  usePermModeDropdown,
+  mode,
+  modeSwitchDisabled,
+  onPermModeChange,
+  showEffortSelect,
+  modelSel,
+  effortSel,
+  onModelChange,
+  onEffortChange,
+}) {
+  const expanded = !headerCollapsed;
+  const showPerm = showPermModeSelect && inputMode === 'agent';
+  const permTitle =
+    agentType === 'antigravity'
+      ? 'Antigravity 核准模式（--approval-mode）'
+      : agentType === 'cursor'
+      ? '權限模式（bypass：Cursor 會加 --force）'
+      : '權限模式';
+  const repoLabel = workDirGroupShortLabel(session.work_dir);
+  const modelLabel = (sessionModel && typeof sessionModel === 'object')
+    ? (sessionModel.display_text || '')
+    : (sessionModel || '');
+  const modelOk = modelLabel && modelLabel !== '—';
+  const quotaText = quota && quota.display_text && quota.display_text !== '—' ? quota.display_text : '';
+  const subParts = [
+    repoLabel !== '（未設定工作目錄）' ? repoLabel : null,
+    modelOk ? modelLabel : null,
+  ].filter(Boolean);
+  const subLine = [subParts.join(' · '), quotaText].filter(Boolean).join(' · ');
+
+  return (
+    <div
+      className="shrink-0 border-b border-[oklch(0.26_0.02_264)] bg-[oklch(0.15_0.02_264)]"
+      style={{ paddingTop: 'calc(0.5rem + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}
+    >
+      {/* 手機：標題列 + badge 列（設計 2b） */}
+      <div className="sm:hidden px-4 pt-2 pb-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {showBack && (
+            <button type="button" onClick={onBack}
+              className="shrink-0 text-[oklch(0.7_0.01_264)] hover:text-[oklch(0.94_0.01_264)] text-lg leading-none px-0.5">
+              ←
+            </button>
+          )}
+          <div className="min-w-0 flex-1 font-bold text-base text-[oklch(0.94_0.01_264)] truncate" title={session.name}>
+            {session.name || '未命名'}
+          </div>
+          <SessionStateChip state={state} activityHint={activityHint} className="shrink-0" />
+          <GitBranchBadge branch={session.git_branch} compact />
+          <HeaderToggleButton expanded={expanded} onToggle={onToggleHeader} />
+        </div>
+        <div className="flex items-center gap-1.5 mt-2.5 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex-wrap">
+          <span className={`inline-flex items-center gap-1 shrink-0 text-[11.5px] font-semibold px-2 py-1 rounded-md ${getAgentBadgeClass(agentType)}`}>
+            <AgentBadgeIcon agentType={agentType} />
+            {AGENT_LABEL[agentType] || agentType}
+          </span>
+          <QuotaBadge quota={quota} compact agentType={agentType} onRefresh={agentType !== 'antigravity' ? onQuotaRefresh : null} refreshing={quotaRefreshing} />
+          {showPerm ? (
+            <PermModeIconChip
+              agentType={agentType}
+              value={mode}
+              onClick={onExpandHeader}
+              disabled={modeSwitchDisabled}
+            />
+          ) : null}
+        </div>
+        {expanded && showPerm ? (
+          <div className="mt-2.5">
+            {usePermModeDropdown ? (
+              <PermModeSelect
+                agentType={agentType}
+                value={mode}
+                onChange={onPermModeChange}
+                disabled={modeSwitchDisabled}
+                title={permTitle}
+                id="chat-perm-mode-mobile"
+                className="w-full py-2"
+              />
+            ) : (
+              <PermModeSwitch
+                agentType={agentType}
+                value={mode}
+                onChange={onPermModeChange}
+                disabled={modeSwitchDisabled}
+                title={permTitle}
+              />
+            )}
+          </div>
+        ) : null}
+        {expanded ? (
+          <div className="mt-2.5 flex gap-2">
+            <ModelSelect
+              agentType={agentType}
+              value={modelSel}
+              onChange={onModelChange}
+              disabled={modeSwitchDisabled}
+              id="chat-model-mobile"
+              className="flex-1 py-2"
+            />
+            {showEffortSelect ? (
+              <EffortSelect
+                value={effortSel}
+                onChange={onEffortChange}
+                disabled={modeSwitchDisabled}
+                id="chat-effort-mobile"
+                className="flex-1 py-2"
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* 桌面：標題 + 副標 | 權限分段（設計 1a） */}
+      <div className="hidden sm:flex items-center justify-between gap-4 px-7 py-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="text-base font-bold text-[oklch(0.94_0.01_264)] truncate" title={session.name}>
+              {session.name || '未命名'}
+            </div>
+            <SessionStateChip state={state} activityHint={activityHint} className="shrink-0" />
+            <GitBranchBadge branch={session.git_branch} compact />
+          </div>
+          <div className="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
+            {subLine ? (
+              <span className="text-xs text-[oklch(0.55_0.01_264)] ra-mono truncate">{subLine}</span>
+            ) : null}
+            {agentType !== 'antigravity' && quotaText ? (
+              <button
+                type="button"
+                onClick={onQuotaRefresh}
+                disabled={quotaRefreshing}
+                className="text-xs text-[oklch(0.55_0.01_264)] hover:text-violet-300 ra-mono"
+                title="刷新帳戶用量"
+              >
+                {quotaRefreshing ? '↻' : '↻'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <ModelSelect
+            agentType={agentType}
+            value={modelSel}
+            onChange={onModelChange}
+            disabled={modeSwitchDisabled}
+            id="chat-model"
+            className="min-w-[9rem]"
+          />
+          {showEffortSelect ? (
+            <EffortSelect
+              value={effortSel}
+              onChange={onEffortChange}
+              disabled={modeSwitchDisabled}
+              id="chat-effort"
+              className="min-w-[7rem]"
+            />
+          ) : null}
+          {showPerm ? (
+            usePermModeDropdown ? (
+              <PermModeSelect
+                agentType={agentType}
+                value={mode}
+                onChange={onPermModeChange}
+                disabled={modeSwitchDisabled}
+                title={permTitle}
+                id="chat-perm-mode"
+                className="min-w-[11rem]"
+              />
+            ) : (
+              <PermModeSwitch
+                agentType={agentType}
+                value={mode}
+                onChange={onPermModeChange}
+                disabled={modeSwitchDisabled}
+                title={permTitle}
+              />
+            )
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
