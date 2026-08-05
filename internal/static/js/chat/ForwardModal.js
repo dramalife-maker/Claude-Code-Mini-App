@@ -14,12 +14,7 @@ function ForwardModal({
   const [selectedId, setSelectedId] = useState(null);
   const [copyFromId, setCopyFromId] = useState('');
   const [note, setNote] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newWorkDir, setNewWorkDir] = useState('');
-  const [newAgent, setNewAgent] = useState('claude');
-  const [newMode, setNewMode] = useState('default');
-  const [newCliExtra, setNewCliExtra] = useState('');
-  const [forwardModel, setForwardModel] = useState('');
+  const newForm = useNewSessionForm();
   const [busy, setBusy] = useState(false);
   const [errText, setErrText] = useState('');
 
@@ -38,14 +33,9 @@ function ForwardModal({
     setSessionsList([]);
     setSelectedId(null);
     setCopyFromId('');
-    setNewName(
-      `轉發·${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
-    );
-    setNewWorkDir('');
-    setNewAgent('claude');
-    setNewMode('default');
-    setNewCliExtra('');
-    setForwardModel('');
+    newForm.reset({
+      name: `轉發·${new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
+    });
     const inherited = allSessionsRef.current;
     if (Array.isArray(inherited) && inherited.length > 0) {
       setSessionsList(inherited);
@@ -78,13 +68,7 @@ function ForwardModal({
     if (!copyFromId || !sessionsList.length) return;
     const s = sessionsList.find((x) => x.id === copyFromId);
     if (!s) return;
-    const agent = s.agent_type || 'claude';
-    setNewAgent(agent);
-    setNewWorkDir(s.work_dir || '');
-    setNewMode(normalizePermMode(agent, s.permission_mode || 'default'));
-    const parts = Array.isArray(s.cli_extra_args) ? s.cli_extra_args : [];
-    setForwardModel(extractModelFromCliArgs(parts));
-    setNewCliExtra(cliArgsWithoutModel(parts).join('\n'));
+    newForm.applyFromSession(s);
   }, [copyFromId, sessionsList]);
 
   useEffect(() => {
@@ -119,22 +103,14 @@ function ForwardModal({
         onClose();
         return;
       }
-      if (!newName.trim()) {
+      if (!newForm.name.trim()) {
         setErrText('請填寫新會話名稱');
         return;
       }
-      const cliMerged = mergeModelIntoCliExtraLines(newCliExtra, forwardModel);
       const res = await apiFetch('/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: newName.trim(),
-          work_dir: newWorkDir.trim(),
-          permission_mode: newMode,
-          agent_type: newAgent,
-          cli_extra_args: parseCliExtraArgs(cliMerged),
-          input_mode: 'agent',
-        }),
+        body: JSON.stringify(newForm.buildCreatePayload({ input_mode: 'agent' })),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -237,12 +213,8 @@ function ForwardModal({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500">Agent</label>
                   <select
-                    value={newAgent}
-                    onChange={(e) => {
-                      const next = e.target.value;
-                      setNewAgent(next);
-                      setNewMode((prev) => normalizePermMode(next, prev));
-                    }}
+                    value={newForm.agent}
+                    onChange={(e) => newForm.setAgent(e.target.value)}
                     className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-200"
                   >
                     <option value="claude">Claude</option>
@@ -255,8 +227,8 @@ function ForwardModal({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500">工作目錄</label>
                   <input
-                    value={newWorkDir}
-                    onChange={(e) => setNewWorkDir(e.target.value)}
+                    value={newForm.workDir}
+                    onChange={(e) => newForm.setWorkDir(e.target.value)}
                     placeholder="/path/to/project"
                     className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-100 font-mono placeholder-slate-600"
                   />
@@ -264,8 +236,8 @@ function ForwardModal({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500">Model（選填，寫入 --model）</label>
                   <input
-                    value={forwardModel}
-                    onChange={(e) => setForwardModel(e.target.value)}
+                    value={newForm.model}
+                    onChange={(e) => newForm.setModel(e.target.value)}
                     placeholder="例如 sonnet"
                     className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-100 placeholder-slate-600"
                   />
@@ -274,28 +246,28 @@ function ForwardModal({
                   <label className="text-[10px] text-slate-500">權限模式</label>
                   {usePermModeDropdown ? (
                     <PermModeSelect
-                      agentType={newAgent}
-                      value={newMode}
-                      onChange={setNewMode}
-                      disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
+                      agentType={newForm.agent}
+                      value={newForm.mode}
+                      onChange={newForm.setMode}
+                      disabled={newForm.agent === 'codex' || newForm.agent === 'kiro' || newForm.agent === 'kiroacp'}
                       id="forward-new-perm-mode-classic"
                       className="w-full py-2 text-xs"
                     />
                   ) : (
                     <PermModeSwitch
-                      agentType={newAgent}
-                      value={newMode}
-                      onChange={setNewMode}
-                      disabled={newAgent === 'codex' || newAgent === 'kiro' || newAgent === 'kiroacp'}
+                      agentType={newForm.agent}
+                      value={newForm.mode}
+                      onChange={newForm.setMode}
+                      disabled={newForm.agent === 'codex' || newForm.agent === 'kiro' || newForm.agent === 'kiroacp'}
                     />
                   )}
                 </div>
-                {newAgent === 'claude' && (
+                {newForm.agent === 'claude' && (
                   <div className="space-y-1">
                     <label className="text-[10px] text-slate-500">自訂 CLI 引數（選填，不含 --model）</label>
                     <textarea
-                      value={newCliExtra}
-                      onChange={(e) => setNewCliExtra(e.target.value)}
+                      value={newForm.cliExtra}
+                      onChange={(e) => newForm.setCliExtra(e.target.value)}
                       rows={3}
                       spellCheck={false}
                       className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-100 font-mono placeholder-slate-600 app-scroll"
@@ -305,8 +277,8 @@ function ForwardModal({
                 <div className="space-y-1">
                   <label className="text-[10px] text-slate-500">新會話名稱（必填）</label>
                   <input
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
+                    value={newForm.name}
+                    onChange={(e) => newForm.setName(e.target.value)}
                     className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-2 py-2 text-xs text-slate-100"
                   />
                 </div>

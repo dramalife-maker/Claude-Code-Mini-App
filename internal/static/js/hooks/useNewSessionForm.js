@@ -1,0 +1,64 @@
+/**
+ * 新建 session 表單的共用狀態與邏輯。
+ * SessionView（建立表單）與 ForwardModal（轉發時新建會話）原本各自維護一份幾乎相同的
+ * newName/newDir/newAgent/newMode/newCliExtra/newModel 狀態與 payload 組裝邏輯，這裡收成一份。
+ * 各自的 JSX／版面仍分開維護（樣式不同），只共用「狀態 + 送出 payload」這塊。
+ */
+function useNewSessionForm(defaults = {}) {
+  const [name, setName]         = useState(defaults.name || '');
+  const [workDir, setWorkDir]   = useState(defaults.workDir || '');
+  const [agent, setAgentRaw]    = useState(defaults.agent || 'claude');
+  const [mode, setMode]         = useState(defaults.mode || 'default');
+  const [cliExtra, setCliExtra] = useState('');
+  const [model, setModel]       = useState('');
+
+  /** 切換 agent 時，權限模式要跟著正規化（例如切到 codex 就不能是 acceptEdits） */
+  const setAgent = (next) => {
+    setAgentRaw(next);
+    setMode((prev) => normalizePermMode(next, prev));
+  };
+
+  const reset = (overrides = {}) => {
+    setName(overrides.name || '');
+    setWorkDir(overrides.workDir || '');
+    setAgentRaw(overrides.agent || 'claude');
+    setMode(overrides.mode || 'default');
+    setCliExtra('');
+    setModel('');
+  };
+
+  /** 依既有 session 的設定回填表單（ForwardModal「複製自」用） */
+  const applyFromSession = (s) => {
+    const a = s.agent_type || 'claude';
+    setAgentRaw(a);
+    setWorkDir(s.work_dir || '');
+    setMode(normalizePermMode(a, s.permission_mode || 'default'));
+    const parts = Array.isArray(s.cli_extra_args) ? s.cli_extra_args : [];
+    setModel(extractModelFromCliArgs(parts));
+    setCliExtra(cliArgsWithoutModel(parts).join('\n'));
+  };
+
+  const buildCreatePayload = (extra = {}) => {
+    const cliMerged = mergeModelIntoCliExtraLines(cliExtra, model);
+    return {
+      name: name.trim(),
+      work_dir: workDir.trim(),
+      permission_mode: mode,
+      agent_type: agent,
+      cli_extra_args: parseCliExtraArgs(cliMerged),
+      ...extra,
+    };
+  };
+
+  return {
+    name, setName,
+    workDir, setWorkDir,
+    agent, setAgent,
+    mode, setMode,
+    cliExtra, setCliExtra,
+    model, setModel,
+    reset,
+    applyFromSession,
+    buildCreatePayload,
+  };
+}
