@@ -68,12 +68,14 @@ func (db *DB) migrate() error {
 	if err != nil {
 		return err
 	}
-	// 新增欄位（已存在時忽略錯誤）
+	// 新增／更名欄位（已存在或來源欄位不存在時忽略錯誤）
 	tryAlter := func(q string) {
 		if _, err := db.Exec(q); err != nil {
-			if !strings.Contains(err.Error(), "duplicate column") {
-				log.Printf("[migrate] warning: %s: %v", q, err)
+			msg := err.Error()
+			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "no such column") {
+				return
 			}
+			log.Printf("[migrate] warning: %s: %v", q, err)
 		}
 	}
 	tryAlter(`ALTER TABLE sessions ADD COLUMN pending_denials TEXT NOT NULL DEFAULT ''`)
