@@ -12,10 +12,11 @@ import (
 const ManualCooldown = 60 * time.Second
 
 var defaultTTL = map[string]time.Duration{
-	agent.TypeClaude: 5 * time.Minute,
-	agent.TypeCursor: 3 * time.Minute,
-	agent.TypeKiro:   5 * time.Minute,
-	agent.TypeCodex:  5 * time.Minute,
+	agent.TypeClaude:  5 * time.Minute,
+	agent.TypeCursor:  3 * time.Minute,
+	agent.TypeKiro:    5 * time.Minute,
+	agent.TypeKiroACP: 5 * time.Minute,
+	agent.TypeCodex:   5 * time.Minute,
 }
 
 type cacheEntry struct {
@@ -31,19 +32,21 @@ type inflightCall struct {
 
 // Service 是 global per-provider quota 快取（帳戶級，非 session 級）。
 type Service struct {
-	mu             sync.RWMutex
-	cache          map[string]*cacheEntry
-	lastManual     map[string]time.Time
-	fetchers       map[string]Fetcher
-	inflight       map[string]*inflightCall
+	mu         sync.RWMutex
+	cache      map[string]*cacheEntry
+	lastManual map[string]time.Time
+	fetchers   map[string]Fetcher
+	inflight   map[string]*inflightCall
 }
 
 func NewService() *Service {
+	kiroFetcher := &KiroFetcher{}
 	fetchers := map[string]Fetcher{
-		agent.TypeClaude: &ClaudeFetcher{},
-		agent.TypeCursor: &CursorFetcher{},
-		agent.TypeKiro:   &KiroFetcher{},
-		agent.TypeCodex:  &CodexFetcher{},
+		agent.TypeClaude:      &ClaudeFetcher{},
+		agent.TypeCursor:      &CursorFetcher{},
+		agent.TypeKiro:        kiroFetcher,
+		agent.TypeKiroACP:     kiroFetcher, // 同一 kiro-cli 帳號，用量共用
+		agent.TypeCodex:       &CodexFetcher{},
 		agent.TypeAntigravity: &AntigravityFetcher{},
 	}
 	return &Service{
@@ -96,7 +99,7 @@ func (s *Service) GetAll() map[string]Snapshot {
 	out := map[string]Snapshot{
 		agent.TypeAntigravity: s.antigravitySnapshot(),
 	}
-	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro} {
+	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro, agent.TypeKiroACP} {
 		out[p] = s.Get(p)
 	}
 	return out
@@ -104,7 +107,7 @@ func (s *Service) GetAll() map[string]Snapshot {
 
 // Warmup 冷啟動時背景 prefetch（各 provider 一次）。
 func (s *Service) Warmup(ctx context.Context) {
-	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro} {
+	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro, agent.TypeKiroACP} {
 		provider := p
 		go func() {
 			if _, err := s.refresh(ctx, provider, false); err != nil {
