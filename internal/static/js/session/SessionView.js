@@ -1,13 +1,10 @@
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePermModeDropdown = false, activeSessionId = null }) {
+function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
   const [groupByDir] = useState(true); // RemoteAgent：固定依工作目錄分組
   const [collapsedDirs, setCollapsedDirs] = useState(() => new Set());
-  const [showForm, setShowForm]   = useState(false);
-  const newForm = useNewSessionForm();
-  const [loading, setLoading]     = useState(false);
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal]   = useState('');
   const renameInputRef = useRef(null);
@@ -42,21 +39,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
   useEffect(() => {
     if (renamingId) renameInputRef.current?.focus();
   }, [renamingId]);
-
-  const create = async () => {
-    if (!newForm.name.trim()) return;
-    setLoading(true);
-    const res = await apiFetch('/sessions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newForm.buildCreatePayload()),
-    });
-    setLoading(false);
-    if (!res.ok) return;
-    newForm.reset();
-    setShowForm(false);
-    load();
-  };
 
   const del = async (id, e) => {
     e.stopPropagation();
@@ -226,9 +208,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
   const openNewSessionForDir = (dirKey) => {
     const unset = '（未設定工作目錄）';
     const dir = dirKey === unset ? '' : dirKey;
-    newForm.setWorkDir(dir);
-    newForm.setName(workDirBasename(dirKey));
-    setShowForm(true);
+    onCreateNew?.({ workDir: dir, name: workDirBasename(dirKey) });
   };
 
   const renderSessionRow = (s) => {
@@ -319,12 +299,12 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
         </div>
         <button
           type="button"
-          onClick={() => setShowForm(!showForm)}
-          aria-label={showForm ? '關閉建立表單' : '建立新 Session'}
-          title={showForm ? '關閉' : '新 Session'}
+          onClick={() => onCreateNew?.()}
+          aria-label="建立新 Session"
+          title="新 Session"
           className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[oklch(0.62_0.19_275)] text-white text-lg leading-none transition hover:brightness-110 active:scale-95 focus:outline-none"
         >
-          {showForm ? '×' : '+'}
+          +
         </button>
       </div>
 
@@ -354,90 +334,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, usePer
               <option key={opt.value} value={opt.value}>{opt.label.replace('活動 ', '')}</option>
             ))}
           </select>
-        </div>
-      )}
-
-      {/* 建立表單 */}
-      {showForm && (
-        <div className="px-4 py-3 bg-[oklch(0.15_0.02_264)] border-b border-[oklch(0.28_0.02_264)] space-y-2 shrink-0 min-w-0 ra-card-enter">
-          <input value={newForm.name} onChange={e => newForm.setName(e.target.value)}
-            placeholder="Session 名稱（必填）"
-            className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-600" />
-          <input value={newForm.workDir} onChange={e => newForm.setWorkDir(e.target.value)}
-            placeholder="工作目錄（選填，如 /home/user/project）"
-            className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-600 font-mono" />
-          <div className="min-w-0 space-y-2">
-            <select
-              value={newForm.agent}
-              onChange={(e) => newForm.setAgent(e.target.value)}
-              className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300"
-            >
-              <option value="claude">Claude</option>
-              <option value="cursor">Cursor</option>
-              <option value="kiro">Kiro</option>
-              <option value="kiroacp">Kiro ACP</option>
-              <option value="codex">Codex</option>
-            </select>
-            <div className="min-w-0">
-              {usePermModeDropdown ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="shrink-0 text-xs text-gray-500">權限</span>
-                  <PermModeSelect
-                    agentType={newForm.agent}
-                    value={newForm.mode}
-                    onChange={newForm.setMode}
-                    disabled={newForm.agent === 'codex' || newForm.agent === 'kiro' || newForm.agent === 'kiroacp'}
-                    id="session-new-perm-mode"
-                    className="flex-1 min-w-0 py-2"
-                  />
-                </div>
-              ) : (
-                <>
-                  <div className="mb-1 text-[10px] uppercase tracking-wide text-gray-500">權限模式</div>
-                  <PermModeSwitch
-                    agentType={newForm.agent}
-                    value={newForm.mode}
-                    onChange={newForm.setMode}
-                    disabled={newForm.agent === 'codex' || newForm.agent === 'kiro' || newForm.agent === 'kiroacp'}
-                  />
-                </>
-              )}
-            </div>
-          </div>
-          {newForm.agent !== 'antigravity' && (
-            <div className="min-w-0 space-y-1">
-              <div className="text-[10px] uppercase tracking-wide text-gray-500">Model（選填，寫入 --model）</div>
-              <input
-                value={newForm.model}
-                onChange={(e) => newForm.setModel(e.target.value)}
-                placeholder="例如 sonnet、claude-sonnet-4.6、auto"
-                className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-600 font-mono"
-              />
-            </div>
-          )}
-          {newForm.agent === 'claude' && (
-            <div className="min-w-0 space-y-1">
-              <div className="text-[10px] uppercase tracking-wide text-gray-500">自訂 CLI 引數（選填）</div>
-              <textarea
-                value={newForm.cliExtra}
-                onChange={(e) => newForm.setCliExtra(e.target.value)}
-                placeholder={'每行一個引數，例如：\n--plugin-dir\n./.claude/plugins/crm\n--plugin-dir\n./.claude/plugins/crm2\n含空格的路徑請寫在同一行。'}
-                rows={5}
-                spellCheck={false}
-                className="w-full min-w-0 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-violet-600 font-mono leading-relaxed overflow-y-auto app-scroll"
-              />
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2 justify-end">
-            <button onClick={create} disabled={loading || !newForm.name.trim()}
-              className="px-4 py-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-40 text-white rounded-lg text-sm font-medium shrink-0">
-              建立
-            </button>
-            <button onClick={() => setShowForm(false)}
-              className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm shrink-0">
-              取消
-            </button>
-          </div>
         </div>
       )}
 

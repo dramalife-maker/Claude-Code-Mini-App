@@ -78,7 +78,23 @@ function DebugBanner() {
 // ── Root ──────────────────────────────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [composerPrefill, setComposerPrefill] = useState(null);
   const [authed, setAuthed]   = useState(isTelegram);
+
+  const openComposer = useCallback((prefill) => {
+    setComposerPrefill(prefill || {});
+    setCreating(true);
+  }, []);
+  const closeComposer = useCallback(() => setCreating(false), []);
+  const handleCreated = useCallback((s) => {
+    setCreating(false);
+    setSession(s);
+  }, []);
+  const selectSession = useCallback((s) => {
+    setCreating(false);
+    setSession(s);
+  }, []);
   const [isWideScreen, setIsWideScreen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   // 非 TMA 環境：mount 時試探 cookie 是否仍有效
   const [checking, setChecking] = useState(!isTelegram);
@@ -204,9 +220,13 @@ function App() {
 
   const renderAuthedLayout = () => {
     if (!isWideScreen) {
-      return session
-        ? <ChatView session={session} onBack={() => setSession(null)} usePermModeDropdown onJumpToSession={setSession} allSessions={sidebarSortedSessions} />
-        : <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} usePermModeDropdown activeSessionId={session?.id} />;
+      if (creating) {
+        return <NewSessionComposer sessions={sidebarSortedSessions} prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />;
+      }
+      if (session) {
+        return <ChatView session={session} onBack={() => selectSession(null)} usePermModeDropdown onJumpToSession={selectSession} allSessions={sidebarSortedSessions} />;
+      }
+      return <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} />;
     }
 
     return (
@@ -216,7 +236,7 @@ function App() {
             style={{ width: sidebarWidthPx, flexShrink: 0 }}
             className="min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col"
           >
-            <SessionView onEnter={setSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} />
+            <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} />
           </aside>
         )}
         {!sidebarCollapsed && (
@@ -250,8 +270,10 @@ function App() {
           </svg>
         </button>
         <main className="flex-1 min-w-0 min-h-0">
-          {session ? (
-            <ChatView session={session} onBack={() => setSession(null)} showBack={false} fullHeight={false} onJumpToSession={setSession} allSessions={sidebarSortedSessions} />
+          {creating ? (
+            <NewSessionComposer sessions={sidebarSortedSessions} prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />
+          ) : session ? (
+            <ChatView session={session} onBack={() => selectSession(null)} showBack={false} fullHeight={false} onJumpToSession={selectSession} allSessions={sidebarSortedSessions} />
           ) : (
             <div className="h-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)]">
               <div className="w-10 h-10 rounded-[10px] bg-gradient-to-br from-[oklch(0.62_0.19_275)] to-[oklch(0.6_0.17_300)] flex items-center justify-center opacity-80" aria-hidden>
