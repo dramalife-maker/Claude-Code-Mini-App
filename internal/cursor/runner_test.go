@@ -114,3 +114,29 @@ func filterEvents(events []agent.Event, typ agent.EventType) []agent.Event {
 	}
 	return out
 }
+
+
+func TestToolLabel(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"read", `{"type":"tool_call","subtype":"started","call_id":"1","tool_call":{"readToolCall":{"args":{"path":"README.md"}}}}`, "讀取檔案中…"},
+		{"write", `{"type":"tool_call","subtype":"started","call_id":"2","tool_call":{"writeToolCall":{"args":{"path":"a.go"}}}}`, "修改檔案中…"},
+		{"function", `{"type":"tool_call","subtype":"started","call_id":"3","tool_call":{"function":{"name":"grep","arguments":"{}"}}}`, "呼叫工具 grep…"},
+		{"unknown-suffix", `{"type":"tool_call","subtype":"started","call_id":"4","tool_call":{"searchToolCall":{"args":{}}}}`, "使用工具 search…"},
+		{"empty", `{"type":"tool_call","subtype":"started","call_id":"5"}`, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e, err := ParseEvent([]byte(c.line))
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			if got := e.ToolLabel(); got != c.want {
+				t.Errorf("ToolLabel() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}

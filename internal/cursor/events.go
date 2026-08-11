@@ -1,6 +1,9 @@
 package cursor
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // 參考 docs/cursor-agent-cli.md 與官方 output-format 文件。
 // stream-json 採 NDJSON，每行一個 JSON 物件。
@@ -71,4 +74,38 @@ func ParseEvent(line []byte) (*StreamEvent, error) {
 		return nil, err
 	}
 	return &e, nil
+}
+
+// ToolLabel 從多型 tool_call payload 取出前端活動提示文字。
+// 已知 schema：readToolCall / writeToolCall；fallback：function.name。
+// ponytail: tool_call 物件預期只有單一工具鍵，故 map 首個相符鍵即可（順序不定但只有一個）。
+func (e *StreamEvent) ToolLabel() string {
+	if len(e.ToolCall) == 0 {
+		return ""
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(e.ToolCall, &m) != nil {
+		return ""
+	}
+	if raw, ok := m["function"]; ok {
+		var fn struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw, &fn) == nil && strings.TrimSpace(fn.Name) != "" {
+			return "呼叫工具 " + fn.Name + "…"
+		}
+	}
+	for k := range m {
+		switch k {
+		case "readToolCall":
+			return "讀取檔案中…"
+		case "writeToolCall":
+			return "修改檔案中…"
+		default:
+			if name := strings.TrimSuffix(k, "ToolCall"); name != k && name != "" {
+				return "使用工具 " + name + "…"
+			}
+		}
+	}
+	return "使用工具中…"
 }

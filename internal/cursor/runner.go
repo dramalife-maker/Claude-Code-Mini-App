@@ -184,6 +184,12 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *dispatchSt
 
 	case "tool_call":
 		log.Printf("[cursor] tool_call subtype=%s call_id=%s", e.Subtype, e.CallID)
+		// 工具開始時送出活動提示（transient，前端覆寫顯示）。completed 不重送，避免噪音。
+		if e.Subtype != "completed" {
+			if label := e.ToolLabel(); label != "" {
+				cb(agent.Event{Type: agent.EventActivity, Text: label})
+			}
+		}
 
 	case "result":
 		r.dispatchResult(e, cb)
