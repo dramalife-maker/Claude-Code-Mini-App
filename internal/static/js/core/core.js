@@ -203,11 +203,9 @@ const wsURL = (sessionId) => {
   return url;
 };
 
+// marked v5+ 已移除同步 `highlight` option（改走 extension/後處理），此 setOptions 的 highlight
+// 已對新版 CDN marked 無效果；改在 parseMarkdown 輸出後手動跑 hljs（見下方）。
 marked.setOptions({
-  highlight: (code, lang) => {
-    if (lang && hljs.getLanguage(lang)) return hljs.highlight(code, { language: lang }).value;
-    return hljs.highlightAuto(code).value;
-  },
   breaks: true,
 });
 
@@ -215,7 +213,24 @@ const parseMarkdown = (text) => {
   const html = marked.parse(text);
   return html
     .replace(/<table>/g, '<div class="table-wrap"><table>')
-    .replace(/<\/table>/g, '</table></div>');
+    .replace(/<\/table>/g, '</table></div>')
+    // <pre><code class="language-xxx">raw text</code></pre> → 用 hljs 上色 + 提升 data-lang 到 <pre> + 加複製按鈕。
+    .replace(/<pre><code class="language-([\w+-]+)">([\s\S]*?)<\/code><\/pre>/g, (m, lang, inner) => {
+      const raw = inner.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+      let out;
+      try {
+        out = hljs.getLanguage(lang) ? hljs.highlight(raw, { language: lang }).value : hljs.highlightAuto(raw).value;
+      } catch (_) {
+        out = inner; // 高亮失敗時保留原輸出，不讓整段訊息渲染中斷。
+      }
+      // 原始文字以 base64 存進 data 屬性，避免複製鍵讀取時再度處理 HTML entity escape。
+      const b64 = btoa(unescape(encodeURIComponent(raw)));
+      const copyBtn = `<button type="button" class="code-copy-btn" data-copy-b64="${b64}" aria-label="複製程式碼" title="複製">`
+        + `<svg class="icon-copy" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`
+        + `<svg class="icon-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M20 6 9 17l-5-5"/></svg>`
+        + `</button>`;
+      return `<pre data-lang="${lang}">${copyBtn}<code class="language-${lang} hljs">${out}</code></pre>`;
+    });
 };
 
 /** 顯示用：permission_mode 值 → 中文標籤。包含 Claude/Cursor 與 Gemini 兩套值。 */
