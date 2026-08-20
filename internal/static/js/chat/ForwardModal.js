@@ -249,7 +249,7 @@ function ForwardModal({
                       agentType={newForm.agent}
                       value={newForm.mode}
                       onChange={newForm.setMode}
-                      disabled={newForm.agent === 'codex' || newForm.agent === 'kiro' || newForm.agent === 'kiroacp'}
+                      disabled={newForm.agent === 'codex' || newForm.agent === 'kiro'}
                       id="forward-new-perm-mode-classic"
                       className="w-full py-2 text-xs"
                     />
@@ -258,7 +258,7 @@ function ForwardModal({
                       agentType={newForm.agent}
                       value={newForm.mode}
                       onChange={newForm.setMode}
-                      disabled={newForm.agent === 'codex' || newForm.agent === 'kiro' || newForm.agent === 'kiroacp'}
+                      disabled={newForm.agent === 'codex' || newForm.agent === 'kiro'}
                     />
                   )}
                 </div>

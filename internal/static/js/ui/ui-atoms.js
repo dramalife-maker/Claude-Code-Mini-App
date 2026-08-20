@@ -131,7 +131,13 @@ function permModeOptionsFor(agentType) {
       { value: 'yolo', label: 'YOLO（全自動）⚠️' },
     ];
   }
-  if (t === 'kiro' || t === 'kiroacp' || t === 'codex') {
+  if (t === 'kiroacp') {
+    return [
+      { value: 'default', label: '互動授權' },
+      { value: 'bypassPermissions', label: '全自動放行 ⚠️' },
+    ];
+  }
+  if (t === 'kiro' || t === 'codex') {
     return [{ value: 'default', label: '預設（固定）' }];
   }
   return [

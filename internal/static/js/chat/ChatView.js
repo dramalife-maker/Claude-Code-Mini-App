@@ -2,7 +2,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex 暫無對應概念）
-  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro' && agentType !== 'kiroacp';
+  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro';
   const showEffortSelect = agentType !== 'cursor';
   const {
     messages,
@@ -131,6 +131,33 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     if (prev === state) return;
     focusChatInput();
   }, [state, focusChatInput]);
+
+  // code block 右上角複製鍵：dangerouslySetInnerHTML 插入的 DOM 沒有 React 事件，
+  // 用外層 onClick 事件委派抓 .code-copy-btn（冒泡到這裡才處理，不影響一般點擊/選字）。
+  const handleCodeCopyClick = (e) => {
+    const btn = e.target.closest ? e.target.closest('.code-copy-btn') : null;
+    if (!btn) return;
+    e.stopPropagation();
+    const b64 = btn.getAttribute('data-copy-b64') || '';
+    let text = '';
+    try {
+      text = decodeURIComponent(escape(atob(b64)));
+    } catch (_) {
+      return;
+    }
+    if (!copyTextExecCommand(text)) return;
+    btn.classList.add('copied');
+    const iconCopy = btn.querySelector('.icon-copy');
+    const iconCheck = btn.querySelector('.icon-check');
+    if (iconCopy) iconCopy.style.display = 'none';
+    if (iconCheck) iconCheck.style.display = '';
+    clearTimeout(btn._copyResetTimer);
+    btn._copyResetTimer = setTimeout(() => {
+      btn.classList.remove('copied');
+      if (iconCopy) iconCopy.style.display = '';
+      if (iconCheck) iconCheck.style.display = 'none';
+    }, 2000);
+  };
 
   const handleSend = (overrideText) => {
     const raw = overrideText !== undefined && overrideText !== null ? String(overrideText) : input;
@@ -405,7 +432,11 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                 ) : (m.html || showStreamingTail) ? (
                   <div className="flex flex-row items-start gap-1">
                     {m.html && (
-                      <div className="prose text-[oklch(0.85_0.01_264)] text-sm leading-[1.8] flex-1 min-w-0" dangerouslySetInnerHTML={{ __html: m.html }} />
+                      <div
+                        className="prose text-[oklch(0.85_0.01_264)] text-sm leading-[1.8] flex-1 min-w-0"
+                        dangerouslySetInnerHTML={{ __html: m.html }}
+                        onClick={handleCodeCopyClick}
+                      />
                     )}
                     {showStreamingTail && (
                       <span className="streaming-tail shrink-0 select-none" aria-hidden="true">...</span>

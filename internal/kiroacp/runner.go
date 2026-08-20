@@ -72,6 +72,22 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		_ = cmd.Wait()
 	}()
 
+	// 互動式授權：把 ACP session/request_permission 轉給呼叫端（WS）決定。
+	if opts.RequestPermission != nil {
+		cl.onPermission = func(p permissionParams) string {
+			req := agent.PermissionRequest{
+				ToolCallID: p.ToolCall.ToolCallID,
+				Title:      p.ToolCall.Title,
+			}
+			for _, o := range p.Options {
+				req.Options = append(req.Options, agent.PermissionOption{
+					OptionID: o.OptionID, Name: o.Name, Kind: o.Kind,
+				})
+			}
+			return opts.RequestPermission(ctx, req)
+		}
+	}
+
 	streamStarted := false
 	emitStreamStart := func() {
 		if streamStarted {
@@ -203,7 +219,19 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 }
 
 func buildArgs(opts agent.RunOptions) []string {
-	args := []string{"acp", "--trust-all-tools"}
+	args := []string{"acp"}
+	// 權限模式對應：
+	//   bypassPermissions / yolo → --trust-all-tools（全自動放行）
+	//   其他（default/plan/acceptEdits）且有互動授權回呼 → 不加旗標（走 session/request_permission）
+	//   無回呼時退回 --trust-all-tools，避免無人回覆導致工具卡住。
+	mode := ""
+	if opts.ExtraArgs != nil {
+		mode = strings.TrimSpace(opts.ExtraArgs[agent.ArgPermissionMode])
+	}
+	interactive := opts.RequestPermission != nil && mode != "bypassPermissions" && mode != "yolo"
+	if !interactive {
+		args = append(args, "--trust-all-tools")
+	}
 	if opts.ExtraArgs != nil {
 		if effort := strings.TrimSpace(opts.ExtraArgs["effort"]); effort != "" {
 			args = append(args, "--effort", effort)

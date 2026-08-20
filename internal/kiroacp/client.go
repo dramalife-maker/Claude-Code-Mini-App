@@ -21,13 +21,31 @@ type rpcRequest struct {
 }
 
 // rpcResponse 是 JSON-RPC 回應（含 notification：無 id）。
+// ID 用 json.RawMessage 容忍 server 端可能用字串或數字 id（ACP request_permission 實測非 int）。
 type rpcResponse struct {
 	JSONRPC string          `json:"jsonrpc"`
-	ID      *int64          `json:"id,omitempty"`
+	ID      json.RawMessage `json:"id,omitempty"`
 	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *rpcError       `json:"error,omitempty"`
+}
+
+// hasID 回報是否帶有效 id（非空且非 null）。
+func (r rpcResponse) hasID() bool {
+	return len(r.ID) > 0 && string(r.ID) != "null"
+}
+
+// intID 嘗試把 id 解析為 int64（用於配對本地送出的請求）。
+func (r rpcResponse) intID() (int64, bool) {
+	if !r.hasID() {
+		return 0, false
+	}
+	var n int64
+	if err := json.Unmarshal(r.ID, &n); err == nil {
+		return n, true
+	}
+	return 0, false
 }
 
 type rpcError struct {
@@ -75,6 +93,20 @@ type textContent struct {
 	Text string `json:"text"`
 }
 
+// permissionParams 對應 session/request_permission 的 params。
+type permissionParams struct {
+	SessionID string `json:"sessionId"`
+	ToolCall  struct {
+		ToolCallID string `json:"toolCallId"`
+		Title      string `json:"title"`
+	} `json:"toolCall"`
+	Options []struct {
+		OptionID string `json:"optionId"`
+		Name     string `json:"name"`
+		Kind     string `json:"kind"`
+	} `json:"options"`
+}
+
 // client 是單一 kiro-cli acp 子進程的 JSON-RPC over stdio 客戶端。
 type client struct {
 	cmd    *exec.Cmd
@@ -86,6 +118,9 @@ type client struct {
 	pending map[int64]chan rpcResponse
 
 	onUpdate func(sessionUpdateBody)
+	// onPermission 處理 server→client 的 session/request_permission。
+	// 回傳選定的 optionID；空字串代表拒絕／取消。nil 時 dispatch 會退回 -32601。
+	onPermission func(permissionParams) string
 
 	readDone chan struct{}
 	readErr  error
@@ -125,12 +160,24 @@ func (c *client) readLoop() {
 }
 
 func (c *client) dispatch(msg rpcResponse) {
-	// Server → client request（例如 fs）；回傳 method not found，避免卡住。
-	if msg.Method != "" && msg.ID != nil && msg.Result == nil && msg.Error == nil {
+	// Server → client request。
+	if msg.Method != "" && msg.hasID() && msg.Result == nil && msg.Error == nil {
+		// 互動式授權：session/request_permission。
+		if msg.Method == "session/request_permission" && c.onPermission != nil {
+			var p permissionParams
+			if err := json.Unmarshal(msg.Params, &p); err != nil {
+				log.Printf("[kiroacp] request_permission unmarshal: %v", err)
+			} else {
+				optionID := c.onPermission(p)
+				c.replyPermission(msg.ID, optionID)
+				return
+			}
+		}
+		// 其他 client 請求（例如 fs）或無 handler：回 method not found，避免卡住。
 		c.mu.Lock()
 		errResp := map[string]any{
 			"jsonrpc": "2.0",
-			"id":      *msg.ID,
+			"id":      msg.ID,
 			"error": map[string]any{
 				"code":    -32601,
 				"message": "client method not implemented: " + msg.Method,
@@ -159,11 +206,11 @@ func (c *client) dispatch(msg rpcResponse) {
 		return
 	}
 
-	if msg.ID != nil {
+	if id, ok := msg.intID(); ok {
 		c.mu.Lock()
-		ch, ok := c.pending[*msg.ID]
+		ch, ok := c.pending[id]
 		if ok {
-			delete(c.pending, *msg.ID)
+			delete(c.pending, id)
 		}
 		c.mu.Unlock()
 		if ok {
@@ -185,6 +232,25 @@ func (c *client) write(req rpcRequest) error {
 
 func (c *client) notify(method string, params any) error {
 	return c.write(rpcRequest{JSONRPC: "2.0", Method: method, Params: params})
+}
+
+// replyPermission 回覆 session/request_permission。
+// optionID 非空 → selected；空字串 → cancelled（等同拒絕）。id 原樣 echo。
+func (c *client) replyPermission(id json.RawMessage, optionID string) {
+	var outcome map[string]any
+	if optionID != "" {
+		outcome = map[string]any{"outcome": "selected", "optionId": optionID}
+	} else {
+		outcome = map[string]any{"outcome": "cancelled"}
+	}
+	c.mu.Lock()
+	b, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  map[string]any{"outcome": outcome},
+	})
+	_, _ = c.stdin.Write(append(b, '\n'))
+	c.mu.Unlock()
 }
 
 func (c *client) call(ctx context.Context, method string, params any) (json.RawMessage, error) {

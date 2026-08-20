@@ -127,6 +127,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 		var mu sync.Mutex       // 保護 agentSessionID 等連線狀態
 		var writeMu sync.Mutex  // 序列化 WebSocket 寫入（goroutine 不可並發 WriteMessage）
+		// pendingPerm：kiroacp 互動式授權的回傳通道（true=allow, false=deny）。
+		// 非 nil 表示 runner 正在等使用者決定；由 mu 保護。
+		var pendingPerm chan bool
 		agentType := sess.AgentType
 		if agentType == "" {
 			agentType = agent.TypeClaude
@@ -356,6 +359,65 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				CliExtraArgs: cliExtra,
 			}
 
+			// kiroacp 互動式授權：runner 中途收到工具授權請求時同步呼叫，
+			// 廣播 permission_request 給前端並阻塞，直到使用者 allow_once/deny_once 或 ctx 取消。
+			if agentType == agent.TypeKiroACP {
+				opts.RequestPermission = func(rctx context.Context, req agent.PermissionRequest) string {
+					ch := make(chan bool, 1)
+					mu.Lock()
+					pendingPerm = ch
+					mu.Unlock()
+
+					_ = database.UpdateSessionStatus(sessionID, db.SessionStatusAwaitingConfirm)
+					broadcast(serverMsg{Type: "status", Value: StateAwaitingConfirm})
+					title := strings.TrimSpace(req.Title)
+					if title == "" {
+						title = "工具授權請求"
+					}
+					broadcast(serverMsg{Type: "permission_request", Tools: []map[string]string{{"tool_name": title}}})
+					notifyTaskAsync(botToken, tgUserID, notifyCfg, tg.TaskAlert{
+						SessionName: sess.Name,
+						Outcome:     tg.OutcomeConfirm,
+					})
+
+					var allow bool
+					select {
+					case allow = <-ch:
+					case <-rctx.Done():
+						allow = false
+					}
+
+					mu.Lock()
+					pendingPerm = nil
+					mu.Unlock()
+					if rctx.Err() == nil {
+						_ = database.UpdateSessionStatus(sessionID, db.SessionStatusRunning)
+						broadcast(serverMsg{Type: "status", Value: StateStreaming})
+					}
+
+					// 依 kind 把粗粒度 allow/deny 對應成該請求的 optionId（robust，不寫死 id）。
+					wantKinds := []string{"reject_once", "reject_always"}
+					if allow {
+						wantKinds = []string{"allow_once", "allow_always"}
+					}
+					for _, k := range wantKinds {
+						for _, o := range req.Options {
+							if o.Kind == k {
+								return o.OptionID
+							}
+						}
+					}
+					if allow {
+						for _, o := range req.Options {
+							if !strings.HasPrefix(o.Kind, "reject") {
+								return o.OptionID
+							}
+						}
+					}
+					return "" // deny / cancel
+				}
+			}
+
 			runner, err := agent.NewRunner(agentType)
 			if err != nil {
 				log.Printf("[ws] NewRunner %s: %v", agentType, err)
@@ -496,6 +558,11 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 							clearPendingDenials(database, sessionID)
 							if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
 								log.Printf("[ws] UpdateSessionStatus idle: %v", err)
+							}
+							// 這個 WS 連線正在跑此 session（使用者正在看），完成時順手標已讀，
+							// 避免 last_active 更新後被自己的任務完成誤判成未讀。
+							if err := database.MarkSessionRead(sessionID); err != nil {
+								log.Printf("[ws] MarkSessionRead: %v", err)
 							}
 							broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 							notifyTaskAsync(botToken, tgUserID, notifyCfg, tg.TaskAlert{
@@ -898,6 +965,17 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				}
 
 			case "allow_once":
+				// kiroacp 互動式授權：解析 pending 而非重跑。
+				mu.Lock()
+				chAllow := pendingPerm
+				mu.Unlock()
+				if chAllow != nil {
+					select {
+					case chAllow <- true:
+					default:
+					}
+					continue
+				}
 				if !isClaude {
 					log.Printf("[ws] agent=%s: allow_once ignored", agentType)
 					continue
@@ -928,6 +1006,17 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				runAgent("please retry the previous operation", once)
 
 			case "deny_once":
+				// kiroacp 互動式授權：解析 pending 而非重跑。
+				mu.Lock()
+				chDeny := pendingPerm
+				mu.Unlock()
+				if chDeny != nil {
+					select {
+					case chDeny <- false:
+					default:
+					}
+					continue
+				}
 				if !isClaude {
 					log.Printf("[ws] agent=%s: deny_once ignored", agentType)
 					continue

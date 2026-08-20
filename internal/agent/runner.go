@@ -16,6 +16,24 @@ type RunOptions struct {
 	ExtraArgs map[string]string
 	// CliExtraArgs 為使用者自訂的額外 argv（每個元素對應一個命令列引數），由 Session 持久化；僅 Claude runner 會附加。
 	CliExtraArgs []string
+	// RequestPermission 為互動式授權回呼（目前僅 kiroacp ACP 使用）。
+	// 當 runner 在回合中途收到工具授權請求時同步呼叫，會阻塞直到使用者決定或 ctx 取消。
+	// 回傳選定的 optionID；空字串代表拒絕／取消。nil 表示呼叫端不支援互動授權。
+	RequestPermission func(ctx context.Context, req PermissionRequest) string
+}
+
+// PermissionOption 是一個授權選項（對應 ACP session/request_permission 的 options 項目）。
+type PermissionOption struct {
+	OptionID string `json:"option_id"`
+	Name     string `json:"name"`
+	Kind     string `json:"kind"` // allow_once | allow_always | reject_once | reject_always
+}
+
+// PermissionRequest 是 runner 中途發起的工具授權請求。
+type PermissionRequest struct {
+	ToolCallID string             `json:"tool_call_id"`
+	Title      string             `json:"title"`
+	Options    []PermissionOption `json:"options"`
 }
 
 // EventType 代表 Runner 送出的事件種類。

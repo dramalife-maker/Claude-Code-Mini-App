@@ -38,8 +38,8 @@ function NewSessionComposer({ sessions, prefill, onCreated, onCancel }) {
     return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [sessions]);
 
-  // codex/kiro/kiroacp 沒有可切換的權限模式（固定行為），不顯示切換器
-  const showPermMode = !['codex', 'kiro', 'kiroacp'].includes(newForm.agent);
+  // codex/kiro 沒有可切換的權限模式（固定行為），不顯示切換器；kiroacp 有互動/全自動兩種
+  const showPermMode = !['codex', 'kiro'].includes(newForm.agent);
 
   const submit = async () => {
     if (loading) return;
