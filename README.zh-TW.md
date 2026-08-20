@@ -20,11 +20,13 @@ cp config.example.yaml config.yaml   # 填 bot_token、whitelist_tg_ids
 
 ## 功能
 
-- **多代理** — Claude Code、Cursor Agent、Kiro CLI（依 Session 選擇；Gemini / Antigravity 因 headless 限制暫停）
+- **多代理** — Claude Code、Cursor Agent、Kiro CLI、Kiro ACP（透過 Agent Client Protocol 提供互動式授權提示）；依 Session 選擇（Gemini / Antigravity 因 headless 限制暫停）
 - **即時串流** — WebSocket 對話與 Markdown 串流；多分頁同步
+- **程式碼區塊** — 語法高亮 + 語言標籤，一鍵複製
 - **用量徽章** — Session header 顯示帳戶用量（如 Claude `5h 16% · Week 9%`）
 - **Session 管理** — 多對話、各自綁定 `work_dir` 與權限模式
-- **權限流程** — Claude 遭拒時可「允許一次」或切換模式
+- **未讀追蹤** — 列表標示有新動態的 Session，可一鍵「全部標為已讀」
+- **權限流程** — Claude 遭拒時可「允許一次」或切換模式；Kiro ACP 支援回合中途授權
 - **驗證** — Telegram `initData` + 白名單；可選內網密碼登入
 - **選用 Shell** — 於 `work_dir` 執行指令（預設關閉）
 - **MCP server** — 透過 Streamable HTTP（`POST /mcp`）讓其他 agent 操作 session（預設關閉）
@@ -35,7 +37,7 @@ cp config.example.yaml config.yaml   # 填 bot_token、whitelist_tg_ids
 |---|---|---|---|
 | 手機體驗 | 差 | 純文字 | Mini App UI + 串流 |
 | Session / 工作目錄 | 手動 | 通常沒有 | 內建、可持久 |
-| 多 CLI | 自己接 | 一 bot 一工具 | Claude / Cursor / Kiro / Antigravity |
+| 多 CLI | 自己接 | 一 bot 一工具 | Claude / Cursor / Kiro / Kiro ACP |
 | 部署 | SSH 金鑰 | Bot + 自寫邏輯 | 單一二進位 |
 
 ## 架構
@@ -65,7 +67,8 @@ Telegram Mini App / 瀏覽器
 | 規格、API / WebSocket | [`docs/spec/plan.md`](docs/spec/plan.md) |
 | 設定欄位 | [`config.example.yaml`](config.example.yaml) |
 | 各 CLI 參考 | [`docs/spec/`](docs/spec/) |
-| 用量 POC | [`poc/quota-percent/README.md`](poc/quota-percent/README.md) |
+
+> `poc/`（探測腳本、一次性樣本）為本機調查用暫存，不進版控。
 
 ## 授權
 

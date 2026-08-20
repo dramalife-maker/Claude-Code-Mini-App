@@ -20,11 +20,13 @@ cp config.example.yaml config.yaml   # set bot_token, whitelist_tg_ids
 
 ## Features
 
-- **Multi-agent** — Claude Code, Cursor Agent, Kiro CLI (per session; Gemini / Antigravity paused due to headless limits)
+- **Multi-agent** — Claude Code, Cursor Agent, Kiro CLI, Kiro ACP (interactive permission prompts over Agent Client Protocol); per session (Gemini / Antigravity paused due to headless limits)
 - **Live streaming** — WebSocket chat with Markdown; multi-tab sync
+- **Code blocks** — syntax highlighting with language tag, one-click copy
 - **Quota badge** — Session header shows usage (e.g. Claude `5h 16% · Week 9%`)
 - **Sessions** — Multiple conversations, each with its own `work_dir` and permission mode
-- **Permissions** — Claude denial flow; approve once or switch mode from the UI
+- **Unread tracking** — Sessions with new activity are marked unread in the list; "read all" to clear
+- **Permissions** — Claude denial flow; Kiro ACP mid-turn approval; approve once or switch mode from the UI
 - **Auth** — Telegram `initData` + allowlist; optional web login on private IPs
 - **Optional shell** — Run commands in `work_dir` (off by default)
 - **MCP server** — Expose sessions to other agents over Streamable HTTP (`POST /mcp`, off by default)
@@ -35,7 +37,7 @@ cp config.example.yaml config.yaml   # set bot_token, whitelist_tg_ids
 |---|---|---|---|
 | Mobile UX | Poor | Text-only | Mini App UI + streaming |
 | Session / `work_dir` | Manual | Usually none | Built-in, persisted |
-| Multi CLI | You wire it | One bot, one tool | Claude / Cursor / Kiro / Antigravity |
+| Multi CLI | You wire it | One bot, one tool | Claude / Cursor / Kiro / Kiro ACP |
 | Deploy | SSH keys | Bot + custom code | Single binary |
 
 ## Architecture
@@ -65,7 +67,8 @@ Each user message spawns a short-lived subprocess. Details: [`docs/spec/plan.md`
 | Spec & API / WebSocket | [`docs/spec/plan.md`](docs/spec/plan.md) |
 | Config reference | [`config.example.yaml`](config.example.yaml) |
 | Claude / Cursor / Kiro / Antigravity CLI | [`docs/spec/`](docs/spec/) |
-| Quota POC notes | [`poc/quota-percent/README.md`](poc/quota-percent/README.md) |
+
+> `poc/` (probe scripts, one-off samples) is local investigation scratch, not tracked in the repo.
 
 ## License
 
