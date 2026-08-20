@@ -43,6 +43,8 @@ type Session struct {
 	// Model/Effort 為使用者要求值（空字串＝不指定，交給 CLI 用預設）。
 	Model  string `json:"model"`
 	Effort string `json:"effort"`
+	// LastReadAt 為使用者最後一次「正在看」此 session 的時間；配合 LastActive 判斷未讀（見前端 isUnread）。
+	LastReadAt string `json:"last_read_at"`
 }
 
 func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string, inputMode string) (*Session, error) {
@@ -68,7 +70,7 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 		extraJSON = string(b)
 	}
 	_, err := db.Exec(
-		`INSERT INTO sessions (id, name, description, work_dir, permission_mode, agent_type, cli_extra_args, input_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO sessions (id, name, description, work_dir, permission_mode, agent_type, cli_extra_args, input_mode, last_read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
 		id, name, description, workDir, permissionMode, agentType, extraJSON, inputMode,
 	)
 	if err != nil {
@@ -79,14 +81,14 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 
 func (db *DB) GetSession(id string) (*Session, error) {
 	row := db.QueryRow(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort FROM sessions WHERE id = ?`, id,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort, last_read_at FROM sessions WHERE id = ?`, id,
 	)
 	return scanSession(row)
 }
 
 func (db *DB) ListSessions() ([]*Session, error) {
 	rows, err := db.Query(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort FROM sessions ORDER BY last_active DESC`,
+		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort, last_read_at FROM sessions ORDER BY last_active DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -117,6 +119,24 @@ func (db *DB) UpdateSessionName(id, name string) error {
 		`UPDATE sessions SET name = ?, last_active = datetime('now') WHERE id = ?`,
 		name, id,
 	)
+	return err
+}
+
+// MarkSessionRead 記錄使用者最後一次「正在看」此 session 的時間。
+// 只動 last_read_at，不可連動 last_active——否則會把自己的已讀動作誤植為新活動，
+// 讓其他分頁／裝置的未讀判斷（last_active > last_read_at）失真。
+func (db *DB) MarkSessionRead(id string) error {
+	_, err := db.Exec(
+		`UPDATE sessions SET last_read_at = datetime('now') WHERE id = ?`,
+		id,
+	)
+	return err
+}
+
+// MarkAllSessionsRead 一次把所有 session 標記已讀（Read All 按鈕）。
+// 同樣只動 last_read_at，不動 last_active，理由同 MarkSessionRead。
+func (db *DB) MarkAllSessionsRead() error {
+	_, err := db.Exec(`UPDATE sessions SET last_read_at = datetime('now')`)
 	return err
 }
 
@@ -248,7 +268,7 @@ func scanSession(s scanner) (*Session, error) {
 	err := s.Scan(
 		&sess.ID, &sess.AgentType, &sess.AgentSessionID, &sess.Name, &sess.Description,
 		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status, &extraJSON, &sess.InputMode, &sess.ShellPending,
-		&sess.ActiveModel, &sess.ActiveModelSource, &sess.ActiveModelAt, &sess.Model, &sess.Effort,
+		&sess.ActiveModel, &sess.ActiveModelSource, &sess.ActiveModelAt, &sess.Model, &sess.Effort, &sess.LastReadAt,
 	)
 	if err != nil {
 		return nil, err

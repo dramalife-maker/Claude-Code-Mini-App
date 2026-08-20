@@ -288,6 +288,7 @@ func main() {
 	sh := api.NewSessionHandler(database)
 	app.Get("/sessions", authMiddleware, sh.List)
 	app.Post("/sessions", authMiddleware, sh.Create)
+	app.Post("/sessions/read-all", authMiddleware, sh.ReadAll)
 	app.Patch("/sessions/:id", authMiddleware, sh.Patch)
 	app.Delete("/sessions/:id", authMiddleware, sh.Delete)
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)

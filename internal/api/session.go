@@ -163,14 +163,15 @@ func (h *SessionHandler) Create(c *fiber.Ctx) error {
 func (h *SessionHandler) Patch(c *fiber.Ctx) error {
 	id := c.Params("id")
 	var body struct {
-		Name         *string  `json:"name"`
+		Name         *string   `json:"name"`
 		CliExtraArgs *[]string `json:"cli_extra_args"`
+		MarkRead     *bool     `json:"mark_read"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
-	if body.Name == nil && body.CliExtraArgs == nil {
-		return c.Status(400).JSON(fiber.Map{"error": "name 或 cli_extra_args 至少指定一項"})
+	if body.Name == nil && body.CliExtraArgs == nil && body.MarkRead == nil {
+		return c.Status(400).JSON(fiber.Map{"error": "name、cli_extra_args 或 mark_read 至少指定一項"})
 	}
 	if body.Name != nil {
 		trimmed := strings.TrimSpace(*body.Name)
@@ -190,6 +191,11 @@ func (h *SessionHandler) Patch(c *fiber.Ctx) error {
 			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 		}
 	}
+	if body.MarkRead != nil && *body.MarkRead {
+		if err := h.db.MarkSessionRead(id); err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		}
+	}
 	s, err := h.db.GetSession(id)
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
@@ -201,6 +207,14 @@ func (h *SessionHandler) Patch(c *fiber.Ctx) error {
 func (h *SessionHandler) Delete(c *fiber.Ctx) error {
 	id := c.Params("id")
 	if err := h.db.DeleteSession(id); err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.SendStatus(204)
+}
+
+// ReadAll 一次把所有 session 標記已讀（列表「Read All」按鈕）。
+func (h *SessionHandler) ReadAll(c *fiber.Ctx) error {
+	if err := h.db.MarkAllSessionsRead(); err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
 	}
 	return c.SendStatus(204)

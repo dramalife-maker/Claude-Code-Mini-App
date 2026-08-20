@@ -104,6 +104,8 @@ func (db *DB) migrate() error {
 	// model/effort：使用者要求值（空字串＝不指定，交給 CLI 用預設）
 	tryAlter(`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
 	tryAlter(`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`)
+	// last_read_at：使用者最後一次「正在看」此 session 的時間；配合 last_active 判斷未讀。
+	tryAlter(`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`)
 
 	return nil
 }

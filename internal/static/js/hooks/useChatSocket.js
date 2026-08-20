@@ -112,7 +112,15 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
       wsRef.current = ws;
       let everConnected = false;
 
-      ws.onopen = () => { everConnected = true; };
+      ws.onopen = () => {
+        everConnected = true;
+        // 使用者正在看這個 session：標記已讀，讓列表未讀點消失。失敗不影響聊天功能，靜默忽略。
+        apiFetch(`/sessions/${session.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mark_read: true }),
+        }).catch(() => {});
+      };
 
       ws.onmessage = (evt) => {
         if (!isCurrent() || wsRef.current !== ws) return;

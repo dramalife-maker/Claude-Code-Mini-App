@@ -211,19 +211,51 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     onCreateNew?.({ workDir: dir, name: workDirBasename(dirKey) });
   };
 
+  // 未讀判斷：last_active 比 last_read_at 新即為未讀。任一值缺失時視為已讀（避免誤判）。
+  // 兩者皆為 SQLite datetime('now') 字串，解析方式須與 sessionLastActiveMs 一致（同樣忽略時區，本地時間比較）。
+  const isUnread = (s) => {
+    const active = sessionLastActiveMs(s);
+    if (!active) return false;
+    const read = s.last_read_at ? Date.parse(String(s.last_read_at).trim().replace(' ', 'T')) : 0;
+    return active > (Number.isNaN(read) ? 0 : read);
+  };
+
+  const hasUnread = useMemo(
+    () => (Array.isArray(sessions) ? sessions : []).some((s) => activeSessionId !== s.id && isUnread(s)),
+    [sessions, activeSessionId]
+  );
+
+  const handleReadAll = () => {
+    // Optimistic：點了就消掉；背景打 API，不等回應、失敗不回滾，下次 5 秒 poll 覆蓋掉也沒差。
+    const nowStr = formatSqliteNow();
+    setSessions((prev) => prev.map((s) => ({ ...s, last_read_at: nowStr })));
+    apiFetch('/sessions/read-all', { method: 'POST' }).catch((err) => {
+      console.warn('[sessions] read-all error', err);
+    });
+  };
+
+  // 進入 session 前先 optimistic 標已讀（點了就消掉）；真正的 mark_read 由
+  // useChatSocket.js 的 WS onopen 背景送出，失敗或被下次 poll 覆蓋都沒差。
+  const handleEnter = (s) => {
+    if (isUnread(s)) {
+      const nowStr = formatSqliteNow();
+      setSessions((prev) => prev.map((row) => (row.id === s.id ? { ...row, last_read_at: nowStr } : row)));
+    }
+    onEnter(s);
+  };
+
   const renderSessionRow = (s) => {
     const active = activeSessionId != null && s.id === activeSessionId;
     const extraArgN = Array.isArray(s.cli_extra_args) ? s.cli_extra_args.length : 0;
     const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
-    // ponytail: 單行放不下權限模式 chip，只保留危險模式的警示符號
-    const danger = permModeIsDanger(s.permission_mode);
+    const unread = !active && isUnread(s);
     const rowTitle = [agentLabel, s.git_branch, extraArgN > 0 ? `+${extraArgN} CLI 引數` : '']
       .filter(Boolean)
       .join(' · ');
     return (
       <div
         key={s.id}
-        onClick={() => renamingId !== s.id && onEnter(s)}
+        onClick={() => renamingId !== s.id && handleEnter(s)}
         className={'ra-session-card group/card' + (active ? ' active' : '')}
       >
           {renamingId === s.id ? (
@@ -241,12 +273,21 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               <span className={`inline-flex shrink-0 items-center justify-center w-[22px] h-[22px] rounded-[6px] ${getAgentBadgeClass(s.agent_type)}`} title={agentLabel}>
                 <AgentBadgeIcon agentType={s.agent_type} />
               </span>
-              <span className="flex-1 min-w-0 text-[13.5px] font-semibold text-[oklch(0.92_0.01_264)] truncate leading-snug">
+              {unread ? (
+                <span
+                  className="shrink-0 w-[7px] h-[7px] rounded-full bg-violet-400"
+                  aria-label="未讀"
+                  title="未讀"
+                />
+              ) : null}
+              <span
+                className={
+                  'flex-1 min-w-0 text-[13.5px] truncate leading-snug ' +
+                  (unread ? 'font-bold text-[oklch(0.97_0.01_264)]' : 'font-medium text-[oklch(0.75_0.01_264)]')
+                }
+              >
                 {s.name || '未命名'}
               </span>
-              {danger ? (
-                <span className="shrink-0 text-[11px] text-amber-400" title={PERM_MODE_LABEL[s.permission_mode] || s.permission_mode}>⚠</span>
-              ) : null}
               <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
                 <button
                   type="button"
@@ -334,6 +375,17 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               <option key={opt.value} value={opt.value}>{opt.label.replace('活動 ', '')}</option>
             ))}
           </select>
+          {hasUnread && (
+            <button
+              type="button"
+              onClick={handleReadAll}
+              aria-label="全部標記已讀"
+              title="全部標記已讀"
+              className="shrink-0 rounded-[9px] border border-[oklch(0.28_0.02_264)] bg-[oklch(0.19_0.02_264)] px-2.5 py-2 text-xs text-[oklch(0.65_0.01_264)] hover:text-violet-300 hover:border-violet-500/50 transition-colors focus:outline-none"
+            >
+              全讀
+            </button>
+          )}
         </div>
       )}
 

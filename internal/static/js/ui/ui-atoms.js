@@ -558,6 +558,17 @@ function sessionLastActiveMs(s) {
   return Number.isNaN(t) ? 0 : t;
 }
 
+/**
+ * 產生 optimistic update 用的「現在」字串，格式對齊 SQLite datetime('now')（YYYY-MM-DD HH:MM:SS）。
+ * 用本地時間（不加時區標記），因為 sessionLastActiveMs／isUnread 都是以 Date.parse 忽略時區的方式解析，
+ * 需與既有解析假設一致，否則本地樂觀值與後端值的比較會偏差。
+ */
+function formatSqliteNow() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 /** 解析訊息 created_at（SQLite datetime / ISO）為 Date；無效則回 null */
 function parseMessageCreatedAt(raw) {
   if (raw == null || raw === '') return null;
