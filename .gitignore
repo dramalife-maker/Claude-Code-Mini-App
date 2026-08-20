@@ -33,6 +33,9 @@ desktop.ini
 # Go 工具
 vendor/
 
+# POC 探測腳本與樣本：僅供本機調查/一次性驗證，不進版控
+poc/
+
 # POC live samples（可能含 OAuth 回應或 token 衍生資料）
 poc/quota-percent/samples/claude-oauth-usage.json
 
