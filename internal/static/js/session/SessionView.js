@@ -256,7 +256,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
       <div
         key={s.id}
         onClick={() => renamingId !== s.id && handleEnter(s)}
-        className={'ra-session-card group/card' + (active ? ' active' : '')}
+        className={'ra-session-card group/card' + (active ? ' active' : '') + (unread ? ' unread' : '')}
       >
           {renamingId === s.id ? (
             <input
@@ -283,7 +283,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               <span
                 className={
                   'flex-1 min-w-0 text-[13.5px] truncate leading-snug ' +
-                  (unread ? 'font-bold text-[oklch(0.97_0.01_264)]' : 'font-medium text-[oklch(0.75_0.01_264)]')
+                  (unread ? 'font-semibold text-[oklch(0.94_0.01_264)]' : 'font-medium text-[oklch(0.75_0.01_264)]')
                 }
               >
                 {s.name || '未命名'}
