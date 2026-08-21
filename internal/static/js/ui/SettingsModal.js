@@ -1,6 +1,6 @@
 // ── 設定彈窗（左選單 + 右內容，仿 Claude Desktop）───────────────────────────
 // 目前只有「外觀」一個分類：Markdown 顏色（heading/bold/inline code）+ 自訂 CSS。
-// 全部存 localStorage，純前端、無後端（見 core.js 的 APPEARANCE_* 與 applyAppearance）。
+// 本機 localStorage 當快取；伺服器 SQLite 為準（見 core.js putAppearance / hydrateAppearanceFromServer）。
 
 const SETTINGS_SECTIONS = [
   { id: 'appearance', label: '外觀' },
@@ -105,10 +105,16 @@ function SettingsModal({ open, onClose }) {
   const [section, setSection] = useState('appearance');
   const [draft, setDraft] = useState(() => readStoredAppearance());
   const [savedFlash, setSavedFlash] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // 開啟時重新從 localStorage 載入，避免上次關閉未存的草稿殘留。
   useEffect(() => {
-    if (open) setDraft(readStoredAppearance());
+    if (open) {
+      setDraft(readStoredAppearance());
+      setSaveError('');
+      setSavedFlash(false);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -125,15 +131,27 @@ function SettingsModal({ open, onClose }) {
 
   if (!open) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    setSaveError('');
     saveStoredAppearance(draft);
     applyAppearance(draft);
-    setSavedFlash(true);
-    setTimeout(() => setSavedFlash(false), 1500);
+    setSaving(true);
+    try {
+      const saved = await putAppearance(draft);
+      saveStoredAppearance(saved);
+      setDraft(saved);
+      setSavedFlash(true);
+      setTimeout(() => setSavedFlash(false), 1500);
+    } catch (e) {
+      setSaveError((e && e.message) || '伺服器未存到');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleReset = () => {
     setDraft({ ...APPEARANCE_DEFAULTS });
+    setSaveError('');
   };
 
   return (
@@ -186,7 +204,8 @@ function SettingsModal({ open, onClose }) {
               還原預設
             </button>
             <div className="flex items-center gap-2">
-              {savedFlash && <span className="text-xs text-emerald-400">已儲存</span>}
+              {saveError && <span className="text-xs text-red-400">{saveError}</span>}
+              {!saveError && savedFlash && <span className="text-xs text-emerald-400">已儲存</span>}
               <button
                 type="button"
                 onClick={onClose}
@@ -197,9 +216,10 @@ function SettingsModal({ open, onClose }) {
               <button
                 type="button"
                 onClick={handleSave}
-                className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 text-white rounded-lg text-xs font-medium transition-colors"
+                disabled={saving}
+                className="px-3 py-1.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-60 text-white rounded-lg text-xs font-medium transition-colors"
               >
-                儲存
+                {saving ? '儲存中…' : '儲存'}
               </button>
             </div>
           </div>

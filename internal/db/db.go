@@ -64,6 +64,10 @@ func (db *DB) migrate() error {
 			enabled    INTEGER NOT NULL DEFAULT 1,
 			UNIQUE (agent_type, model_id)
 		);
+		CREATE TABLE IF NOT EXISTS settings (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL DEFAULT '{}'
+		);
 	`)
 	if err != nil {
 		return err

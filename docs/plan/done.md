@@ -55,4 +55,5 @@
 - [x] **Slash 命令選單**：輸入 `/` 彈出常用命令快捷選單。
 - [x] **訊息轉發 (Forward)**：支援將 assistant 訊息內容轉發至其他會話執行。
 - [x] **列表狀態點**：Session 列右側只顯示進行中／未讀，IDLE 綠點拿掉。
+- [x] **外觀設定持久化**：Settings 外觀寫入 SQLite（localStorage 當快取）。
 - [x] **多主題支援**：內建 Nexus、Focus 等不同視覺風格主題。

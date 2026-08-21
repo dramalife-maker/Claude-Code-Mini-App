@@ -83,11 +83,14 @@ function App() {
   const [authed, setAuthed]   = useState(isTelegram);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  // 外觀設定（Markdown 顏色 + 自訂 CSS）：mount 時套用 localStorage 已存的值；
-  // 沒存過時 applyAppearance 內部會 fallback 成 index.html :root 的預設值。
+  // 外觀設定：先套本機快取避免 FOUC；登入後再 GET 伺服器 hydrate（必要時種子遷移）。
   useEffect(() => {
     applyAppearance(readStoredAppearance());
   }, []);
+  useEffect(() => {
+    if (!authed) return;
+    hydrateAppearanceFromServer();
+  }, [authed]);
 
   const openComposer = useCallback((prefill) => {
     setComposerPrefill(prefill || {});

@@ -294,6 +294,10 @@ func main() {
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)
 	app.Get("/model-options/:agentType", authMiddleware, sh.ModelOptions)
 
+	sth := api.NewSettingsHandler(database)
+	app.Get("/settings/appearance", authMiddleware, sth.GetAppearance)
+	app.Put("/settings/appearance", authMiddleware, sth.PutAppearance)
+
 	quotaSvc := quota.NewService()
 	go quotaSvc.Warmup(context.Background())
 	qh := api.NewQuotaHandler(quotaSvc)

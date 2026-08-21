@@ -29,8 +29,8 @@ const SIDEBAR_WIDTH_DEFAULT = 340;
 const SIDEBAR_WIDTH_MIN = 260;
 
 /**
- * 外觀設定（Settings 彈窗）：Markdown 顏色 + 自訂 CSS，存 localStorage，純前端、無後端。
- * CSS 變數名對應 index.html :root 的預設值；readStoredAppearance 缺值時 fallback 那組預設。
+ * 外觀設定（Settings 彈窗）：Markdown 顏色 + 自訂 CSS。
+ * localStorage（cc_appearance_v1）當快取；伺服器 SQLite 為準（GET/PUT /settings/appearance）。
  */
 const APPEARANCE_STORAGE_KEY = 'cc_appearance_v1';
 const APPEARANCE_DEFAULTS = {
@@ -45,6 +45,20 @@ const APPEARANCE_CSS_VAR = {
   codeColor: '--md-code-color',
 };
 
+function appearanceFromPayload(data) {
+  if (!data || typeof data !== 'object') return { ...APPEARANCE_DEFAULTS };
+  const { stored: _stored, ...rest } = data;
+  return { ...APPEARANCE_DEFAULTS, ...rest };
+}
+
+function hasLocalAppearance() {
+  try {
+    return localStorage.getItem(APPEARANCE_STORAGE_KEY) != null;
+  } catch (_) {
+    return false;
+  }
+}
+
 function readStoredAppearance() {
   try {
     const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY);
@@ -58,7 +72,8 @@ function readStoredAppearance() {
 
 function saveStoredAppearance(appearance) {
   try {
-    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearance));
+    const { stored: _stored, ...rest } = appearance || {};
+    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify({ ...APPEARANCE_DEFAULTS, ...rest }));
   } catch (_) {}
 }
 
@@ -71,6 +86,54 @@ function applyAppearance(appearance) {
   }
   const styleEl = document.getElementById('ra-custom-css');
   if (styleEl) styleEl.textContent = a.customCss || '';
+}
+
+/** PUT /settings/appearance；成功回 appearance 物件，失敗 throw Error。 */
+async function putAppearance(appearance) {
+  const body = {
+    headingColor: appearance.headingColor ?? APPEARANCE_DEFAULTS.headingColor,
+    boldColor: appearance.boldColor ?? APPEARANCE_DEFAULTS.boldColor,
+    codeColor: appearance.codeColor ?? APPEARANCE_DEFAULTS.codeColor,
+    customCss: appearance.customCss ?? '',
+  };
+  const res = await apiFetch('/settings/appearance', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let msg = '伺服器未存到';
+    try {
+      const j = await res.json();
+      if (j && j.error) msg = j.error;
+    } catch (_) {}
+    throw new Error(msg);
+  }
+  return appearanceFromPayload(await res.json());
+}
+
+/**
+ * 從伺服器 hydrate 外觀：已存過 → 套用並寫回本機；
+ * 從未存過且本機有舊設定 → PUT 一次當種子；失敗維持本機。
+ */
+async function hydrateAppearanceFromServer() {
+  try {
+    const res = await apiFetch('/settings/appearance');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data && data.stored) {
+      const appearance = appearanceFromPayload(data);
+      saveStoredAppearance(appearance);
+      applyAppearance(appearance);
+      return;
+    }
+    if (hasLocalAppearance()) {
+      const local = readStoredAppearance();
+      const saved = await putAppearance(local);
+      saveStoredAppearance(saved);
+      applyAppearance(saved);
+    }
+  } catch (_) {}
 }
 
 function readStoredSidebarWidthPx() {
