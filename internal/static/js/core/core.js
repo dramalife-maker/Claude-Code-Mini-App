@@ -28,6 +28,51 @@ const SIDEBAR_WIDTH_STORAGE_KEY = 'cc_sidebar_width_px';
 const SIDEBAR_WIDTH_DEFAULT = 340;
 const SIDEBAR_WIDTH_MIN = 260;
 
+/**
+ * 外觀設定（Settings 彈窗）：Markdown 顏色 + 自訂 CSS，存 localStorage，純前端、無後端。
+ * CSS 變數名對應 index.html :root 的預設值；readStoredAppearance 缺值時 fallback 那組預設。
+ */
+const APPEARANCE_STORAGE_KEY = 'cc_appearance_v1';
+const APPEARANCE_DEFAULTS = {
+  headingColor: 'oklch(0.78 0.15 65)',
+  boldColor: 'oklch(0.72 0.07 145)',
+  codeColor: 'oklch(0.63 0.12 275)',
+  customCss: '',
+};
+const APPEARANCE_CSS_VAR = {
+  headingColor: '--md-heading-color',
+  boldColor: '--md-bold-color',
+  codeColor: '--md-code-color',
+};
+
+function readStoredAppearance() {
+  try {
+    const raw = localStorage.getItem(APPEARANCE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return { ...APPEARANCE_DEFAULTS, ...parsed };
+    }
+  } catch (_) {}
+  return { ...APPEARANCE_DEFAULTS };
+}
+
+function saveStoredAppearance(appearance) {
+  try {
+    localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearance));
+  } catch (_) {}
+}
+
+/** 把外觀設定套到頁面：CSS 變數 + 自訂 CSS <style> 標籤內容。App mount 時與 Settings 儲存後都要呼叫。 */
+function applyAppearance(appearance) {
+  const a = { ...APPEARANCE_DEFAULTS, ...(appearance || {}) };
+  const root = document.documentElement.style;
+  for (const key of Object.keys(APPEARANCE_CSS_VAR)) {
+    root.setProperty(APPEARANCE_CSS_VAR[key], a[key] || APPEARANCE_DEFAULTS[key]);
+  }
+  const styleEl = document.getElementById('ra-custom-css');
+  if (styleEl) styleEl.textContent = a.customCss || '';
+}
+
 function readStoredSidebarWidthPx() {
   try {
     const raw = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);

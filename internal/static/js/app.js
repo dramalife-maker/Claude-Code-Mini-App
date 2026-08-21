@@ -81,6 +81,13 @@ function App() {
   const [creating, setCreating] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState(null);
   const [authed, setAuthed]   = useState(isTelegram);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // 外觀設定（Markdown 顏色 + 自訂 CSS）：mount 時套用 localStorage 已存的值；
+  // 沒存過時 applyAppearance 內部會 fallback 成 index.html :root 的預設值。
+  useEffect(() => {
+    applyAppearance(readStoredAppearance());
+  }, []);
 
   const openComposer = useCallback((prefill) => {
     setComposerPrefill(prefill || {});
@@ -226,7 +233,7 @@ function App() {
       if (session) {
         return <ChatView session={session} onBack={() => selectSession(null)} usePermModeDropdown onJumpToSession={selectSession} allSessions={sidebarSortedSessions} />;
       }
-      return <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} />;
+      return <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} />;
     }
 
     return (
@@ -236,7 +243,7 @@ function App() {
             style={{ width: sidebarWidthPx, flexShrink: 0 }}
             className="min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col"
           >
-            <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} />
+            <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} />
           </aside>
         )}
         {!sidebarCollapsed && (
@@ -294,6 +301,7 @@ function App() {
         ? <PasswordView onSuccess={() => setAuthed(true)} />
         : renderAuthedLayout()
       }
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   );
 }

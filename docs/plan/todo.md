@@ -5,8 +5,7 @@
 ---
 
 ## 🚀 待執行項目
-
-（目前無待執行項目）
+- [ ] 外觀設定後端持久化（見 `docs/plan/appearance-settings-backend.md`）
 
 ---
 
