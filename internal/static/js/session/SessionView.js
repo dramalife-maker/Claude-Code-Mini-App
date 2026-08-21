@@ -363,18 +363,21 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               className="flex-1 min-w-0 bg-transparent border-0 p-0 text-[13px] text-[oklch(0.9_0.01_264)] placeholder-[oklch(0.5_0.01_264)] focus:outline-none"
             />
           </div>
-          <select
-            id="session-sort"
-            value={sessionSort}
-            onChange={(e) => setSessionSort(e.target.value)}
-            title="排序"
-            aria-label="排序"
-            className="shrink-0 bg-[oklch(0.19_0.02_264)] border border-[oklch(0.28_0.02_264)] rounded-[9px] px-2.5 py-2 text-xs text-[oklch(0.65_0.01_264)] focus:outline-none cursor-pointer max-w-[6.5rem]"
-          >
-            {sortOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label.replace('活動 ', '')}</option>
-            ))}
-          </select>
+          {/* 排序下拉選單暫時隱藏（無人使用），固定用預設的 last_active_desc；邏輯保留供日後復原。 */}
+          {false && (
+            <select
+              id="session-sort"
+              value={sessionSort}
+              onChange={(e) => setSessionSort(e.target.value)}
+              title="排序"
+              aria-label="排序"
+              className="shrink-0 bg-[oklch(0.19_0.02_264)] border border-[oklch(0.28_0.02_264)] rounded-[9px] px-2.5 py-2 text-xs text-[oklch(0.65_0.01_264)] focus:outline-none cursor-pointer max-w-[6.5rem]"
+            >
+              {sortOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label.replace('活動 ', '')}</option>
+              ))}
+            </select>
+          )}
           {hasUnread && (
             <button
               type="button"
