@@ -393,16 +393,14 @@ function sessionStatusDotClass(s) {
   const st = String(s && s.status || '').toLowerCase();
   if (st === 'running') return 'ra-status-dot running';
   if (st === 'awaiting_confirm') return 'ra-status-dot awaiting';
-  if (st === 'idle' || st === '') return 'ra-status-dot idle';
-  return 'ra-status-dot done';
+  return '';
 }
 
 function sessionStatusLabel(s) {
   const st = String(s && s.status || '').toLowerCase();
   if (st === 'running') return '執行中';
   if (st === 'awaiting_confirm') return '待授權';
-  if (st === 'idle') return '待命';
-  return '已完成';
+  return '';
 }
 
 function getAgentBadgeClass(agentType) {

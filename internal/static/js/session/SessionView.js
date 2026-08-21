@@ -249,6 +249,12 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     const extraArgN = Array.isArray(s.cli_extra_args) ? s.cli_extra_args.length : 0;
     const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
     const unread = !active && isUnread(s);
+    const statusClass = sessionStatusDotClass(s);
+    const rowDot = statusClass
+      ? { className: statusClass, title: sessionStatusLabel(s) }
+      : unread
+        ? { className: 'ra-status-dot unread', title: '未讀' }
+        : null;
     const rowTitle = [agentLabel, s.git_branch, extraArgN > 0 ? `+${extraArgN} CLI 引數` : '']
       .filter(Boolean)
       .join(' · ');
@@ -273,13 +279,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               <span className={`inline-flex shrink-0 items-center justify-center w-[22px] h-[22px] rounded-[6px] ${getAgentBadgeClass(s.agent_type)}`} title={agentLabel}>
                 <AgentBadgeIcon agentType={s.agent_type} />
               </span>
-              {unread ? (
-                <span
-                  className="shrink-0 w-[7px] h-[7px] rounded-full bg-violet-400"
-                  aria-label="未讀"
-                  title="未讀"
-                />
-              ) : null}
               <span
                 className={
                   'flex-1 min-w-0 text-[13.5px] truncate leading-snug ' +
@@ -317,10 +316,13 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                   </svg>
                 </button>
               </div>
-              <span
-                className={sessionStatusDotClass(s) + ' sm:group-hover/card:opacity-0 transition-opacity'}
-                title={sessionStatusLabel(s)}
-              />
+              {rowDot ? (
+                <span
+                  className={rowDot.className + ' sm:group-hover/card:opacity-0 transition-opacity'}
+                  title={rowDot.title}
+                  aria-label={rowDot.title}
+                />
+              ) : null}
             </div>
         )}
       </div>

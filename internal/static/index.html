@@ -79,6 +79,9 @@
     .prose p { margin: 0.5em 0; line-height: 1.8; }
     .prose ul, .prose ol { padding-left: 1.5em; margin: 0.5em 0; }
     .prose h1,.prose h2,.prose h3 { font-weight: 700; margin: 0.75em 0 0.25em; color: var(--md-heading-color); }
+    .prose h1 { font-size: 1.25em; }
+    .prose h2 { font-size: 1.15em; }
+    .prose h3 { font-size: 1.08em; }
     .prose strong { color: var(--md-bold-color); font-weight: 700; }
     .prose table { border-collapse: collapse; min-width: 100%; }
     .prose table th, .prose table td { border: 1px solid oklch(0.28 0.02 264); padding: 0.3em 0.75em; white-space: nowrap; }
@@ -159,10 +162,9 @@
     .ra-status-dot {
       width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
     }
-    .ra-status-dot.idle { background: oklch(0.7 0.15 155); }
     .ra-status-dot.running { background: oklch(0.75 0.15 70); }
     .ra-status-dot.awaiting { background: oklch(0.75 0.15 70); }
-    .ra-status-dot.done { background: oklch(0.55 0.01 264); }
+    .ra-status-dot.unread { background: #a78bfa; }
 
     @keyframes streaming-dots {
       0%, 100% { opacity: 0.35; }
