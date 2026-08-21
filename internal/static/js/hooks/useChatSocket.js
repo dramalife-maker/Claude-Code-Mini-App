@@ -112,14 +112,18 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
       wsRef.current = ws;
       let everConnected = false;
 
-      ws.onopen = () => {
-        everConnected = true;
-        // 使用者正在看這個 session：標記已讀，讓列表未讀點消失。失敗不影響聊天功能，靜默忽略。
+      // 使用者正在看這個 session：標記已讀，讓列表未讀點消失。失敗不影響聊天功能，靜默忽略。
+      const markRead = () => {
         apiFetch(`/sessions/${session.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ mark_read: true }),
         }).catch(() => {});
+      };
+
+      ws.onopen = () => {
+        everConnected = true;
+        markRead();
       };
 
       ws.onmessage = (evt) => {
@@ -203,6 +207,9 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
             ));
           }
           if (msg.value === 'IDLE' || msg.value === 'AWAITING_CONFIRM') {
+            // 使用者全程留在這個 session：一輪對話結束才會推進 last_active，須補標已讀，
+            // 否則只在連線建立當下標過一次，中途 agent 的新回覆會讓列表誤判成未讀。
+            markRead();
             setMessages((prev) => {
               const updated = prev.map((m, i) =>
                 i === prev.length - 1 ? { ...m, streaming: false, status: m.status === 'pending' ? 'done' : m.status } : m
