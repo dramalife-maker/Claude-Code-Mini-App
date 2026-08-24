@@ -423,7 +423,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				log.Printf("[ws] NewRunner %s: %v", agentType, err)
 				_ = database.FinalizeMessage(msgID)
 				_ = database.UpdateSessionStatus(sessionID, db.SessionStatusIdle)
-				taskEnd(sessionID)
+				taskEnd(sessionID, msgID)
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 				notifyTaskAsync(botToken, tgUserID, notifyCfg, tg.TaskAlert{
@@ -439,7 +439,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			log.Printf("[ws] start %s.Run agentSessionID=%q mode=%s msgID=%d", runner.Name(), opts.SessionID, pm, msgID)
 
 			go func(opts agent.RunOptions, msgID int64, userPrompt string) {
-				defer taskEnd(sessionID)
+				defer taskEnd(sessionID, msgID)
 
 				permDenied := false
 				runFailed := false

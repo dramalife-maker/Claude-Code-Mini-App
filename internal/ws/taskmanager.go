@@ -28,9 +28,13 @@ func taskStart(sessionID string, cancel context.CancelFunc, msgID int64) {
 	taskManager.mu.Unlock()
 }
 
-func taskEnd(sessionID string) {
+// taskEnd 只在目前登記的任務仍是呼叫者自己（msgID 相同）時才刪除，
+// 避免舊任務（例如權限被拒後已被 taskCancel 取代）的延遲收尾把新任務的登記誤刪。
+func taskEnd(sessionID string, msgID int64) {
 	taskManager.mu.Lock()
-	delete(taskManager.tasks, sessionID)
+	if e, ok := taskManager.tasks[sessionID]; ok && e.msgID == msgID {
+		delete(taskManager.tasks, sessionID)
+	}
 	taskManager.mu.Unlock()
 }
 
