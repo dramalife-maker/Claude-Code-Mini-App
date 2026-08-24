@@ -317,6 +317,17 @@ marked.setOptions({
   breaks: true,
 });
 
+// agent 回覆的連結一律新分頁開啟，避免點擊後導離聊天室；rel 防止 tab-nabbing。
+marked.use({
+  renderer: {
+    link({ href, title, tokens }) {
+      const text = this.parser.parseInline(tokens);
+      const titleAttr = title ? ` title="${title}"` : '';
+      return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
+    },
+  },
+});
+
 const parseMarkdown = (text) => {
   const html = marked.parse(text);
   return html
