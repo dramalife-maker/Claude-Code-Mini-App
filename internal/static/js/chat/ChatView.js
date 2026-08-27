@@ -27,12 +27,6 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
 
   const [input, setInput]         = useState('');
   const [lightboxSrc, setLightboxSrc] = useState(null);
-  useEffect(() => {
-    if (!lightboxSrc) return;
-    const h = (e) => { if (e.key === 'Escape') setLightboxSrc(null); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [lightboxSrc]);
   const [forwardModal, setForwardModal] = useState(null);
   const [forwardHints, setForwardHints] = useState({});
   const [slashMenuItems, setSlashMenuItems] = useState([]);
@@ -645,14 +639,151 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       />
 
       {lightboxSrc && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85"
-          onClick={() => setLightboxSrc(null)}
-          role="presentation"
-        >
-          <img src={lightboxSrc} className="max-w-[95vw] max-h-[95vh] object-contain rounded-lg" />
-        </div>
+        <ChatImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
       )}
+    </div>
+  );
+}
+
+/** 聊天截圖燈箱：鎖背景捲動，支援雙指縮放／單指拖曳／雙擊切換縮放。 */
+function ChatImageLightbox({ src, onClose }) {
+  const [{ scale, x, y }, setTransform] = useState({ scale: 1, x: 0, y: 0 });
+  const transformRef = useRef({ scale: 1, x: 0, y: 0 });
+  const pinchRef = useRef(null);
+  const panRef = useRef(null);
+  const lastTapRef = useRef(0);
+
+  const applyTransform = useCallback((next) => {
+    const scale = Math.min(4, Math.max(1, next.scale));
+    const x = scale === 1 ? 0 : next.x;
+    const y = scale === 1 ? 0 : next.y;
+    const t = { scale, x, y };
+    transformRef.current = t;
+    setTransform(t);
+  }, []);
+
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    // 非 passive，才能擋掉 iOS/Telegram WebView 把 touchmove 傳給底下聊天室。
+    const blockScroll = (e) => { e.preventDefault(); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('touchmove', blockScroll, { passive: false });
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('touchmove', blockScroll);
+    };
+  }, [onClose]);
+
+  const touchDistance = (a, b) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      panRef.current = null;
+      pinchRef.current = {
+        dist: touchDistance(e.touches[0], e.touches[1]),
+        scale: transformRef.current.scale,
+        x: transformRef.current.x,
+        y: transformRef.current.y,
+      };
+      return;
+    }
+    if (e.touches.length === 1) {
+      pinchRef.current = null;
+      const now = Date.now();
+      if (now - lastTapRef.current < 280) {
+        lastTapRef.current = 0;
+        const cur = transformRef.current;
+        if (cur.scale > 1.05) {
+          applyTransform({ scale: 1, x: 0, y: 0 });
+        } else {
+          applyTransform({ scale: 2.5, x: 0, y: 0 });
+        }
+        return;
+      }
+      lastTapRef.current = now;
+      if (transformRef.current.scale > 1) {
+        panRef.current = {
+          x: e.touches[0].clientX,
+          y: e.touches[0].clientY,
+          ox: transformRef.current.x,
+          oy: transformRef.current.y,
+        };
+      }
+    }
+  };
+
+  const onTouchMove = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.touches.length === 2 && pinchRef.current) {
+      const dist = touchDistance(e.touches[0], e.touches[1]);
+      const ratio = dist / Math.max(1, pinchRef.current.dist);
+      applyTransform({
+        scale: pinchRef.current.scale * ratio,
+        x: pinchRef.current.x,
+        y: pinchRef.current.y,
+      });
+      return;
+    }
+    if (e.touches.length === 1 && panRef.current) {
+      const dx = e.touches[0].clientX - panRef.current.x;
+      const dy = e.touches[0].clientY - panRef.current.y;
+      applyTransform({
+        scale: transformRef.current.scale,
+        x: panRef.current.ox + dx,
+        y: panRef.current.oy + dy,
+      });
+    }
+  };
+
+  const onTouchEnd = (e) => {
+    if (e.touches.length < 2) pinchRef.current = null;
+    if (e.touches.length === 0) panRef.current = null;
+    if (transformRef.current.scale <= 1.05) {
+      applyTransform({ scale: 1, x: 0, y: 0 });
+    }
+  };
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    const cur = transformRef.current;
+    const next = cur.scale * (e.deltaY < 0 ? 1.1 : 0.9);
+    applyTransform({ scale: next, x: cur.x, y: cur.y });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 overscroll-none"
+      style={{ touchAction: 'none' }}
+      onClick={onClose}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+      onWheel={onWheel}
+      role="presentation"
+    >
+      <img
+        src={src}
+        alt=""
+        draggable={false}
+        className="max-w-[95vw] max-h-[95vh] object-contain rounded-lg select-none"
+        style={{
+          transform: `translate3d(${x}px, ${y}px, 0) scale(${scale})`,
+          transformOrigin: 'center center',
+          touchAction: 'none',
+          cursor: scale > 1 ? 'grab' : 'zoom-in',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      />
+      <div className="pointer-events-none absolute bottom-6 left-0 right-0 text-center text-[11px] text-white/55 px-4">
+        雙指縮放 · 放大後可拖曳 · 雙擊切換 · 點空白關閉
+      </div>
     </div>
   );
 }
