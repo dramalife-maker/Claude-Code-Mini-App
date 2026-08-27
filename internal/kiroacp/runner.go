@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/media"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
 )
@@ -127,6 +130,19 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 				label = body.SessionUpdate
 			}
 			cb(agent.Event{Type: agent.EventActivity, Text: label})
+			// 僅在 completed 時落地圖片，避免 started/in_progress 的空 rawOutput 或半成品重覆寫入。
+			if body.SessionUpdate != "tool_call_update" || !strings.EqualFold(body.Status, "completed") {
+				break
+			}
+			for _, img := range body.images() {
+				url, err := media.SaveBase64Image(img.MediaType, img.Data)
+				if err != nil {
+					log.Printf("[kiroacp] 圖片存檔失敗: %v", err)
+					continue
+				}
+				emitStreamStart()
+				cb(agent.Event{Type: agent.EventDelta, Text: fmt.Sprintf("\n![screenshot](%s)\n", url)})
+			}
 		}
 	}
 
@@ -153,7 +169,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	if sessionID == "" {
 		raw, err := cl.call(ctx, "session/new", map[string]any{
 			"cwd":        cwd,
-			"mcpServers": []any{},
+			"mcpServers": defaultMcpServers(),
 		})
 		if err != nil {
 			cb(agent.Event{Type: agent.EventError, Err: err})
@@ -184,7 +200,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		raw, err := cl.call(loadCtx, "session/load", map[string]any{
 			"sessionId":  sessionID,
 			"cwd":        cwd,
-			"mcpServers": []any{},
+			"mcpServers": defaultMcpServers(),
 		})
 		cancel()
 		acceptUpdates.Store(true)
@@ -216,6 +232,21 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	cb(agent.Event{Type: agent.EventDone, SessionID: sessionID})
 	return nil
+}
+
+// defaultMcpServers 回傳 ACP session/new|load 所需的 mcpServers 清單。
+// 格式依 ACP 規範（stdio）：{name, command, args, env:[]}。
+// ponytail: 先硬編 windows-mcp 方便截圖傳圖測試；之後若要多 server 再讀 mcp.json。
+func defaultMcpServers() []any {
+	uvx := filepath.Join(os.Getenv("USERPROFILE"), `.local\bin\uvx.exe`)
+	return []any{
+		map[string]any{
+			"name":    "windows-mcp",
+			"command": uvx,
+			"args":    []string{"windows-mcp", "serve"},
+			"env":     []any{},
+		},
+	}
 }
 
 func buildArgs(opts agent.RunOptions) []string {

@@ -2,6 +2,7 @@ package claude
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
@@ -30,6 +31,34 @@ func TestDispatch_streamTextDeltaThenAssistantSkipped(t *testing.T) {
 	}, cb, &st)
 	if len(deltas) != 1 || deltas[0] != "hello" {
 		t.Fatalf("應僅保留串流 delta，略過重複 assistant，got deltas=%v", deltas)
+	}
+}
+
+func TestDispatch_userToolResultImageEmitsMarkdownDelta(t *testing.T) {
+	t.Chdir(t.TempDir()) // 不可與 t.Parallel 併用 // media.SaveBase64Image 用相對路徑落地檔案，隔離避免污染原始碼樹
+
+	r := &Runner{}
+	var st streamState
+	var deltas []string
+	cb := func(e agent.Event) {
+		if e.Type == agent.EventDelta {
+			deltas = append(deltas, e.Text)
+		}
+	}
+	r.dispatch(&StreamEvent{
+		Type: "user",
+		Message: &AssistantMessage{Content: []MessageContent{
+			{
+				Type: "tool_result",
+				Content: []MessageContent{
+					{Type: "image", Source: &ImageSource{Type: "base64", MediaType: "image/png", Data: "aGVsbG8="}},
+				},
+			},
+		}},
+	}, cb, &st)
+
+	if len(deltas) != 1 || !strings.Contains(deltas[0], "![screenshot](/uploads/") {
+		t.Fatalf("預期收到一則 markdown image delta，got deltas=%v", deltas)
 	}
 }
 

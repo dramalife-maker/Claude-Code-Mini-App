@@ -86,11 +86,54 @@ type sessionUpdateBody struct {
 	Kind          string          `json:"kind,omitempty"`
 	Status        string          `json:"status,omitempty"`
 	Text          string          `json:"text,omitempty"`
+	// RawOutput 是 tool_call/tool_call_update 帶回的 MCP 工具原始輸出（如截圖工具），
+	// 結構為 rawOutput.items[].Json.content[]，每項是標準 MCP content block（text/image/...）。
+	RawOutput json.RawMessage `json:"rawOutput,omitempty"`
 }
 
 type textContent struct {
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// mcpContentBlock 對應標準 MCP tool result 的 content block（text/image/...）。
+type mcpContentBlock struct {
+	Type     string `json:"type"`
+	Data     string `json:"data,omitempty"`
+	MimeType string `json:"mimeType,omitempty"`
+}
+
+// imageBlock 是從 tool_call_update.rawOutput 取出的圖片資料，交給 media.SaveBase64Image 落地存檔。
+type imageBlock struct {
+	MediaType string
+	Data      string
+}
+
+// images 掃描 body.RawOutput（rawOutput.items[].Json.content[]），取出所有 image content block。
+// 非 MCP 工具（無 rawOutput）或 content 非陣列時回傳空。
+func (b sessionUpdateBody) images() []imageBlock {
+	if len(b.RawOutput) == 0 {
+		return nil
+	}
+	var raw struct {
+		Items []struct {
+			Json struct {
+				Content []mcpContentBlock `json:"content"`
+			} `json:"Json"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(b.RawOutput, &raw); err != nil {
+		return nil
+	}
+	var out []imageBlock
+	for _, item := range raw.Items {
+		for _, c := range item.Json.Content {
+			if c.Type == "image" && c.Data != "" {
+				out = append(out, imageBlock{MediaType: c.MimeType, Data: c.Data})
+			}
+		}
+	}
+	return out
 }
 
 // permissionParams 對應 session/request_permission 的 params。

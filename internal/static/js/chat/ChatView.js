@@ -26,6 +26,13 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   } = useChatSocket({ session, agentType, showPermModeSelect, showEffortSelect });
 
   const [input, setInput]         = useState('');
+  const [lightboxSrc, setLightboxSrc] = useState(null);
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const h = (e) => { if (e.key === 'Escape') setLightboxSrc(null); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [lightboxSrc]);
   const [forwardModal, setForwardModal] = useState(null);
   const [forwardHints, setForwardHints] = useState({});
   const [slashMenuItems, setSlashMenuItems] = useState([]);
@@ -132,9 +139,15 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     focusChatInput();
   }, [state, focusChatInput]);
 
-  // code block 右上角複製鍵：dangerouslySetInnerHTML 插入的 DOM 沒有 React 事件，
-  // 用外層 onClick 事件委派抓 .code-copy-btn（冒泡到這裡才處理，不影響一般點擊/選字）。
-  const handleCodeCopyClick = (e) => {
+  // code block 複製鍵、圖片點擊放大：dangerouslySetInnerHTML 插入的 DOM 沒有 React 事件，
+  // 用外層 onClick 事件委派抓 .code-copy-btn / .chat-img（冒泡到這裡才處理，不影響一般點擊/選字）。
+  const handleProseClick = (e) => {
+    const img = e.target.closest ? e.target.closest('.chat-img') : null;
+    if (img) {
+      e.stopPropagation();
+      setLightboxSrc(img.getAttribute('src') || '');
+      return;
+    }
     const btn = e.target.closest ? e.target.closest('.code-copy-btn') : null;
     if (!btn) return;
     e.stopPropagation();
@@ -435,7 +448,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                       <div
                         className="prose text-[oklch(0.85_0.01_264)] text-sm leading-[1.8] flex-1 min-w-0"
                         dangerouslySetInnerHTML={{ __html: m.html }}
-                        onClick={handleCodeCopyClick}
+                        onClick={handleProseClick}
                       />
                     )}
                     {showStreamingTail && (
@@ -630,6 +643,16 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
           if (jump) jumpToSession(targetSession);
         }}
       />
+
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/85"
+          onClick={() => setLightboxSrc(null)}
+          role="presentation"
+        >
+          <img src={lightboxSrc} className="max-w-[95vw] max-h-[95vh] object-contain rounded-lg" />
+        </div>
+      )}
     </div>
   );
 }

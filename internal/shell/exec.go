@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
 )
 
 // Result 為單次指令執行結果。
@@ -31,6 +33,7 @@ func RunBuffered(ctx context.Context, workDir, line string) (*Result, error) {
 		cmd = exec.CommandContext(ctx, "sh", "-c", line)
 	}
 	cmd.Dir = workDir
+	cmd.SysProcAttr = proc.SysProcAttr()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

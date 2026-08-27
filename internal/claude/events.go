@@ -26,8 +26,43 @@ type AssistantMessage struct {
 }
 
 type MessageContent struct {
-	Type string `json:"type"` // "text" | "tool_use" | ...
+	Type string `json:"type"` // "text" | "tool_use" | "tool_result" | "image" | ...
 	Text string `json:"text,omitempty"`
+	// Content 是 tool_result block 的巢狀內容（type=="tool_result" 時），
+	// MCP 工具若回傳圖片（如截圖）會以 type=="image" 出現在這裡。
+	Content []MessageContent `json:"content,omitempty"`
+	// Source 是 image block 的資料來源（type=="image" 時）。
+	Source *ImageSource `json:"source,omitempty"`
+}
+
+// ImageSource 對應 Anthropic API image content block 的 base64 來源。
+type ImageSource struct {
+	Type      string `json:"type"` // "base64"
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+}
+
+// Images 掃描 message content（含 tool_result 巢狀內容），取出所有 image block。
+func (e *StreamEvent) Images() []ImageSource {
+	if e.Message == nil {
+		return nil
+	}
+	var out []ImageSource
+	for _, c := range e.Message.Content {
+		out = append(out, collectImages(c)...)
+	}
+	return out
+}
+
+func collectImages(c MessageContent) []ImageSource {
+	var out []ImageSource
+	if c.Type == "image" && c.Source != nil && c.Source.Data != "" {
+		out = append(out, *c.Source)
+	}
+	for _, nested := range c.Content {
+		out = append(out, collectImages(nested)...)
+	}
+	return out
 }
 
 // TextContent 提取 assistant message 中所有文字區塊，串接後回傳

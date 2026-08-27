@@ -24,6 +24,23 @@ func TestExtractAgentText(t *testing.T) {
 	}
 }
 
+func TestSessionUpdateBody_Images(t *testing.T) {
+	body := sessionUpdateBody{
+		SessionUpdate: "tool_call_update",
+		RawOutput: json.RawMessage(`{"items":[{"Json":{"content":[
+			{"type":"text","text":"desc"},
+			{"type":"image","data":"aGVsbG8=","mimeType":"image/png"}
+		]}}]}`),
+	}
+	imgs := body.images()
+	if len(imgs) != 1 || imgs[0].Data != "aGVsbG8=" || imgs[0].MediaType != "image/png" {
+		t.Fatalf("images() = %+v", imgs)
+	}
+	if len(sessionUpdateBody{SessionUpdate: "tool_call"}.images()) != 0 {
+		t.Fatal("無 rawOutput 應回傳空")
+	}
+}
+
 func TestParseSessionResult(t *testing.T) {
 	raw := json.RawMessage(`{"sessionId":"abc","models":{"currentModelId":"claude-sonnet-5"}}`)
 	s, err := parseSessionResult(raw)

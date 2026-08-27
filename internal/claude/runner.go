@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/media"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
 )
@@ -113,7 +114,8 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	log.Printf("[claude] 子進程已啟動，PID=%d", cmd.Process.Pid)
 
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024) // 1MB buffer
+	// MCP 截圖 base64 單行可達數 MB；1MB 會讓 Scan 失敗並整行丟棄。
+	scanner.Buffer(make([]byte, 1024*1024), 16*1024*1024)
 
 	var st streamState
 	lineCount := 0
@@ -207,6 +209,16 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *streamStat
 	case "user":
 		// tool_result 等以 user 事件回來；下一則 assistant 是新一輪，不可沿用上一輪的 gotStreamTextDelta。
 		st.gotStreamTextDelta = false
+		// tool_result 裡若帶圖片（如 MCP 截圖工具），落地存檔後以 markdown image 語法併入既有 delta
+		// 管線，前端 marked.js 會直接渲染成 <img>，不需另開事件型別或 WS 訊息格式。
+		for _, img := range e.Images() {
+			url, err := media.SaveBase64Image(img.MediaType, img.Data)
+			if err != nil {
+				log.Printf("[claude] 圖片存檔失敗: %v", err)
+				continue
+			}
+			st.emitDelta(cb, fmt.Sprintf("\n![screenshot](%s)\n", url))
+		}
 
 	case "stream_event":
 		if e.Event == nil {

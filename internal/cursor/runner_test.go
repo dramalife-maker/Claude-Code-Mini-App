@@ -140,3 +140,50 @@ func TestToolLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestDispatch_mcpToolCallCompletedImageEmitsMarkdownDelta(t *testing.T) {
+	t.Chdir(t.TempDir()) // media.SaveBase64Image 用相對路徑落地檔案，隔離避免污染原始碼樹
+
+	r := &Runner{}
+	var st dispatchState
+	var deltas []string
+	cb := func(e agent.Event) {
+		if e.Type == agent.EventDelta {
+			deltas = append(deltas, e.Text)
+		}
+	}
+	// cursor-agent 實際 schema：{"image":{"data","mimeType"}}，不是標準 MCP 的 type 欄位。
+	line := `{"type":"tool_call","subtype":"completed","call_id":"1","tool_call":{"mcpToolCall":{"result":{"success":{"content":[{"text":{"text":"desc"}},{"image":{"data":"aGVsbG8=","mimeType":"image/png"}}]}}}}}`
+	e, err := ParseEvent([]byte(line))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	r.dispatch(e, cb, &st)
+
+	if len(deltas) != 1 || !strings.Contains(deltas[0], "![screenshot](/uploads/") {
+		t.Fatalf("預期收到一則 markdown image delta，got deltas=%v", deltas)
+	}
+}
+
+func TestDispatch_mcpToolCallCompletedImageStandardMCPFallback(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	r := &Runner{}
+	var st dispatchState
+	var deltas []string
+	cb := func(e agent.Event) {
+		if e.Type == agent.EventDelta {
+			deltas = append(deltas, e.Text)
+		}
+	}
+	line := `{"type":"tool_call","subtype":"completed","call_id":"1","tool_call":{"mcpToolCall":{"result":{"success":{"content":[{"type":"text","text":"desc"},{"type":"image","data":"aGVsbG8=","mimeType":"image/png"}]}}}}}`
+	e, err := ParseEvent([]byte(line))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	r.dispatch(e, cb, &st)
+
+	if len(deltas) != 1 || !strings.Contains(deltas[0], "![screenshot](/uploads/") {
+		t.Fatalf("預期標準 MCP fallback 也能吐 markdown image delta，got deltas=%v", deltas)
+	}
+}

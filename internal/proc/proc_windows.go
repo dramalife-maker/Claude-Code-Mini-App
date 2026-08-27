@@ -11,6 +11,7 @@ import (
 )
 
 const ctrlBreakEvent = 1 // CTRL_BREAK_EVENT
+const createNoWindow = 0x08000000 // CREATE_NO_WINDOW，syscall 套件未匯出此常數
 
 var (
 	kernel32              = syscall.NewLazyDLL("kernel32.dll")
@@ -20,9 +21,10 @@ var (
 // SysProcAttr 回傳 Windows 專屬的進程屬性。
 // CREATE_NEW_PROCESS_GROUP 讓子進程獨立成一個 process group，
 // 使 GenerateConsoleCtrlEvent 能精確定位該群組而不影響父 console。
+// CREATE_NO_WINDOW 避免每次 spawn CLI 子進程時彈出主控台黑窗。
 func SysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP | createNoWindow,
 	}
 }
 

@@ -91,6 +91,14 @@ claude -p "<prompt>" \
 
 ---
 
+## 本機運行（Windows）
+
+- 進入點：`./cmd/server`；需有 `config.yaml`
+- 開發：`go run ./cmd/server`
+- Binary：`go build -o claude-miniapp.exe ./cmd/server`
+
+---
+
 ## 參考文件
 - `docs/spec/claude-code-cli.md` — CLI 旗標完整參考
 - `docs/spec/headless.md` — `-p` 模式與 stream-json 用法

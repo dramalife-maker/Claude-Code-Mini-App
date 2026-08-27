@@ -10,6 +10,9 @@
 *.sqlite
 *.sqlite3
 
+# runner 落地的圖片（截圖等），跟 DB 一樣屬於執行期產物
+/internal/static/uploads/
+
 # 設定檔（含敏感資訊）
 config.yaml
 config.local.yaml

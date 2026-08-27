@@ -349,7 +349,9 @@ const parseMarkdown = (text) => {
         + `<svg class="icon-check" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M20 6 9 17l-5-5"/></svg>`
         + `</button>`;
       return `<pre data-lang="${lang}">${copyBtn}<code class="language-${lang} hljs">${out}</code></pre>`;
-    });
+    })
+    // agent 傳回的圖片（如截圖）先縮成縮圖，點擊由 ChatView 的 handleProseClick 開燈箱放大。
+    .replace(/<img /g, '<img class="chat-img" loading="lazy" ');
 };
 
 /** 顯示用：permission_mode 值 → 中文標籤。包含 Claude/Cursor 與 Gemini 兩套值。 */
