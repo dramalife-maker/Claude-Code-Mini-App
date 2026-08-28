@@ -42,6 +42,14 @@ poc/
 # POC live samples（可能含 OAuth 回應或 token 衍生資料）
 poc/quota-percent/samples/claude-oauth-usage.json
 
+# Kiro 本機 MCP／agent 設定（含絕對路徑，各開發者自行維護）
+.kiro/
+
+# 本機除錯產物
+claude-miniapp-debug*.log
+cursor-image-probe.*
+add_logging.py
+
 # ACP roundtrip 本機產出（含絕對路徑、sessionId、raw tool updates）
 poc/kiro-cli/samples_acp_*.json
 poc/kiro-cli/samples_acp_*.md

@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -169,7 +167,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	if sessionID == "" {
 		raw, err := cl.call(ctx, "session/new", map[string]any{
 			"cwd":        cwd,
-			"mcpServers": defaultMcpServers(),
+			"mcpServers": mcpServersForACP(cwd),
 		})
 		if err != nil {
 			cb(agent.Event{Type: agent.EventError, Err: err})
@@ -200,7 +198,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		raw, err := cl.call(loadCtx, "session/load", map[string]any{
 			"sessionId":  sessionID,
 			"cwd":        cwd,
-			"mcpServers": defaultMcpServers(),
+			"mcpServers": mcpServersForACP(cwd),
 		})
 		cancel()
 		acceptUpdates.Store(true)
@@ -232,21 +230,6 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	cb(agent.Event{Type: agent.EventDone, SessionID: sessionID})
 	return nil
-}
-
-// defaultMcpServers 回傳 ACP session/new|load 所需的 mcpServers 清單。
-// 格式依 ACP 規範（stdio）：{name, command, args, env:[]}。
-// ponytail: 先硬編 windows-mcp 方便截圖傳圖測試；之後若要多 server 再讀 mcp.json。
-func defaultMcpServers() []any {
-	uvx := filepath.Join(os.Getenv("USERPROFILE"), `.local\bin\uvx.exe`)
-	return []any{
-		map[string]any{
-			"name":    "windows-mcp",
-			"command": uvx,
-			"args":    []string{"windows-mcp", "serve"},
-			"env":     []any{},
-		},
-	}
 }
 
 func buildArgs(opts agent.RunOptions) []string {
