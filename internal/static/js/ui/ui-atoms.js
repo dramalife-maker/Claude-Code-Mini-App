@@ -565,18 +565,21 @@ function ModelBadge({ model, className = '' }) {
   );
 }
 
-/** Git 分支角標（compact：單行截斷；展開：truncate 上限避免撐高 header） */
+/** Git 分支角標（compact：單行截斷；展開：truncate 上限避免撐高 header）。風格對齊 SessionStateChip：軟底色、無邊框、font-semibold */
 function GitBranchBadge({ branch, compact = false }) {
   if (!branch) return null;
   return (
     <span
       className={
-        'inline-flex items-center gap-1 min-w-0 text-[11px] px-[7px] py-[3px] rounded-md bg-[oklch(0.24_0.02_264)] text-[oklch(0.6_0.01_264)] shrink-0 ' +
+        'inline-flex items-center gap-1 min-w-0 text-[11px] font-semibold px-[7px] py-[3px] rounded-md bg-amber-500/20 text-amber-200 shrink-0 ' +
         (compact ? 'max-w-[5.5rem]' : 'max-w-[min(12rem,42vw)] sm:max-w-[14rem]')
       }
       title={'Git 分支：' + branch}
     >
-      <span className="truncate leading-none">{branch}</span>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-2.5 h-2.5 shrink-0" aria-hidden>
+        <path d="M4 1.5a1.5 1.5 0 11-1 2.83v5.34a1.5 1.5 0 11-1 0V4.33A1.5 1.5 0 014 1.5zm7.25 6.5a1.5 1.5 0 11-1 2.83V9c0-.83-.67-1.5-1.5-1.5H6.31a1.5 1.5 0 110-1h2.44A2.5 2.5 0 0111.25 9v-.17A1.5 1.5 0 1110.25 8z" />
+      </svg>
+      <span className="truncate">{branch}</span>
     </span>
   );
 }
