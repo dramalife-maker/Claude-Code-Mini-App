@@ -27,6 +27,8 @@ const WEB_SESSION_STORAGE_KEY = 'cc_web_session_token';
 const SIDEBAR_WIDTH_STORAGE_KEY = 'cc_sidebar_width_px';
 const SIDEBAR_WIDTH_DEFAULT = 340;
 const SIDEBAR_WIDTH_MIN = 260;
+/** 收合後的 icon rail 寬度（px） */
+const SIDEBAR_RAIL_WIDTH = 56;
 
 /**
  * 外觀設定（Settings 彈窗）：Markdown 顏色 + 自訂 CSS。

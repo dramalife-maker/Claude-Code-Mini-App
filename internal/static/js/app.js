@@ -241,14 +241,12 @@ function App() {
 
     return (
       <div className="h-app flex bg-[oklch(0.15_0.02_264)] min-w-0 relative">
-        {!sidebarCollapsed && (
-          <aside
-            style={{ width: sidebarWidthPx, flexShrink: 0 }}
-            className="min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col"
-          >
-            <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} />
-          </aside>
-        )}
+        <aside
+          style={{ width: sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidthPx, flexShrink: 0 }}
+          className="min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col"
+        >
+          <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} onToggleSidebar={toggleSidebarCollapsed} collapsed={sidebarCollapsed} />
+        </aside>
         {!sidebarCollapsed && (
           <div
             role="separator"
@@ -267,18 +265,6 @@ function App() {
             />
           </div>
         )}
-        <button
-          type="button"
-          onClick={toggleSidebarCollapsed}
-          title={sidebarCollapsed ? '展開會話列表' : '收合會話列表'}
-          aria-label={sidebarCollapsed ? '展開會話列表' : '收合會話列表'}
-          style={{ left: sidebarCollapsed ? 0 : sidebarWidthPx }}
-          className="absolute top-1/2 -translate-y-1/2 z-20 flex items-center justify-center w-5 h-10 rounded-r-md bg-[oklch(0.19_0.02_264)] border border-l-0 border-[oklch(0.28_0.02_264)] text-gray-500 hover:text-gray-300 hover:bg-[oklch(0.24_0.02_264)] transition-colors"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={'w-3.5 h-3.5 transition-transform duration-150 ' + (sidebarCollapsed ? 'rotate-180' : '')} aria-hidden>
-            <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-          </svg>
-        </button>
         <main className="flex-1 min-w-0 min-h-0">
           {creating ? (
             <NewSessionComposer sessions={sidebarSortedSessions} prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />
