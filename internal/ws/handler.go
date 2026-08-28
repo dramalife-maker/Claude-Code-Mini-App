@@ -173,6 +173,18 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		syncMsg.Model = sessionModelPayload(sess)
 		send(syncMsg)
 
+		// 進入會話時若 quota cache 已過期，背景補打一次並推播更新（cache 未過期則 RefreshAfterRun 內部直接跳過）。
+		if quotaSvc != nil {
+			go func(at string) {
+				snap, err := quotaSvc.RefreshAfterRun(context.Background(), at)
+				if err != nil {
+					log.Printf("[quota] refresh on connect %s: %v", at, err)
+				}
+				p := snap.ToPayload()
+				broadcast(serverMsg{Type: "quota_update", Quota: &p})
+			}(agentType)
+		}
+
 		shellTimeoutSec := 60
 		if ts := strings.TrimSpace(shellCfg.Timeout); ts != "" {
 			if d, err := time.ParseDuration(ts); err == nil {
