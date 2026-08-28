@@ -1,5 +1,5 @@
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false }) {
+function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false, peekWidth = SIDEBAR_WIDTH_DEFAULT }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -8,6 +8,19 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal]   = useState('');
   const renameInputRef = useRef(null);
+  // 收合時 hover rail 浮出完整側欄（peek），蓋在對話內容上、不擠壓版面。
+  const [hoverExpanded, setHoverExpanded] = useState(false);
+  const hoverTimerRef = useRef(null);
+  const scheduleHoverOpen = () => {
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => setHoverExpanded(true), 150);
+  };
+  const scheduleHoverClose = () => {
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => setHoverExpanded(false), 200);
+  };
+
+  useEffect(() => () => clearTimeout(hoverTimerRef.current), []);
 
   const load = async () => {
     try {
@@ -329,78 +342,8 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     );
   };
 
-  // 收合狀態：專注模式用的迷你 icon rail — 只留展開鍵、新增鍵、和「folder icon + 該資料夾底下各 session 的 runner icon」，
-  // 點 session icon 直接切換（維持收合），不用先展開才能換 session。
-  if (collapsed) {
-    return (
-      <div className="flex flex-col h-app min-w-0 overflow-hidden items-center">
-        <div
-          className="pt-[18px] pb-2.5 shrink-0"
-          style={{ paddingTop: 'calc(18px + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}
-        >
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            aria-label="展開會話列表"
-            title="展開會話列表"
-            className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[oklch(0.28_0.02_264)] text-gray-400 hover:text-gray-200 hover:bg-[oklch(0.19_0.02_264)] transition-colors focus:outline-none"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 rotate-180" aria-hidden>
-              <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-            </svg>
-          </button>
-        </div>
-        <button
-          type="button"
-          onClick={() => onCreateNew?.()}
-          aria-label="建立新 Session"
-          title="新 Session"
-          className="mb-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[oklch(0.62_0.19_275)] text-white text-lg leading-none transition hover:brightness-110 active:scale-95 focus:outline-none"
-        >
-          +
-        </button>
-        <div className="flex-1 w-full overflow-y-auto app-scroll flex flex-col items-center gap-1.5 pb-4">
-          {(groupedSessions || []).map(([dirKey, dirSessions]) => (
-            <React.Fragment key={dirKey}>
-              <span
-                className="mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[13px] text-[oklch(0.5_0.01_264)]"
-                title={workDirGroupShortLabel(dirKey) + '（' + dirKey + '）'}
-                aria-hidden
-              >
-                📁
-              </span>
-              {dirSessions.map((s) => {
-                const active = activeSessionId != null && s.id === activeSessionId;
-                const unread = !active && isUnread(s);
-                const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => handleEnter(s)}
-                    aria-label={s.name || agentLabel}
-                    title={(s.name || '未命名') + ' · ' + agentLabel}
-                    className={
-                      'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] transition-colors ' +
-                      (active ? 'ring-2 ring-violet-500 ' : 'hover:brightness-110 ') +
-                      getAgentBadgeClass(s.agent_type)
-                    }
-                  >
-                    <AgentBadgeIcon agentType={s.agent_type} />
-                    {unread && (
-                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-violet-400" aria-hidden />
-                    )}
-                  </button>
-                );
-              })}
-            </React.Fragment>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
+  // 完整側欄內容：非收合時直接渲染；收合時 hover rail 也用同一份當浮出 peek。
+  const renderFullPanel = () => (
     <div className="flex flex-col h-app min-w-0 overflow-hidden">
       {/* Header — 設計 1a / 2a */}
       <div className="flex items-center justify-between px-5 pt-[18px] pb-3 shrink-0"
@@ -559,5 +502,92 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
       </div>
     </div>
   );
-}
 
+  // 收合狀態：專注模式用的迷你 icon rail — 只留展開鍵、新增鍵、和「folder icon + 該資料夾底下各 session 的 runner icon」，
+  // 點 session icon 直接切換（維持收合），不用先展開才能換 session。
+  if (collapsed) {
+    return (
+      <div className="relative h-app" onMouseEnter={scheduleHoverOpen} onMouseLeave={scheduleHoverClose}>
+        <div className="flex flex-col h-app min-w-0 overflow-hidden items-center">
+        <div
+          className="pt-[18px] pb-2.5 shrink-0"
+          style={{ paddingTop: 'calc(18px + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}
+        >
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            aria-label="展開會話列表"
+            title="展開會話列表"
+            className="flex h-9 w-9 items-center justify-center rounded-[9px] border border-[oklch(0.28_0.02_264)] text-gray-400 hover:text-gray-200 hover:bg-[oklch(0.19_0.02_264)] transition-colors focus:outline-none"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 rotate-180" aria-hidden>
+              <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={() => onCreateNew?.()}
+          aria-label="建立新 Session"
+          title="新 Session"
+          className="mb-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] bg-[oklch(0.62_0.19_275)] text-white text-lg leading-none transition hover:brightness-110 active:scale-95 focus:outline-none"
+        >
+          +
+        </button>
+        <div className="flex-1 w-full overflow-y-auto app-scroll flex flex-col items-center gap-1.5 pb-4">
+          {(groupedSessions || []).map(([dirKey, dirSessions]) => (
+            <React.Fragment key={dirKey}>
+              <span
+                className="mt-1.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[13px] text-[oklch(0.5_0.01_264)]"
+                title={workDirGroupShortLabel(dirKey) + '（' + dirKey + '）'}
+                aria-hidden
+              >
+                📁
+              </span>
+              {dirSessions.map((s) => {
+                const active = activeSessionId != null && s.id === activeSessionId;
+                const unread = !active && isUnread(s);
+                const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => handleEnter(s)}
+                    aria-label={s.name || agentLabel}
+                    title={(s.name || '未命名') + ' · ' + agentLabel}
+                    className={
+                      'relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[8px] transition-colors ' +
+                      (active ? 'ring-2 ring-violet-500 ' : 'hover:brightness-110 ') +
+                      getAgentBadgeClass(s.agent_type)
+                    }
+                  >
+                    <AgentBadgeIcon agentType={s.agent_type} />
+                    {unread && (
+                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-violet-400" aria-hidden />
+                    )}
+                  </button>
+                );
+              })}
+            </React.Fragment>
+          ))}
+        </div>
+        </div>
+        <div
+          className={
+            'absolute left-0 top-0 z-30 h-full shadow-2xl border-r border-[oklch(0.28_0.02_264)] bg-[oklch(0.13_0.02_264)] ' +
+            'origin-left transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ' +
+            (hoverExpanded
+              ? 'opacity-100 scale-100 pointer-events-auto'
+              : 'opacity-0 scale-[0.97] pointer-events-none')
+          }
+          style={{ width: peekWidth }}
+          aria-hidden={!hoverExpanded}
+        >
+          {renderFullPanel()}
+        </div>
+      </div>
+    );
+  }
+
+  return renderFullPanel();
+}

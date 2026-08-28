@@ -136,9 +136,12 @@ function App() {
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
+  const [sidebarResizing, setSidebarResizing] = useState(false);
+
   const handleSidebarResizeStart = useCallback((e) => {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
+    setSidebarResizing(true);
     const getX = (ev) => {
       if (ev.touches && ev.touches.length) return ev.touches[0].clientX;
       return ev.clientX;
@@ -162,6 +165,7 @@ function App() {
       document.removeEventListener('touchcancel', onUp);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
+      setSidebarResizing(false);
       try {
         localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(lastSidebarWidthRef.current));
       } catch (_) {}
@@ -243,9 +247,12 @@ function App() {
       <div className="h-app flex bg-[oklch(0.15_0.02_264)] min-w-0 relative">
         <aside
           style={{ width: sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidthPx, flexShrink: 0 }}
-          className="min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col"
+          className={
+            'min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col ' +
+            (sidebarResizing ? '' : 'transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]')
+          }
         >
-          <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} onToggleSidebar={toggleSidebarCollapsed} collapsed={sidebarCollapsed} />
+          <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} onToggleSidebar={toggleSidebarCollapsed} collapsed={sidebarCollapsed} peekWidth={sidebarWidthPx} />
         </aside>
         {!sidebarCollapsed && (
           <div
