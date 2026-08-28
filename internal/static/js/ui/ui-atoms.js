@@ -489,6 +489,38 @@ function formatQuotaAge(iso) {
   return Math.floor(min / 60) + ' 小時前';
 }
 
+/** display_text 內取最大的 N% 數字（無則回 null） */
+function extractMaxQuotaPercent(text) {
+  const matches = String(text || '').match(/(\d+(?:\.\d+)?)%/g);
+  if (!matches) return null;
+  return Math.max(...matches.map((m) => parseFloat(m)));
+}
+
+/** quota 文字顏色：error > 100%/80% 警示 > stale > 預設。segmentText 未帶 % 時退回整體 quota.display_text 判斷 */
+function quotaTextColorClass(quota, segmentText) {
+  const pct = extractMaxQuotaPercent(segmentText !== undefined ? segmentText : quota && quota.display_text);
+  return quota.error
+    ? 'text-amber-400'
+    : pct !== null && pct >= 100
+    ? 'text-red-400'
+    : pct !== null && pct >= 80
+    ? 'text-orange-400'
+    : quota.stale
+    ? 'text-gray-500'
+    : 'text-gray-400';
+}
+
+/** 依 ' · ' 拆段落，各段依自己的 % 上色（例如 Cursor 的 Total/Auto/API 各自獨立） */
+function QuotaSegments({ quota, text, className = '' }) {
+  const segments = String(text).split(' · ');
+  return segments.map((seg, i) => (
+    <React.Fragment key={i}>
+      {i > 0 ? <span className="text-gray-500"> · </span> : null}
+      <span className={quotaTextColorClass(quota, seg) + ' ' + className}>{seg}</span>
+    </React.Fragment>
+  ));
+}
+
 /** 帳戶 quota %（後端已組好 display_text） */
 function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = false, agentType = '' }) {
   const text = quota && quota.display_text;
@@ -497,14 +529,15 @@ function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = fa
   if (!shown) return null;
   const age = formatQuotaAge(quota.updated_at);
   const title = [text, age, quota.error].filter(Boolean).join(' · ');
-  const textCls = quota.error ? 'text-amber-400' : quota.stale ? 'text-gray-500' : 'text-gray-400';
   const compactMaxW = ['kiro', 'kiroacp'].includes(String(agentType || '').toLowerCase()) ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
   const chipCls = compact
     ? 'inline-flex items-center shrink-0 ' + compactMaxW + ' px-2 py-1 rounded-md bg-[oklch(0.24_0.02_264)] '
     : 'inline-flex items-center gap-0.5 min-w-0 max-w-full ';
   return (
     <span className={chipCls + className} title={title}>
-      <span className={'text-[10px] font-mono truncate ' + textCls}>{shown}</span>
+      <span className="text-[10px] font-mono truncate">
+        <QuotaSegments quota={quota} text={shown} />
+      </span>
       {!compact && onRefresh ? (
         <button
           type="button"

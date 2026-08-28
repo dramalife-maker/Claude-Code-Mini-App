@@ -82,7 +82,7 @@ function ChatSessionHeader({
     repoLabel !== '（未設定工作目錄）' ? repoLabel : null,
     modelOk ? modelLabel : null,
   ].filter(Boolean);
-  const subLine = [subParts.join(' · '), quotaText].filter(Boolean).join(' · ');
+  const subLine = subParts.join(' · ');
 
   return (
     <div
@@ -179,6 +179,12 @@ function ChatSessionHeader({
           <div className="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
             {subLine ? (
               <span className="text-xs text-[oklch(0.55_0.01_264)] ra-mono truncate">{subLine}</span>
+            ) : null}
+            {quotaText ? (
+              <span className="text-xs ra-mono truncate">
+                {subLine ? <span className="text-gray-500">· </span> : null}
+                <QuotaSegments quota={quota} text={quotaText} />
+              </span>
             ) : null}
             {agentType !== 'antigravity' && quotaText ? (
               <button
