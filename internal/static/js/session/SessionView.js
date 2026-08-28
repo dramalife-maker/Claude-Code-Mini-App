@@ -1,5 +1,5 @@
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false, peekWidth = SIDEBAR_WIDTH_DEFAULT }) {
+function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -8,19 +8,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal]   = useState('');
   const renameInputRef = useRef(null);
-  // 收合時 hover rail 浮出完整側欄（peek），蓋在對話內容上、不擠壓版面。
-  const [hoverExpanded, setHoverExpanded] = useState(false);
-  const hoverTimerRef = useRef(null);
-  const scheduleHoverOpen = () => {
-    clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => setHoverExpanded(true), 150);
-  };
-  const scheduleHoverClose = () => {
-    clearTimeout(hoverTimerRef.current);
-    hoverTimerRef.current = setTimeout(() => setHoverExpanded(false), 200);
-  };
-
-  useEffect(() => () => clearTimeout(hoverTimerRef.current), []);
 
   const load = async () => {
     try {
@@ -342,7 +329,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     );
   };
 
-  // 完整側欄內容：非收合時直接渲染；收合時 hover rail 也用同一份當浮出 peek。
   const renderFullPanel = () => (
     <div className="flex flex-col h-app min-w-0 overflow-hidden">
       {/* Header — 設計 1a / 2a */}
@@ -507,8 +493,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
   // 點 session icon 直接切換（維持收合），不用先展開才能換 session。
   if (collapsed) {
     return (
-      <div className="relative h-app" onMouseEnter={scheduleHoverOpen} onMouseLeave={scheduleHoverClose}>
-        <div className="flex flex-col h-app min-w-0 overflow-hidden items-center">
+      <div className="flex flex-col h-app min-w-0 overflow-hidden items-center">
         <div
           className="pt-[18px] pb-2.5 shrink-0"
           style={{ paddingTop: 'calc(18px + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}
@@ -570,20 +555,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               })}
             </React.Fragment>
           ))}
-        </div>
-        </div>
-        <div
-          className={
-            'absolute left-0 top-0 z-30 h-full shadow-2xl border-r border-[oklch(0.28_0.02_264)] bg-[oklch(0.13_0.02_264)] ' +
-            'origin-left transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ' +
-            (hoverExpanded
-              ? 'opacity-100 scale-100 pointer-events-auto'
-              : 'opacity-0 scale-[0.97] pointer-events-none')
-          }
-          style={{ width: peekWidth }}
-          aria-hidden={!hoverExpanded}
-        >
-          {renderFullPanel()}
         </div>
       </div>
     );
