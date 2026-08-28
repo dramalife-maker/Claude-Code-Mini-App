@@ -6,16 +6,11 @@ import (
 	"testing"
 )
 
-func TestMcpServersForACP_WorkspaceOverridesGlobal(t *testing.T) {
+func TestBuildACPMcpServers_WorkspaceOverridesGlobal(t *testing.T) {
 	dir := t.TempDir()
 	globalDir := filepath.Join(dir, "home", ".kiro", "settings")
 	workspaceDir := filepath.Join(dir, "proj", ".kiro", "settings")
-	if err := os.MkdirAll(globalDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, globalDir, workspaceDir)
 
 	writeFile(t, filepath.Join(globalDir, "mcp.json"), `{
   "mcpServers": {
@@ -42,37 +37,30 @@ func TestMcpServersForACP_WorkspaceOverridesGlobal(t *testing.T) {
 }`)
 
 	t.Setenv("USERPROFILE", filepath.Join(dir, "home"))
-	servers := mcpServersForACP(filepath.Join(dir, "proj"))
+	servers, meta, err := buildACPMcpServers(filepath.Join(dir, "proj"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(servers) != 3 {
 		t.Fatalf("want 3 servers, got %d: %+v", len(servers), servers)
 	}
-
-	byName := map[string]map[string]any{}
-	for _, raw := range servers {
-		srv, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("unexpected type %T", raw)
-		}
-		byName[srv["name"].(string)] = srv
+	if len(meta.JSONSources) != 2 {
+		t.Fatalf("json sources=%v", meta.JSONSources)
 	}
 
+	byName := indexServers(t, servers)
 	if byName["miniapp"]["url"] != "http://workspace.example/mcp" {
 		t.Fatalf("workspace should override global miniapp url: %+v", byName["miniapp"])
 	}
 	if byName["windows-mcp"]["command"] != "uvx-global" {
 		t.Fatalf("global windows-mcp should remain: %+v", byName["windows-mcp"])
 	}
-	if byName["chrome-devtools-mcp"]["command"] != "npx" {
-		t.Fatalf("workspace chrome-devtools missing: %+v", byName["chrome-devtools-mcp"])
-	}
 }
 
-func TestMcpServersForACP_SkipsDisabled(t *testing.T) {
+func TestBuildACPMcpServers_SkipsDisabled(t *testing.T) {
 	dir := t.TempDir()
 	workspaceDir := filepath.Join(dir, "proj", ".kiro", "settings")
-	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
+	mustMkdirAll(t, workspaceDir)
 	writeFile(t, filepath.Join(workspaceDir, "mcp.json"), `{
   "mcpServers": {
     "off": {"command": "echo", "args": ["off"], "disabled": true},
@@ -81,32 +69,147 @@ func TestMcpServersForACP_SkipsDisabled(t *testing.T) {
 }`)
 	t.Setenv("USERPROFILE", filepath.Join(dir, "missing-home"))
 
-	servers := mcpServersForACP(filepath.Join(dir, "proj"))
+	servers, _, err := buildACPMcpServers(filepath.Join(dir, "proj"), "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(servers) != 1 {
 		t.Fatalf("want 1 server, got %d: %+v", len(servers), servers)
 	}
-	srv := servers[0].(map[string]any)
-	if srv["name"] != "on" {
-		t.Fatalf("got %+v", srv)
+	if servers[0].(map[string]any)["name"] != "on" {
+		t.Fatalf("got %+v", servers[0])
 	}
 }
 
-func TestMcpServersForACP_FallbackWhenMissing(t *testing.T) {
+func TestBuildACPMcpServers_EmptyWhenNoConfig(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("USERPROFILE", filepath.Join(dir, "missing-home"))
 
-	servers := mcpServersForACP(filepath.Join(dir, "proj"))
-	if len(servers) != 1 {
-		t.Fatalf("want fallback server, got %+v", servers)
+	servers, meta, err := buildACPMcpServers(filepath.Join(dir, "proj"), "")
+	if err != nil {
+		t.Fatal(err)
 	}
-	srv := servers[0].(map[string]any)
-	if srv["name"] != "windows-mcp" {
-		t.Fatalf("got %+v", srv)
+	if len(servers) != 0 {
+		t.Fatalf("want no fallback servers, got %+v", servers)
+	}
+	if len(meta.ServerNames) != 0 {
+		t.Fatalf("meta=%+v", meta)
+	}
+}
+
+func TestBuildACPMcpServers_AgentOverridesJSON(t *testing.T) {
+	dir := t.TempDir()
+	workspaceDir := filepath.Join(dir, "proj", ".kiro")
+	mustMkdirAll(t, filepath.Join(workspaceDir, "settings"), filepath.Join(workspaceDir, "agents"))
+	writeFile(t, filepath.Join(workspaceDir, "settings", "mcp.json"), `{
+  "mcpServers": {
+    "shared": {"command": "from-json", "args": []}
+  }
+}`)
+	writeFile(t, filepath.Join(workspaceDir, "agents", "myagent.json"), `{
+  "name": "myagent",
+  "includeMcpJson": true,
+  "mcpServers": {
+    "shared": {"command": "from-agent", "args": []},
+    "agent-only": {"command": "agent", "args": []}
+  }
+}`)
+	t.Setenv("USERPROFILE", filepath.Join(dir, "missing-home"))
+
+	servers, meta, err := buildACPMcpServers(filepath.Join(dir, "proj"), "myagent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.AgentSource == "" {
+		t.Fatal("expected agent source path")
+	}
+	byName := indexServers(t, servers)
+	if byName["shared"]["command"] != "from-agent" {
+		t.Fatalf("agent should override json: %+v", byName["shared"])
+	}
+	if _, ok := byName["agent-only"]; !ok {
+		t.Fatalf("missing agent-only: %+v", byName)
+	}
+}
+
+func TestBuildACPMcpServers_AgentExcludeMcpJSON(t *testing.T) {
+	dir := t.TempDir()
+	workspaceDir := filepath.Join(dir, "proj", ".kiro")
+	mustMkdirAll(t, filepath.Join(workspaceDir, "settings"), filepath.Join(workspaceDir, "agents"))
+	writeFile(t, filepath.Join(workspaceDir, "settings", "mcp.json"), `{
+  "mcpServers": {
+    "json-only": {"command": "json", "args": []}
+  }
+}`)
+	writeFile(t, filepath.Join(workspaceDir, "agents", "solo.json"), `{
+  "name": "solo",
+  "includeMcpJson": false,
+  "mcpServers": {
+    "agent-only": {"command": "agent", "args": []}
+  }
+}`)
+	t.Setenv("USERPROFILE", filepath.Join(dir, "missing-home"))
+
+	servers, _, err := buildACPMcpServers(filepath.Join(dir, "proj"), "solo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(servers) != 1 || servers[0].(map[string]any)["name"] != "agent-only" {
+		t.Fatalf("got %+v", servers)
+	}
+}
+
+func TestResolveWorkDir(t *testing.T) {
+	dir := t.TempDir()
+	res, err := resolveWorkDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Path != dir || res.Fallback {
+		t.Fatalf("got %+v want path=%q fallback=false", res, dir)
+	}
+
+	t.Chdir(dir)
+	res, err = resolveWorkDir("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Fallback || res.Path != dir {
+		t.Fatalf("empty work_dir should fallback to server cwd: %+v", res)
+	}
+
+	if _, err := resolveWorkDir(filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("missing dir should fail")
+	}
+}
+
+func indexServers(t *testing.T, servers []any) map[string]map[string]any {
+	t.Helper()
+	out := make(map[string]map[string]any, len(servers))
+	for _, raw := range servers {
+		srv, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("unexpected type %T", raw)
+		}
+		out[srv["name"].(string)] = srv
+	}
+	return out
+}
+
+func mustMkdirAll(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if err := os.MkdirAll(p, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}

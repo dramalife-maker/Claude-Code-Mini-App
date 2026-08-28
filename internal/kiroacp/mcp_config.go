@@ -15,21 +15,57 @@ type kiroMcpFile struct {
 }
 
 type kiroMcpServer struct {
-	Command  string            `json:"command"`
-	Args     []string          `json:"args"`
-	URL      string            `json:"url"`
-	Headers  map[string]string `json:"headers"`
-	Env      map[string]string `json:"env"`
-	Disabled *bool             `json:"disabled"`
+	Command  string            `json:"command" yaml:"command"`
+	Args     []string          `json:"args" yaml:"args"`
+	URL      string            `json:"url" yaml:"url"`
+	Headers  map[string]string `json:"headers" yaml:"headers"`
+	Env      map[string]string `json:"env" yaml:"env"`
+	Disabled *bool             `json:"disabled" yaml:"disabled"`
 }
 
-// mcpServersForACP 依 Kiro 慣例合併 global + workspace MCP，轉成 ACP session/new|load 格式。
-// 優先順序：workspace 覆蓋 global；皆無時退回內建 windows-mcp。
-func mcpServersForACP(cwd string) []any {
-	merged := mergeKiroMcpConfigs(kiroGlobalMcpPath(), kiroWorkspaceMcpPath(cwd))
-	if len(merged) == 0 {
-		return fallbackMcpServers()
+type mcpLoadMeta struct {
+	CWD         string
+	Agent       string
+	AgentSource string
+	JSONSources []string
+	ServerNames []string
+}
+
+// buildACPMcpServers 依 Kiro 優先順序合併 MCP：Agent > Workspace mcp.json > Global mcp.json。
+// 無 agent 時等同目錄開 Kiro：只合併兩層 mcp.json。無任何設定時回傳空陣列（P3：不再硬塞 windows-mcp）。
+func buildACPMcpServers(cwd, agentName string) ([]any, mcpLoadMeta, error) {
+	meta := mcpLoadMeta{CWD: cwd, Agent: strings.TrimSpace(agentName)}
+
+	agentCfg, agentPath, err := loadAgentConfig(cwd, agentName)
+	if err != nil {
+		return nil, meta, err
 	}
+	if agentPath != "" {
+		meta.AgentSource = agentPath
+	}
+
+	merged := make(map[string]kiroMcpServer)
+	includeJSON := shouldIncludeMcpJSON(agentName, agentCfg)
+	if includeJSON {
+		globalPath := kiroGlobalMcpPath()
+		workspacePath := kiroWorkspaceMcpPath(cwd)
+		for name, srv := range mergeKiroMcpConfigs(globalPath, workspacePath) {
+			merged[name] = srv
+		}
+		if _, err := os.Stat(globalPath); err == nil {
+			meta.JSONSources = append(meta.JSONSources, globalPath)
+		}
+		if _, err := os.Stat(workspacePath); err == nil {
+			meta.JSONSources = append(meta.JSONSources, workspacePath)
+		}
+	}
+
+	if agentCfg != nil {
+		for name, srv := range agentCfg.McpServers {
+			merged[name] = srv
+		}
+	}
+
 	out := make([]any, 0, len(merged))
 	names := make([]string, 0, len(merged))
 	for name := range merged {
@@ -39,38 +75,51 @@ func mcpServersForACP(cwd string) []any {
 	for _, name := range names {
 		if srv, ok := toACPMcpServer(name, merged[name]); ok {
 			out = append(out, srv)
+			meta.ServerNames = append(meta.ServerNames, name)
 		}
 	}
-	if len(out) == 0 {
-		return fallbackMcpServers()
+	return out, meta, nil
+}
+
+// shouldIncludeMcpJSON：無 agent 時永遠載入 mcp.json；有 agent 時依 includeMcpJson（省略視為 true）。
+func shouldIncludeMcpJSON(agentName string, agentCfg *kiroAgentConfig) bool {
+	if strings.TrimSpace(agentName) == "" {
+		return true
 	}
-	return out
+	if agentCfg == nil {
+		return true
+	}
+	if agentCfg.IncludeMcpJson == nil {
+		return true
+	}
+	return *agentCfg.IncludeMcpJson
+}
+
+func kiroHomeDir() string {
+	if home := strings.TrimSpace(os.Getenv("USERPROFILE")); home != "" {
+		return home
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return home
 }
 
 func kiroGlobalMcpPath() string {
-	if home := strings.TrimSpace(os.Getenv("USERPROFILE")); home != "" {
-		return filepath.Join(home, ".kiro", "settings", "mcp.json")
+	home := kiroHomeDir()
+	if home == "" {
+		return ""
 	}
-	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".kiro", "settings", "mcp.json")
-	}
-	return ""
+	return filepath.Join(home, ".kiro", "settings", "mcp.json")
 }
 
 func kiroWorkspaceMcpPath(cwd string) string {
 	cwd = strings.TrimSpace(cwd)
-	if cwd == "" || cwd == "." {
-		var err error
-		cwd, err = os.Getwd()
-		if err != nil {
-			return ""
-		}
-	}
-	abs, err := filepath.Abs(cwd)
-	if err != nil {
+	if cwd == "" {
 		return ""
 	}
-	return filepath.Join(abs, ".kiro", "settings", "mcp.json")
+	return filepath.Join(cwd, ".kiro", "settings", "mcp.json")
 }
 
 func mergeKiroMcpConfigs(paths ...string) map[string]kiroMcpServer {
@@ -163,18 +212,7 @@ func acpEnvEntries(env map[string]string) []any {
 	return out
 }
 
-// fallbackMcpServers 在找不到任何 Kiro MCP 設定時的保底清單。
-func fallbackMcpServers() []any {
-	uvx := filepath.Join(os.Getenv("USERPROFILE"), `.local`, `bin`, `uvx.exe`)
-	if _, err := os.Stat(uvx); err != nil {
-		uvx = "uvx"
-	}
-	return []any{
-		map[string]any{
-			"name":    "windows-mcp",
-			"command": uvx,
-			"args":    []string{"windows-mcp", "serve"},
-			"env":     []any{},
-		},
-	}
+func logMcpLoad(meta mcpLoadMeta) {
+	log.Printf("[kiroacp] MCP cwd=%s agent=%q agentSrc=%q jsonSrc=%v servers=%v count=%d",
+		meta.CWD, meta.Agent, meta.AgentSource, meta.JSONSources, meta.ServerNames, len(meta.ServerNames))
 }

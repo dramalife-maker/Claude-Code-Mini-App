@@ -33,16 +33,31 @@ type Runner struct{}
 func (r *Runner) Name() string { return agent.TypeKiroACP }
 
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
+	cwdRes, err := resolveWorkDir(opts.WorkDir)
+	if err != nil {
+		cb(agent.Event{Type: agent.EventError, Err: err})
+		return err
+	}
+	cwd := cwdRes.Path
+	logWorkDirWarning(cwdRes)
+
+	agentName := ""
+	if opts.ExtraArgs != nil {
+		agentName = strings.TrimSpace(opts.ExtraArgs["agent"])
+	}
+	mcpServers, mcpMeta, err := buildACPMcpServers(cwd, agentName)
+	if err != nil {
+		cb(agent.Event{Type: agent.EventError, Err: err})
+		return err
+	}
+	logMcpLoad(mcpMeta)
+
 	args := buildArgs(opts)
 	log.Printf("[kiroacp] 執行: kiro-cli %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt))
-	if opts.WorkDir != "" {
-		log.Printf("[kiroacp] 工作目錄: %s", opts.WorkDir)
-	}
+	log.Printf("[kiroacp] 工作目錄: %s", cwd)
 
 	cmd := exec.CommandContext(ctx, "kiro-cli", args...)
-	if opts.WorkDir != "" {
-		cmd.Dir = opts.WorkDir
-	}
+	cmd.Dir = cwd
 	cmd.SysProcAttr = proc.SysProcAttr()
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Cancel = func() error {
@@ -144,11 +159,6 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		}
 	}
 
-	cwd := opts.WorkDir
-	if cwd == "" {
-		cwd = "."
-	}
-
 	if _, err := cl.call(ctx, "initialize", map[string]any{
 		"protocolVersion": 1,
 		"clientCapabilities": map[string]any{
@@ -167,7 +177,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	if sessionID == "" {
 		raw, err := cl.call(ctx, "session/new", map[string]any{
 			"cwd":        cwd,
-			"mcpServers": mcpServersForACP(cwd),
+			"mcpServers": mcpServers,
 		})
 		if err != nil {
 			cb(agent.Event{Type: agent.EventError, Err: err})
@@ -198,7 +208,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		raw, err := cl.call(loadCtx, "session/load", map[string]any{
 			"sessionId":  sessionID,
 			"cwd":        cwd,
-			"mcpServers": mcpServersForACP(cwd),
+			"mcpServers": mcpServers,
 		})
 		cancel()
 		acceptUpdates.Store(true)
