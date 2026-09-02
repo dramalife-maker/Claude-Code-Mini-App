@@ -265,7 +265,7 @@ function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={`inline-flex max-w-full flex-wrap items-stretch gap-0.5 rounded-lg border border-gray-700 bg-gray-800 p-[3px] ${
+      className={`inline-flex h-9 max-w-full flex-wrap items-stretch gap-0.5 rounded-lg border border-gray-700 bg-gray-800 p-[3px] ${
         disabled ? 'pointer-events-none opacity-70' : ''
       }`}
     >
@@ -282,7 +282,7 @@ function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
             disabled={disabled}
             onClick={() => onChange(opt.value)}
             className={[
-              'min-h-[2rem] shrink-0 grow-0 px-3 py-1.5 text-center text-xs font-semibold leading-tight rounded-[7px] transition-[color,background-color] duration-150 whitespace-nowrap',
+              'h-full flex items-center justify-center shrink-0 grow-0 px-3 text-xs font-semibold rounded-[7px] transition-[color,background-color] duration-150 whitespace-nowrap',
               'focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50',
               active
                 ? danger
@@ -317,7 +317,7 @@ const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 /** 下拉選單共用樣式：appearance-none + 自畫 chevron，邊框/圓角/hover 跟 PermModeSwitch 對齊 */
 const selectBaseClass = (danger) => [
-  'w-full min-w-0 appearance-none cursor-pointer rounded-lg pl-3 pr-8 py-1.5 text-sm font-medium truncate',
+  'w-full min-w-0 h-9 appearance-none cursor-pointer rounded-lg pl-3 pr-8 py-1.5 text-sm font-medium truncate',
   'focus:outline-none disabled:opacity-45 disabled:cursor-not-allowed',
   'transition-[color,background-color,border-color,box-shadow] duration-150',
   danger
