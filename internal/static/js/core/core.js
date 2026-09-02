@@ -413,6 +413,29 @@ function useMediaQuery(query) {
   return matches;
 }
 
+/**
+ * 伺服器全域設定（GET /config）：目前只有 shell_enabled，用來決定「開啟 VSCode／開啟目錄」
+ * 等依賴伺服器端本機程序的功能是否顯示。模組層快取單一 promise，避免每個用到的元件各 fetch 一次。
+ */
+let _serverConfigPromise = null;
+function fetchServerConfig() {
+  if (!_serverConfigPromise) {
+    _serverConfigPromise = apiFetch('/config')
+      .then((res) => (res.ok ? res.json() : {}))
+      .catch(() => ({}));
+  }
+  return _serverConfigPromise;
+}
+
+/** 回傳 { shellEnabled }；初始 false，fetch 完成後更新。 */
+function useServerConfig() {
+  const [shellEnabled, setShellEnabled] = useState(false);
+  useEffect(() => {
+    fetchServerConfig().then((cfg) => setShellEnabled(!!(cfg && cfg.shell_enabled)));
+  }, []);
+  return { shellEnabled };
+}
+
 /** 手機預設收合；偏好寫入 localStorage */
 function useChatHeaderCollapsed() {
   const isMobile = useMediaQuery('(max-width: 639px)');

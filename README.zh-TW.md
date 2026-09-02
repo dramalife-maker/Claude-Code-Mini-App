@@ -2,7 +2,7 @@
 
 > 用手機 Telegram 遠端操控伺服器上的 AI 編碼 CLI。**單一 Go 二進位**同時提供 REST、WebSocket 與 UI，無需獨立前端建置。
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
 
 [English](README.md)
 
@@ -28,7 +28,7 @@ cp config.example.yaml config.yaml   # 填 bot_token、whitelist_tg_ids
 - **未讀追蹤** — 列表標示有新動態的 Session，可一鍵「全部標為已讀」
 - **權限流程** — Claude 遭拒時可「允許一次」或切換模式；Kiro ACP 支援回合中途授權
 - **驗證** — Telegram `initData` + 白名單；可選內網密碼登入
-- **選用 Shell** — 於 `work_dir` 執行指令（預設關閉）
+- **選用 Shell** — 於 `work_dir` 執行指令（預設關閉）；開啟後會在會話 header 顯示「開啟 VSCode／開啟目錄」按鈕（僅桌面版）
 - **MCP server** — 透過 Streamable HTTP（`POST /mcp`）讓其他 agent 操作 session（預設關閉）
 
 ## 為什麼用這個？

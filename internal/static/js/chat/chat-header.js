@@ -38,6 +38,51 @@ function SlashCommandMenu({ items, activeIndex, onSelect }) {
 
 // ── 聊天畫面 ─────────────────────────────────────────────────────────────────
 
+/** 「開啟 VSCode」「開啟目錄」icon button：呼叫伺服器端在本機開啟，僅 shell.enabled 且有 work_dir 時顯示。 */
+function OpenInHostButton({ sessionId, kind }) {
+  const [busy, setBusy] = useState(false);
+  const isVscode = kind === 'vscode';
+  const title = isVscode ? '在伺服器端開啟 VSCode' : '在伺服器端開啟目錄';
+  const path = isVscode ? 'open-vscode' : 'open-folder';
+
+  const handleClick = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await apiFetch(`/sessions/${sessionId}/${path}`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        window.alert(data.error || '開啟失敗');
+      }
+    } catch (_) {
+      window.alert('開啟失敗');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      disabled={busy}
+      title={title}
+      aria-label={title}
+      className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md text-[oklch(0.65_0.01_264)] hover:text-violet-300 hover:bg-[oklch(0.2_0.02_264)] disabled:opacity-40"
+    >
+      {isVscode ? (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden>
+          <path d="M17.5 2.4l-6.8 6.4L5.6 4.6 3.3 5.8l5 5.9-5 6 2.3 1.2 5.1-4.7 6.8 6.5 3.2-1.5V4l-3.2-1.6zm-.6 5.1v9l-4.6-4.4 4.6-4.6zM12 12l-4.4 4.2-1.5-.8 3.5-3.4-3.5-3.4 1.5-.8L12 12z"/>
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden>
+          <path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>
+        </svg>
+      )}
+    </button>
+  );
+}
+
 function ChatSessionHeader({
   session,
   showBack,
@@ -66,6 +111,8 @@ function ChatSessionHeader({
 }) {
   const expanded = !headerCollapsed;
   const showPerm = showPermModeSelect && inputMode === 'agent';
+  const { shellEnabled } = useServerConfig();
+  const showOpenButtons = shellEnabled && !!(session.work_dir && String(session.work_dir).trim());
   const permTitle =
     agentType === 'antigravity'
       ? 'Antigravity 核准模式（--approval-mode）'
@@ -200,6 +247,12 @@ function ChatSessionHeader({
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {showOpenButtons ? (
+            <div className="flex items-center gap-0.5 pr-1 border-r border-[oklch(0.26_0.02_264)]">
+              <OpenInHostButton sessionId={session.id} kind="vscode" />
+              <OpenInHostButton sessionId={session.id} kind="folder" />
+            </div>
+          ) : null}
           <ModelSelect
             agentType={agentType}
             value={modelSel}

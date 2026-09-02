@@ -2,7 +2,7 @@
 
 > Remote AI coding CLIs from your phone via Telegram. **One Go binary** — REST, WebSocket, and UI, no separate frontend build.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
 
 [繁體中文](README.zh-TW.md)
 
@@ -28,7 +28,7 @@ cp config.example.yaml config.yaml   # set bot_token, whitelist_tg_ids
 - **Unread tracking** — Sessions with new activity are marked unread in the list; "read all" to clear
 - **Permissions** — Claude denial flow; Kiro ACP mid-turn approval; approve once or switch mode from the UI
 - **Auth** — Telegram `initData` + allowlist; optional web login on private IPs
-- **Optional shell** — Run commands in `work_dir` (off by default)
+- **Optional shell** — Run commands in `work_dir` (off by default); when on, also shows "Open in VS Code" / "Open folder" buttons in the session header (desktop only)
 - **MCP server** — Expose sessions to other agents over Streamable HTTP (`POST /mcp`, off by default)
 
 ## Why this?

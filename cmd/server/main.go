@@ -298,6 +298,15 @@ func main() {
 	app.Get("/settings/appearance", authMiddleware, sth.GetAppearance)
 	app.Put("/settings/appearance", authMiddleware, sth.PutAppearance)
 
+	// GET /config — 前端用來判斷是否顯示「開啟 VSCode / 開啟目錄」等依賴伺服器端本機程序的功能。
+	app.Get("/config", authMiddleware, func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"shell_enabled": cfg.Shell.Enabled})
+	})
+
+	oh := api.NewOpenHandler(database, cfg.Shell.Enabled)
+	app.Post("/sessions/:id/open-vscode", authMiddleware, oh.OpenVSCode)
+	app.Post("/sessions/:id/open-folder", authMiddleware, oh.OpenFolder)
+
 	quotaSvc := quota.NewService()
 	go quotaSvc.Warmup(context.Background())
 	qh := api.NewQuotaHandler(quotaSvc)
