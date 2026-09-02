@@ -165,12 +165,10 @@ func toACPMcpServer(name string, srv kiroMcpServer) (map[string]any, bool) {
 	url := strings.TrimSpace(srv.URL)
 	if url != "" {
 		out := map[string]any{
-			"name": name,
-			"type": "http",
-			"url":  url,
-		}
-		if len(srv.Headers) > 0 {
-			out["headers"] = srv.Headers
+			"name":    name,
+			"type":    "http",
+			"url":     url,
+			"headers": acpEnvEntries(srv.Headers),
 		}
 		return out, true
 	}

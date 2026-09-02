@@ -55,6 +55,15 @@ func TestBuildACPMcpServers_WorkspaceOverridesGlobal(t *testing.T) {
 	if byName["windows-mcp"]["command"] != "uvx-global" {
 		t.Fatalf("global windows-mcp should remain: %+v", byName["windows-mcp"])
 	}
+	// kiro-cli acp 的 http mcpServers.headers 需為 [{name,value}] 陣列；
+	// 傳物件會讓子進程在 session/new 時無聲崩潰（stdout 直接關閉，無 stderr）。
+	headers, ok := byName["miniapp"]["headers"].([]any)
+	if !ok {
+		t.Fatalf("miniapp headers 應為陣列，got %T: %+v", byName["miniapp"]["headers"], byName["miniapp"])
+	}
+	if len(headers) != 0 {
+		t.Fatalf("workspace miniapp 未設定 headers，應為空陣列: %+v", headers)
+	}
 }
 
 func TestBuildACPMcpServers_SkipsDisabled(t *testing.T) {
