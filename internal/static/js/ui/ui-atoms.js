@@ -265,8 +265,8 @@ function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={`inline-flex max-w-full flex-wrap items-stretch gap-0.5 rounded-[9px] border border-[oklch(0.28_0.02_264)] bg-[oklch(0.19_0.02_264)] p-[3px] ${
-        disabled ? 'pointer-events-none opacity-45' : ''
+      className={`inline-flex max-w-full flex-wrap items-stretch gap-0.5 rounded-lg border border-gray-700 bg-gray-800 p-[3px] ${
+        disabled ? 'pointer-events-none opacity-70' : ''
       }`}
     >
       {opts.map((opt) => {
@@ -299,6 +299,32 @@ function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
   );
 }
 
+/** 下拉選單右側的自訂 chevron（蓋掉瀏覽器原生箭頭，appearance-none 後手畫一個） */
+function SelectChevron({ danger }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden
+      className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${danger ? 'text-amber-400/80' : 'text-gray-500'}`}
+    >
+      <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/** 下拉選單共用樣式：appearance-none + 自畫 chevron，邊框/圓角/hover 跟 PermModeSwitch 對齊 */
+const selectBaseClass = (danger) => [
+  'w-full min-w-0 appearance-none cursor-pointer rounded-lg pl-3 pr-8 py-1.5 text-sm font-medium truncate',
+  'focus:outline-none disabled:opacity-45 disabled:cursor-not-allowed',
+  'transition-[color,background-color,border-color,box-shadow] duration-150',
+  danger
+    ? 'border border-amber-600/75 bg-amber-950/45 text-amber-50 shadow-sm shadow-amber-950/35 focus:border-amber-500 focus:ring-1 focus:ring-amber-600/35'
+    : 'border border-gray-700 bg-gray-800 text-gray-200 hover:border-gray-600 hover:bg-gray-700/60 focus:border-violet-600 focus:ring-1 focus:ring-violet-600/30',
+].join(' ').replace(/\s+/g, ' ').trim();
+
 /** 權限模式：窄螢幕（app 版）用下拉選單，與 PermModeSwitch 選項一致。danger 值會套用琥珀邊框（與分段按鈕語意一致）。 */
 function PermModeSelect({ agentType, value, onChange, disabled, title, id, className }) {
   const opts = permModeOptionsFor(agentType);
@@ -307,38 +333,24 @@ function PermModeSelect({ agentType, value, onChange, disabled, title, id, class
     title || (t === 'antigravity' ? 'Antigravity 核准模式' : '權限模式');
   const selectId = id || `perm-mode-select-${t}`;
   const danger = value === 'bypassPermissions' || value === 'yolo';
-  const widthClass = className != null && String(className).trim() !== '' ? '' : 'w-full ';
   return (
-    <select
-      id={selectId}
-      aria-label={ariaLabel}
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className={[
-        widthClass,
-        'min-w-0 rounded-lg px-3 py-1.5 text-sm focus:outline-none disabled:opacity-45 transition-[color,background-color,border-color,box-shadow] duration-150',
-        danger
-          ? 'border border-amber-600/75 bg-amber-950/45 text-amber-50 shadow-sm shadow-amber-950/35 focus:border-amber-500 focus:ring-1 focus:ring-amber-600/35'
-          : 'border border-gray-700 bg-gray-800 text-gray-200 focus:border-violet-600',
-        className || '',
-      ].join(' ').replace(/\s+/g, ' ').trim()}
-    >
-      {opts.map((opt) => (
-        <option key={opt.value} value={opt.value}>{opt.label}</option>
-      ))}
-    </select>
+    <div className={`relative min-w-0 ${className || 'w-full'}`}>
+      <select
+        id={selectId}
+        aria-label={ariaLabel}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${selectBaseClass(danger)} ${className || ''}`}
+      >
+        {opts.map((opt) => (
+          <option key={opt.value} value={opt.value}>{opt.label}</option>
+        ))}
+      </select>
+      <SelectChevron danger={danger} />
+    </div>
   );
 }
-
-const EFFORT_OPTIONS = ['low', 'medium', 'high', 'xhigh', 'max'];
-
-const selectBaseClass = (className) => [
-  className != null && String(className).trim() !== '' ? '' : 'w-full ',
-  'min-w-0 rounded-lg px-3 py-1.5 text-sm focus:outline-none disabled:opacity-45 transition-[color,background-color,border-color,box-shadow] duration-150',
-  'border border-gray-700 bg-gray-800 text-gray-200 focus:border-violet-600',
-  className || '',
-].join(' ').replace(/\s+/g, ' ').trim();
 
 /** Model 下拉選單：選項打 GET /model-options/:agentType，固定含「預設（不指定）」。 */
 function ModelSelect({ agentType, value, onChange, disabled, id, className }) {
@@ -352,38 +364,44 @@ function ModelSelect({ agentType, value, onChange, disabled, id, className }) {
     return () => { cancelled = true; };
   }, [agentType]);
   return (
-    <select
-      id={id || `model-select-${agentType}`}
-      aria-label="Model"
-      value={value || ''}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className={selectBaseClass(className)}
-    >
-      <option value="">預設（不指定）</option>
-      {opts.map((opt) => (
-        <option key={opt.model_id} value={opt.model_id}>{opt.label}</option>
-      ))}
-    </select>
+    <div className={`relative min-w-0 ${className || 'w-full'}`}>
+      <select
+        id={id || `model-select-${agentType}`}
+        aria-label="Model"
+        value={value || ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${selectBaseClass(false)} ${className || ''}`}
+      >
+        <option value="">預設</option>
+        {opts.map((opt) => (
+          <option key={opt.model_id} value={opt.model_id}>{opt.label}</option>
+        ))}
+      </select>
+      <SelectChevron />
+    </div>
   );
 }
 
 /** Effort 下拉選單：固定 low/medium/high/xhigh/max，含「預設（不指定）」。Cursor 不支援，呼叫端不應渲染。 */
 function EffortSelect({ value, onChange, disabled, id, className }) {
   return (
-    <select
-      id={id || 'effort-select'}
-      aria-label="Effort"
-      value={value || ''}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className={selectBaseClass(className)}
-    >
-      <option value="">預設（不指定）</option>
-      {EFFORT_OPTIONS.map((v) => (
-        <option key={v} value={v}>{v}</option>
-      ))}
-    </select>
+    <div className={`relative min-w-0 ${className || 'w-full'}`}>
+      <select
+        id={id || 'effort-select'}
+        aria-label="Effort"
+        value={value || ''}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className={`${selectBaseClass(false)} ${className || ''}`}
+      >
+        <option value="">預設</option>
+        {EFFORT_OPTIONS.map((v) => (
+          <option key={v} value={v}>{v}</option>
+        ))}
+      </select>
+      <SelectChevron />
+    </div>
   );
 }
 

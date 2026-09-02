@@ -213,9 +213,9 @@ function ChatSessionHeader({
         ) : null}
       </div>
 
-      {/* 桌面：標題 + 副標 | 權限分段（設計 1a） */}
-      <div className="hidden sm:flex items-center justify-between gap-4 px-7 py-4">
-        <div className="min-w-0">
+      {/* 桌面：Row 1 標題＋分支（左）｜ 操作控制（右）。Row 2 只放細的 repo/model/quota 副標，不跟控制項搶版面。 */}
+      <div className="hidden sm:block px-7 py-4">
+        <div className="flex items-center justify-between gap-x-4 gap-y-2 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
             <div className="text-base font-bold text-[oklch(0.94_0.01_264)] truncate" title={session.name}>
               {session.name || '未命名'}
@@ -223,73 +223,73 @@ function ChatSessionHeader({
             <SessionStateChip state={state} activityHint={activityHint} className="shrink-0" />
             <GitBranchBadge branch={session.git_branch} compact />
           </div>
-          <div className="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
-            {subLine ? (
-              <span className="text-xs text-[oklch(0.55_0.01_264)] ra-mono truncate">{subLine}</span>
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {showOpenButtons ? (
+              <div className="flex items-center gap-0.5 pr-1 border-r border-[oklch(0.26_0.02_264)]">
+                <OpenInHostButton sessionId={session.id} kind="vscode" />
+                <OpenInHostButton sessionId={session.id} kind="folder" />
+              </div>
             ) : null}
-            {quotaText ? (
-              <span className="text-xs ra-mono truncate">
-                {subLine ? <span className="text-gray-500">· </span> : null}
-                <QuotaSegments quota={quota} text={quotaText} />
-              </span>
+            <ModelSelect
+              agentType={agentType}
+              value={modelSel}
+              onChange={onModelChange}
+              disabled={modeSwitchDisabled}
+              id="chat-model"
+              className="w-[9rem]"
+            />
+            {showEffortSelect ? (
+              <EffortSelect
+                value={effortSel}
+                onChange={onEffortChange}
+                disabled={modeSwitchDisabled}
+                id="chat-effort"
+                className="w-[7rem]"
+              />
             ) : null}
-            {agentType !== 'antigravity' && quotaText ? (
-              <button
-                type="button"
-                onClick={onQuotaRefresh}
-                disabled={quotaRefreshing}
-                className="text-xs text-[oklch(0.55_0.01_264)] hover:text-violet-300 ra-mono"
-                title="刷新帳戶用量"
-              >
-                {quotaRefreshing ? '↻' : '↻'}
-              </button>
+            {showPerm ? (
+              usePermModeDropdown ? (
+                <PermModeSelect
+                  agentType={agentType}
+                  value={mode}
+                  onChange={onPermModeChange}
+                  disabled={modeSwitchDisabled}
+                  title={permTitle}
+                  id="chat-perm-mode"
+                  className="w-[11rem]"
+                />
+              ) : (
+                <PermModeSwitch
+                  agentType={agentType}
+                  value={mode}
+                  onChange={onPermModeChange}
+                  disabled={modeSwitchDisabled}
+                  title={permTitle}
+                />
+              )
             ) : null}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {showOpenButtons ? (
-            <div className="flex items-center gap-0.5 pr-1 border-r border-[oklch(0.26_0.02_264)]">
-              <OpenInHostButton sessionId={session.id} kind="vscode" />
-              <OpenInHostButton sessionId={session.id} kind="folder" />
-            </div>
+        <div className="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
+          {subLine ? (
+            <span className="text-xs text-[oklch(0.55_0.01_264)] ra-mono truncate">{subLine}</span>
           ) : null}
-          <ModelSelect
-            agentType={agentType}
-            value={modelSel}
-            onChange={onModelChange}
-            disabled={modeSwitchDisabled}
-            id="chat-model"
-            className="min-w-[9rem]"
-          />
-          {showEffortSelect ? (
-            <EffortSelect
-              value={effortSel}
-              onChange={onEffortChange}
-              disabled={modeSwitchDisabled}
-              id="chat-effort"
-              className="min-w-[7rem]"
-            />
+          {quotaText ? (
+            <span className="text-xs ra-mono truncate">
+              {subLine ? <span className="text-gray-500">· </span> : null}
+              <QuotaSegments quota={quota} text={quotaText} />
+            </span>
           ) : null}
-          {showPerm ? (
-            usePermModeDropdown ? (
-              <PermModeSelect
-                agentType={agentType}
-                value={mode}
-                onChange={onPermModeChange}
-                disabled={modeSwitchDisabled}
-                title={permTitle}
-                id="chat-perm-mode"
-                className="min-w-[11rem]"
-              />
-            ) : (
-              <PermModeSwitch
-                agentType={agentType}
-                value={mode}
-                onChange={onPermModeChange}
-                disabled={modeSwitchDisabled}
-                title={permTitle}
-              />
-            )
+          {agentType !== 'antigravity' && quotaText ? (
+            <button
+              type="button"
+              onClick={onQuotaRefresh}
+              disabled={quotaRefreshing}
+              className="text-xs text-[oklch(0.55_0.01_264)] hover:text-violet-300 ra-mono"
+              title="刷新帳戶用量"
+            >
+              {quotaRefreshing ? '↻' : '↻'}
+            </button>
           ) : null}
         </div>
       </div>
