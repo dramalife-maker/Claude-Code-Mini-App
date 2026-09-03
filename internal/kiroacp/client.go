@@ -6,7 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+
+	"log/slog"
 	"os/exec"
 	"sync"
 	"sync/atomic"
@@ -192,7 +193,7 @@ func (c *client) readLoop() {
 		}
 		var msg rpcResponse
 		if err := json.Unmarshal(line, &msg); err != nil {
-			log.Printf("[kiroacp] skip non-json line: %s", truncateBytes(line, 120))
+			slog.Info(fmt.Sprintf("[kiroacp] skip non-json line: %s", truncateBytes(line, 120)))
 			continue
 		}
 		c.dispatch(msg)
@@ -209,7 +210,7 @@ func (c *client) dispatch(msg rpcResponse) {
 		if msg.Method == "session/request_permission" && c.onPermission != nil {
 			var p permissionParams
 			if err := json.Unmarshal(msg.Params, &p); err != nil {
-				log.Printf("[kiroacp] request_permission unmarshal: %v", err)
+				slog.Info(fmt.Sprintf("[kiroacp] request_permission unmarshal: %v", err))
 			} else {
 				optionID := c.onPermission(p)
 				c.replyPermission(msg.ID, optionID)
@@ -235,12 +236,12 @@ func (c *client) dispatch(msg rpcResponse) {
 	if msg.Method == "session/update" {
 		var p sessionUpdateParams
 		if err := json.Unmarshal(msg.Params, &p); err != nil {
-			log.Printf("[kiroacp] session/update unmarshal: %v", err)
+			slog.Info(fmt.Sprintf("[kiroacp] session/update unmarshal: %v", err))
 			return
 		}
 		var body sessionUpdateBody
 		if err := json.Unmarshal(p.Update, &body); err != nil {
-			log.Printf("[kiroacp] session/update body: %v", err)
+			slog.Info(fmt.Sprintf("[kiroacp] session/update body: %v", err))
 			return
 		}
 		if c.onUpdate != nil {

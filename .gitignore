@@ -50,6 +50,9 @@ claude-miniapp-debug*.log
 cursor-image-probe.*
 add_logging.py
 
+# slog/zap rotate 落地檔
+/logs/
+
 # ACP roundtrip 本機產出（含絕對路徑、sessionId、raw tool updates）
 poc/kiro-cli/samples_acp_*.json
 poc/kiro-cli/samples_acp_*.md

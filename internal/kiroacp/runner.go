@@ -3,7 +3,7 @@ package kiroacp
 import (
 	"context"
 	"fmt"
-	"log"
+
 	"os/exec"
 	"strings"
 	"sync/atomic"
@@ -13,6 +13,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/media"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
+	"log/slog"
 )
 
 func init() {
@@ -53,8 +54,8 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	logMcpLoad(mcpMeta)
 
 	args := buildArgs(opts)
-	log.Printf("[kiroacp] 執行: kiro-cli %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt))
-	log.Printf("[kiroacp] 工作目錄: %s", cwd)
+	slog.Info(fmt.Sprintf("[kiroacp] 執行: kiro-cli %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt)))
+	slog.Info(fmt.Sprintf("[kiroacp] 工作目錄: %s", cwd))
 
 	cmd := exec.CommandContext(ctx, "kiro-cli", args...)
 	cmd.Dir = cwd
@@ -77,10 +78,10 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	}
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[kiroacp] 啟動失敗: %v", err)
+		slog.Info(fmt.Sprintf("[kiroacp] 啟動失敗: %v", err))
 		return err
 	}
-	log.Printf("[kiroacp] 子進程 PID=%d", cmd.Process.Pid)
+	slog.Info(fmt.Sprintf("[kiroacp] 子進程 PID=%d", cmd.Process.Pid))
 
 	cl := newClient(cmd, stdout, stdin)
 	defer func() {
@@ -150,7 +151,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			for _, img := range body.images() {
 				url, err := media.SaveBase64Image(img.MediaType, img.Data)
 				if err != nil {
-					log.Printf("[kiroacp] 圖片存檔失敗: %v", err)
+					slog.Info(fmt.Sprintf("[kiroacp] 圖片存檔失敗: %v", err))
 					continue
 				}
 				emitStreamStart()
@@ -194,7 +195,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			cb(agent.Event{Type: agent.EventError, Err: err})
 			return err
 		}
-		log.Printf("[kiroacp] session/new id=%s model=%s", sessionID, modelIDFrom(sess))
+		slog.Info(fmt.Sprintf("[kiroacp] session/new id=%s model=%s", sessionID, modelIDFrom(sess)))
 		cb(agent.Event{
 			Type:      agent.EventSessionInit,
 			SessionID: sessionID,
@@ -214,12 +215,12 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		acceptUpdates.Store(true)
 		if err != nil {
 			err = fmt.Errorf("kiroacp: session/load 失敗（需 kiro-cli >= 2.16.0）: %w", err)
-			log.Printf("[kiroacp] %v", err)
+			slog.Info(fmt.Sprintf("[kiroacp] %v", err))
 			cb(agent.Event{Type: agent.EventError, Err: err})
 			return err
 		}
 		sess, _ = parseSessionResult(raw)
-		log.Printf("[kiroacp] session/load id=%s model=%s", sessionID, modelIDFrom(sess))
+		slog.Info(fmt.Sprintf("[kiroacp] session/load id=%s model=%s", sessionID, modelIDFrom(sess)))
 		if m := modelSnapshot(sess); m != nil {
 			cb(agent.Event{Type: agent.EventSessionInit, SessionID: sessionID, Model: m})
 		}

@@ -5,14 +5,16 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
+
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
+	"fmt"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
+	"log/slog"
 )
 
 func init() {
@@ -45,18 +47,16 @@ func (r *Runner) runStreamJSON(ctx context.Context, opts agent.RunOptions, cb ag
 		"--output-format", "stream-json",
 	}
 	r.appendCommonArgs(&args, opts)
-
-	log.Printf("[antigravity] stream-json: agy %s (prompt len=%d via stdin)", strings.Join(args, " "), len(opts.Prompt))
+	slog.Info(fmt.Sprintf("[antigravity] stream-json: agy %s (prompt len=%d via stdin)", strings.Join(args, " "), len(opts.Prompt)))
 	return r.execAndParseNDJSON(ctx, opts, args, cb)
 }
 
 func (r *Runner) runPrintText(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
 	args := []string{"--print"}
 	r.appendCommonArgs(&args, opts)
-
-	log.Printf("[antigravity] print: agy %s (prompt len=%d via stdin)", strings.Join(args, " "), len(opts.Prompt))
+	slog.Info(fmt.Sprintf("[antigravity] print: agy %s (prompt len=%d via stdin)", strings.Join(args, " "), len(opts.Prompt)))
 	if opts.WorkDir != "" {
-		log.Printf("[antigravity] 工作目錄: %s", opts.WorkDir)
+		slog.Info(fmt.Sprintf("[antigravity] 工作目錄: %s", opts.WorkDir))
 	}
 
 	cmd := exec.CommandContext(ctx, agyBinary(), args...)
@@ -74,20 +74,20 @@ func (r *Runner) runPrintText(ctx context.Context, opts agent.RunOptions, cb age
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[antigravity] 子進程啟動失敗: %v", err)
+		slog.Info(fmt.Sprintf("[antigravity] 子進程啟動失敗: %v", err))
 		return err
 	}
-	log.Printf("[antigravity] 子進程已啟動，PID=%d", cmd.Process.Pid)
+	slog.Info(fmt.Sprintf("[antigravity] 子進程已啟動，PID=%d", cmd.Process.Pid))
 
 	body, readErr := io.ReadAll(stdout)
 	if readErr != nil {
-		log.Printf("[antigravity] 讀 stdout 失敗: %v", readErr)
+		slog.Info(fmt.Sprintf("[antigravity] 讀 stdout 失敗: %v", readErr))
 	}
 
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
 	if stderr != "" {
-		log.Printf("[antigravity] stderr:\n%s", stderr)
+		slog.Info(fmt.Sprintf("[antigravity] stderr:\n%s", stderr))
 	}
 
 	text := strings.TrimSpace(string(body))
@@ -154,7 +154,7 @@ func (r *Runner) execAndParseNDJSON(ctx context.Context, opts agent.RunOptions, 
 		lineCount++
 		e, parseErr := ParseEvent(line)
 		if parseErr != nil {
-			log.Printf("[antigravity] 解析失敗: %v", parseErr)
+			slog.Info(fmt.Sprintf("[antigravity] 解析失敗: %v", parseErr))
 			continue
 		}
 		if e.Type == "init" && e.SessionID != "" {
@@ -237,7 +237,7 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, streamStartSen
 		}
 		cb(agent.Event{Type: agent.EventToolCompleted, Tool: tc})
 	case "error":
-		log.Printf("[antigravity] error event severity=%s message=%s", e.Severity, e.Message)
+		slog.Info(fmt.Sprintf("[antigravity] error event severity=%s message=%s", e.Severity, e.Message))
 	case "result":
 		cb(agent.Event{Type: agent.EventDone, SessionID: sessionID})
 	}

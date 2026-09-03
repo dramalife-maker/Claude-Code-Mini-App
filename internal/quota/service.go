@@ -2,11 +2,13 @@ package quota
 
 import (
 	"context"
-	"log"
+
 	"sync"
 	"time"
 
+	"fmt"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
+	"log/slog"
 )
 
 const ManualCooldown = 60 * time.Second
@@ -111,7 +113,7 @@ func (s *Service) Warmup(ctx context.Context) {
 		provider := p
 		go func() {
 			if _, err := s.refresh(ctx, provider, false); err != nil {
-				log.Printf("[quota] warmup %s: %v", provider, err)
+				slog.Info(fmt.Sprintf("[quota] warmup %s: %v", provider, err))
 			}
 		}()
 	}
@@ -189,7 +191,7 @@ func (s *Service) refresh(ctx context.Context, provider string, force bool) (Sna
 	snap, err := f.Fetch(ctx)
 	call.snap, call.err = snap, err
 	if err != nil {
-		log.Printf("[quota] fetch %s: %v", provider, err)
+		slog.Info(fmt.Sprintf("[quota] fetch %s: %v", provider, err))
 		prev := s.Get(provider)
 		if prev.DisplayText != "—" {
 			prev.Error = err.Error()

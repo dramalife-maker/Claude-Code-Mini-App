@@ -4,7 +4,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"fmt"
-	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/cursor"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/kiro"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/logging"
 	mymcp "github.com/jerry12122/Claude-Code-Mini-App/internal/mcp"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
@@ -33,11 +35,11 @@ import (
 func syncModelOptions(database *db.DB) {
 	apply := func(agentType string, live []db.ModelOption, err error) {
 		if err != nil {
-			log.Printf("[startup] 取得 %s model 清單失敗，略過: %v", agentType, err)
+			slog.Info(fmt.Sprintf("[startup] 取得 %s model 清單失敗，略過: %v", agentType, err))
 			return
 		}
 		if err := database.SyncModelOptions(agentType, live); err != nil {
-			log.Printf("[startup] SyncModelOptions(%s) 失敗: %v", agentType, err)
+			slog.Info(fmt.Sprintf("[startup] SyncModelOptions(%s) 失敗: %v", agentType, err))
 		}
 	}
 
@@ -85,47 +87,54 @@ func webSessionToken(c *fiber.Ctx) string {
 }
 
 func main() {
+	syncLogs := logging.Init()
+	defer syncLogs()
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 
 	// 解析允許的內網 CIDR
 	allowedNets, err := auth.ParseCIDRs(cfg.Web.AllowedCIDRs)
 	if err != nil {
-		log.Fatal("CIDR 設定錯誤:", err)
+		slog.Error(fmt.Sprintf("CIDR 設定錯誤: %v", err))
+		os.Exit(1)
 	}
 
 	// 解析 session TTL
 	sessionTTL, err := time.ParseDuration(cfg.Web.SessionTTL)
 	if err != nil {
-		log.Fatalf("web.session_ttl 格式錯誤 %q: %v", cfg.Web.SessionTTL, err)
+		slog.Error(fmt.Sprintf("web.session_ttl 格式錯誤 %q: %v", cfg.Web.SessionTTL, err))
+		os.Exit(1)
 	}
 	sessions := auth.NewStore(sessionTTL)
 
 	database, err := db.Open(cfg.DB.Path)
 	if err != nil {
-		log.Fatal("DB 初始化失敗:", err)
+		slog.Error(fmt.Sprintf("DB 初始化失敗: %v", err))
+		os.Exit(1)
 	}
 	defer database.Close()
 
 	// 修復 crash 遺留的殘留狀態
 	if err := database.ResetRunningSessions(); err != nil {
-		log.Printf("[startup] ResetRunningSessions 失敗: %v", err)
+		slog.Info(fmt.Sprintf("[startup] ResetRunningSessions 失敗: %v", err))
 	}
 	if err := database.ResetPendingMessages(); err != nil {
-		log.Printf("[startup] ResetPendingMessages 失敗: %v", err)
+		slog.Info(fmt.Sprintf("[startup] ResetPendingMessages 失敗: %v", err))
 	}
 	syncModelOptions(database)
 
 	// 將 config.yaml 中的白名單寫入 DB
 	for _, id := range cfg.WhitelistTgIDs {
 		if err := database.AddUser(id, ""); err != nil {
-			log.Printf("新增白名單使用者 %d 失敗: %v", id, err)
+			slog.Info(fmt.Sprintf("新增白名單使用者 %d 失敗: %v", id, err))
 		}
 	}
 	if len(cfg.WhitelistTgIDs) > 0 {
-		log.Printf("白名單已載入，共 %d 位使用者", len(cfg.WhitelistTgIDs))
+		slog.Info(fmt.Sprintf("白名單已載入，共 %d 位使用者", len(cfg.WhitelistTgIDs)))
 	}
 
 	app := fiber.New(fiber.Config{
@@ -150,19 +159,19 @@ func main() {
 
 		ip := auth.RealIP(c)
 		if !auth.IsAllowed(ip, allowedNets) {
-			log.Printf("[auth] 拒絕登入請求，非內網 IP: %s", ip)
+			slog.Info(fmt.Sprintf("[auth] 拒絕登入請求，非內網 IP: %s", ip))
 			return c.Status(403).JSON(fiber.Map{"error": "僅允許內網存取"})
 		}
 
 		var body struct {
-			Password   string `json:"password"`
-			TgUserID   int64  `json:"tg_user_id"` // 選填：白名單內 Telegram ID，用於任務完成／授權通知
+			Password string `json:"password"`
+			TgUserID int64  `json:"tg_user_id"` // 選填：白名單內 Telegram ID，用於任務完成／授權通知
 		}
 		if err := c.BodyParser(&body); err != nil || body.Password == "" {
 			return c.Status(400).JSON(fiber.Map{"error": "請提供 password 欄位"})
 		}
 		if body.Password != cfg.Web.Password {
-			log.Printf("[auth] Web 密碼錯誤（來源: %s）", ip)
+			slog.Info(fmt.Sprintf("[auth] Web 密碼錯誤（來源: %s）", ip))
 			return c.Status(401).JSON(fiber.Map{"error": "密碼錯誤"})
 		}
 
@@ -173,7 +182,7 @@ func main() {
 				return c.Status(500).JSON(fiber.Map{"error": "DB 錯誤"})
 			}
 			if !allowed {
-				log.Printf("[auth] Web 登入拒絕：tg_user_id=%d 不在白名單", body.TgUserID)
+				slog.Info(fmt.Sprintf("[auth] Web 登入拒絕：tg_user_id=%d 不在白名單", body.TgUserID))
 				return c.Status(403).JSON(fiber.Map{"error": "tg_user_id 不在白名單內"})
 			}
 			bindTgID = body.TgUserID
@@ -187,7 +196,7 @@ func main() {
 				if ok {
 					bindTgID = cfg.Web.DefaultNotifyTgID
 				} else {
-					log.Printf("[auth] web.default_notify_tg_id=%d 不在白名單，略過", cfg.Web.DefaultNotifyTgID)
+					slog.Info(fmt.Sprintf("[auth] web.default_notify_tg_id=%d 不在白名單，略過", cfg.Web.DefaultNotifyTgID))
 				}
 			}
 			if bindTgID == 0 {
@@ -203,8 +212,7 @@ func main() {
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "無法建立 session"})
 		}
-
-		log.Printf("[auth] Web 登入成功（來源: %s）", ip)
+		slog.Info(fmt.Sprintf("[auth] Web 登入成功（來源: %s）", ip))
 		return c.JSON(fiber.Map{"ok": true, "token": token})
 	})
 
@@ -239,7 +247,7 @@ func main() {
 		if initData != "" {
 			user, err := tg.Verify(initData, cfg.BotToken)
 			if err != nil {
-				log.Printf("[auth] TG 驗證失敗: %v", err)
+				slog.Info(fmt.Sprintf("[auth] TG 驗證失敗: %v", err))
 				return c.Status(401).JSON(fiber.Map{"error": "Telegram 驗證失敗"})
 			}
 			allowed, err := database.IsUserAllowed(user.ID)
@@ -247,10 +255,10 @@ func main() {
 				return c.Status(500).JSON(fiber.Map{"error": "DB 錯誤"})
 			}
 			if !allowed {
-				log.Printf("[auth] 拒絕使用者 tg_id=%d (@%s)", user.ID, user.Username)
+				slog.Info(fmt.Sprintf("[auth] 拒絕使用者 tg_id=%d (@%s)", user.ID, user.Username))
 				return c.Status(403).JSON(fiber.Map{"error": "無存取權限"})
 			}
-			log.Printf("[auth] TG 驗證通過: tg_id=%d (@%s)", user.ID, user.Username)
+			slog.Info(fmt.Sprintf("[auth] TG 驗證通過: tg_id=%d (@%s)", user.ID, user.Username))
 			c.Locals("tg_id", user.ID)
 			return c.Next()
 		}
@@ -268,7 +276,7 @@ func main() {
 		// 方式三：Web session cookie（限內網 IP）
 		ip := auth.RealIP(c)
 		if !auth.IsAllowed(ip, allowedNets) {
-			log.Printf("[auth] 拒絕非內網 IP: %s", ip)
+			slog.Info(fmt.Sprintf("[auth] 拒絕非內網 IP: %s", ip))
 			return c.Status(403).JSON(fiber.Map{"error": "僅允許內網存取"})
 		}
 
@@ -342,14 +350,17 @@ func main() {
 		mcpHandler := mymcp.NewHTTPHandler(database, quotaSvc, cfg.Server.Port, cfg.McpToken)
 		app.Post("/mcp", authMiddleware, adaptor.HTTPHandler(mcpHandler))
 	} else {
-		log.Println("[mcp] mcp_token 未設定，/mcp 停用")
+		slog.Info("[mcp] mcp_token 未設定，/mcp 停用")
 	}
 
 	if cfg.NoAuth {
-		log.Println("⚠️  no_auth: true，已跳過 Telegram 驗證（僅限開發環境）")
+		slog.Info("⚠️  no_auth: true，已跳過 Telegram 驗證（僅限開發環境）")
 	}
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	log.Printf("Claude Code Mini App v%s listening on %s", version.Version, addr)
-	log.Fatal(app.Listen(addr))
+	slog.Info(fmt.Sprintf("Claude Code Mini App v%s listening on %s", version.Version, addr))
+	if err := app.Listen(addr); err != nil {
+		slog.Error(fmt.Sprintf("server 結束: %v", err))
+		os.Exit(1)
+	}
 }

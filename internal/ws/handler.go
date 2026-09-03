@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,28 +16,29 @@ import (
 	fiberws "github.com/gofiber/contrib/websocket"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
+	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/antigravity"
 	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/claude"
+	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/codex"
 	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/cursor"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
-	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/antigravity"
-	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/codex"
 	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/kiro"
 	_ "github.com/jerry12122/Claude-Code-Mini-App/internal/kiroacp"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/shell"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
+	"log/slog"
 )
 
 func clearPendingDenials(database *db.DB, sessionID string) {
 	if err := database.UpdatePendingDenials(sessionID, ""); err != nil {
-		log.Printf("[ws] clear pending_denials: %v", err)
+		slog.Info(fmt.Sprintf("[ws] clear pending_denials: %v", err))
 	}
 }
 
 func clearShellPending(database *db.DB, sessionID string) {
 	if err := database.UpdateShellPending(sessionID, ""); err != nil {
-		log.Printf("[ws] 清除 shell_pending 失敗: %v", err)
+		slog.Info(fmt.Sprintf("[ws] 清除 shell_pending 失敗: %v", err))
 	}
 }
 
@@ -117,16 +118,15 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 		sess, err := database.GetSession(sessionID)
 		if err != nil {
-			log.Printf("[ws] session %s missing: %v", sessionID, err)
+			slog.Info(fmt.Sprintf("[ws] session %s missing: %v", sessionID, err))
 			c.Close()
 			return
 		}
+		slog.Info(fmt.Sprintf("[ws] session %s connected (agent=%s agentSessionID=%q mode=%s)", sessionID, sess.AgentType, sess.AgentSessionID, sess.PermissionMode))
+		defer slog.Info(fmt.Sprintf("[ws] session %s disconnected", sessionID))
 
-		log.Printf("[ws] session %s connected (agent=%s agentSessionID=%q mode=%s)", sessionID, sess.AgentType, sess.AgentSessionID, sess.PermissionMode)
-		defer log.Printf("[ws] session %s disconnected", sessionID)
-
-		var mu sync.Mutex       // 保護 agentSessionID 等連線狀態
-		var writeMu sync.Mutex  // 序列化 WebSocket 寫入（goroutine 不可並發 WriteMessage）
+		var mu sync.Mutex      // 保護 agentSessionID 等連線狀態
+		var writeMu sync.Mutex // 序列化 WebSocket 寫入（goroutine 不可並發 WriteMessage）
 		// pendingPerm：kiroacp 互動式授權的回傳通道（true=allow, false=deny）。
 		// 非 nil 表示 runner 正在等使用者決定；由 mu 保護。
 		var pendingPerm chan bool
@@ -154,7 +154,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 		syncData, err := buildSyncPayload(database, sessionID)
 		if err != nil {
-			log.Printf("[ws] buildSyncPayload: %v", err)
+			slog.Info(fmt.Sprintf("[ws] buildSyncPayload: %v", err))
 			syncData = SyncPayload{UIState: StateIdle, InputMode: "agent", ShellType: shellTypeString()}
 		}
 		syncMsg := serverMsg{
@@ -178,7 +178,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			go func(at string) {
 				snap, err := quotaSvc.RefreshAfterRun(context.Background(), at)
 				if err != nil {
-					log.Printf("[quota] refresh on connect %s: %v", at, err)
+					slog.Info(fmt.Sprintf("[quota] refresh on connect %s: %v", at, err))
 				}
 				p := snap.ToPayload()
 				broadcast(serverMsg{Type: "quota_update", Quota: &p})
@@ -196,7 +196,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 		if isClaude && sess.PendingDenials != "" {
 			send(serverMsg{Type: "permission_request", Tools: json.RawMessage(sess.PendingDenials)})
-			log.Printf("[ws] restored pending_denials session=%s", sessionID)
+			slog.Info(fmt.Sprintf("[ws] restored pending_denials session=%s", sessionID))
 		}
 
 		if strings.TrimSpace(sess.ShellPending) != "" {
@@ -206,7 +206,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					send(serverMsg{Type: "shell_command_request", Command: p.Cmd, Line: p.Line, WorkDirKey: absDir})
 				}
 			}
-			log.Printf("[ws] 還原 shell_pending for session %s", sessionID)
+			slog.Info(fmt.Sprintf("[ws] 還原 shell_pending for session %s", sessionID))
 		}
 
 		beginShellRun := func(command string, workDir string) {
@@ -221,7 +221,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			clearInMemoryShellApproval(sessionID)
 
 			if err := database.AddMessage(sessionID, "user", command); err != nil {
-				log.Printf("[ws] shell AddMessage: %v", err)
+				slog.Info(fmt.Sprintf("[ws] shell AddMessage: %v", err))
 			}
 			broadcast(serverMsg{Type: "user_message", Content: command})
 
@@ -235,14 +235,14 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			shellTaskStart(sessionID, cancel, msgID)
 
 			if err := database.UpdateSessionStatus(sessionID, db.SessionStatusRunning); err != nil {
-				log.Printf("[ws] shell running status: %v", err)
+				slog.Info(fmt.Sprintf("[ws] shell running status: %v", err))
 			}
 			broadcast(serverMsg{Type: "status", Value: StateShellRunning})
 
 			go func(command string, msgID int64, wdir string) {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("[ws] shell goroutine panic: %v", r)
+						slog.Info(fmt.Sprintf("[ws] shell goroutine panic: %v", r))
 					}
 					shellTaskEnd(sessionID, msgID)
 				}()
@@ -260,13 +260,13 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					case shell.EventDeltaStdout:
 						chunk := appendShellDBChunk("stdout", e.Text)
 						if err := database.AppendMessageContent(msgID, chunk); err != nil {
-							log.Printf("[ws] shell append: %v", err)
+							slog.Info(fmt.Sprintf("[ws] shell append: %v", err))
 						}
 						broadcast(serverMsg{Type: "shell_delta", Stream: "stdout", Content: e.Text})
 					case shell.EventDeltaStderr:
 						chunk := appendShellDBChunk("stderr", e.Text)
 						if err := database.AppendMessageContent(msgID, chunk); err != nil {
-							log.Printf("[ws] shell append: %v", err)
+							slog.Info(fmt.Sprintf("[ws] shell append: %v", err))
 						}
 						broadcast(serverMsg{Type: "shell_delta", Stream: "stderr", Content: e.Text})
 					case shell.EventError:
@@ -294,7 +294,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					broadcast(serverMsg{Type: "shell_done", ExitCode: -1})
 				}
 				if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
-					log.Printf("[ws] shell idle status: %v", err)
+					slog.Info(fmt.Sprintf("[ws] shell idle status: %v", err))
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 				finishShellNotify(botToken, tgUserID, notifyCfg, sess.Name, command, shellErrText, exitCode, interrupted && err == nil, err)
@@ -309,12 +309,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			clearInMemoryShellApproval(sessionID)
 			taskCancel(sessionID)
 			if err := database.FinalizePendingMessagesForSession(sessionID); err != nil {
-				log.Printf("[ws] FinalizePendingMessagesForSession: %v", err)
+				slog.Info(fmt.Sprintf("[ws] FinalizePendingMessagesForSession: %v", err))
 			}
 
 			s, err := database.GetSession(sessionID)
 			if err != nil {
-				log.Printf("[ws] GetSession: %v", err)
+				slog.Info(fmt.Sprintf("[ws] GetSession: %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -330,7 +330,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 			msgID, err := database.CreatePendingMessage(sessionID)
 			if err != nil {
-				log.Printf("[ws] CreatePendingMessage: %v", err)
+				slog.Info(fmt.Sprintf("[ws] CreatePendingMessage: %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -339,7 +339,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			taskStart(sessionID, cancel, msgID)
 
 			if err := database.UpdateSessionStatus(sessionID, db.SessionStatusRunning); err != nil {
-				log.Printf("[ws] UpdateSessionStatus running: %v", err)
+				slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus running: %v", err))
 			}
 			broadcast(serverMsg{Type: "status", Value: StateThinking})
 
@@ -432,7 +432,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 			runner, err := agent.NewRunner(agentType)
 			if err != nil {
-				log.Printf("[ws] NewRunner %s: %v", agentType, err)
+				slog.Info(fmt.Sprintf("[ws] NewRunner %s: %v", agentType, err))
 				_ = database.FinalizeMessage(msgID)
 				_ = database.UpdateSessionStatus(sessionID, db.SessionStatusIdle)
 				taskEnd(sessionID, msgID)
@@ -447,8 +447,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				})
 				return
 			}
-
-			log.Printf("[ws] start %s.Run agentSessionID=%q mode=%s msgID=%d", runner.Name(), opts.SessionID, pm, msgID)
+			slog.Info(fmt.Sprintf("[ws] start %s.Run agentSessionID=%q mode=%s msgID=%d", runner.Name(), opts.SessionID, pm, msgID))
 
 			go func(opts agent.RunOptions, msgID int64, userPrompt string) {
 				defer taskEnd(sessionID, msgID)
@@ -493,7 +492,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					case agent.EventDelta:
 						if e.Text != "" {
 							if err := database.AppendMessageContent(msgID, e.Text); err != nil {
-								log.Printf("[ws] AppendMessageContent: %v", err)
+								slog.Info(fmt.Sprintf("[ws] AppendMessageContent: %v", err))
 							}
 							broadcast(serverMsg{Type: "delta", Content: e.Text})
 						}
@@ -506,7 +505,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						if e.SessionID != "" && e.SessionID != agentSessionID {
 							agentSessionID = e.SessionID
 							if err := database.UpdateAgentSessionID(sessionID, agentSessionID); err != nil {
-								log.Printf("[ws] UpdateAgentSessionID: %v", err)
+								slog.Info(fmt.Sprintf("[ws] UpdateAgentSessionID: %v", err))
 							}
 						}
 						mu.Unlock()
@@ -524,11 +523,11 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						permDenied = true
 						if raw, err := json.Marshal(e.Denials); err == nil {
 							if err := database.UpdatePendingDenials(sessionID, string(raw)); err != nil {
-								log.Printf("[ws] UpdatePendingDenials: %v", err)
+								slog.Info(fmt.Sprintf("[ws] UpdatePendingDenials: %v", err))
 							}
 						}
 						if err := database.UpdateSessionStatus(sessionID, db.SessionStatusAwaitingConfirm); err != nil {
-							log.Printf("[ws] UpdateSessionStatus awaiting_confirm: %v", err)
+							slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus awaiting_confirm: %v", err))
 						}
 						broadcast(serverMsg{Type: "status", Value: StateAwaitingConfirm})
 						broadcast(serverMsg{Type: "permission_request", Tools: e.Denials})
@@ -542,7 +541,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						if e.SessionID != "" && e.SessionID != agentSessionID {
 							agentSessionID = e.SessionID
 							if err := database.UpdateAgentSessionID(sessionID, agentSessionID); err != nil {
-								log.Printf("[ws] UpdateAgentSessionID: %v", err)
+								slog.Info(fmt.Sprintf("[ws] UpdateAgentSessionID: %v", err))
 							}
 						}
 						mu.Unlock()
@@ -550,10 +549,10 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						rt := strings.TrimSpace(e.ResultText)
 						if rt != "" {
 							if err := database.UpdateMessageResultText(msgID, rt); err != nil {
-								log.Printf("[ws] UpdateMessageResultText: %v", err)
+								slog.Info(fmt.Sprintf("[ws] UpdateMessageResultText: %v", err))
 							}
 							if err := database.FillMessageContentIfEmpty(msgID, rt); err != nil {
-								log.Printf("[ws] FillMessageContentIfEmpty: %v", err)
+								slog.Info(fmt.Sprintf("[ws] FillMessageContentIfEmpty: %v", err))
 							}
 							broadcast(serverMsg{Type: "message_result_text", ID: msgID, Content: rt})
 						}
@@ -565,16 +564,16 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 						if !permDenied && !runFailed {
 							if err := database.FinalizeMessage(msgID); err != nil {
-								log.Printf("[ws] FinalizeMessage: %v", err)
+								slog.Info(fmt.Sprintf("[ws] FinalizeMessage: %v", err))
 							}
 							clearPendingDenials(database, sessionID)
 							if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
-								log.Printf("[ws] UpdateSessionStatus idle: %v", err)
+								slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle: %v", err))
 							}
 							// 這個 WS 連線正在跑此 session（使用者正在看），完成時順手標已讀，
 							// 避免 last_active 更新後被自己的任務完成誤判成未讀。
 							if err := database.MarkSessionRead(sessionID); err != nil {
-								log.Printf("[ws] MarkSessionRead: %v", err)
+								slog.Info(fmt.Sprintf("[ws] MarkSessionRead: %v", err))
 							}
 							broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 							notifyTaskAsync(botToken, tgUserID, notifyCfg, tg.TaskAlert{
@@ -585,7 +584,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 								go func(at string) {
 									snap, err := quotaSvc.RefreshAfterRun(context.Background(), at)
 									if err != nil {
-										log.Printf("[quota] refresh after run %s: %v", at, err)
+										slog.Info(fmt.Sprintf("[quota] refresh after run %s: %v", at, err))
 									}
 									p := snap.ToPayload()
 									broadcast(serverMsg{Type: "quota_update", Quota: &p})
@@ -608,9 +607,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 				if err != nil {
 					if cancelled {
-						log.Printf("[ws] %s.Run cancelled", agentType)
+						slog.Info(fmt.Sprintf("[ws] %s.Run cancelled", agentType))
 					} else {
-						log.Printf("[ws] %s.Run error: %v", agentType, err)
+						slog.Info(fmt.Sprintf("[ws] %s.Run error: %v", agentType, err))
 						if !runFailed {
 							runFailed = true
 							errText = err.Error()
@@ -620,17 +619,17 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						broadcast(serverMsg{Type: "error", Content: errText})
 					}
 				} else if cancelled {
-					log.Printf("[ws] %s.Run cancelled (exit 0)", agentType)
+					slog.Info(fmt.Sprintf("[ws] %s.Run cancelled (exit 0)", agentType))
 				} else {
-					log.Printf("[ws] %s.Run finished OK", agentType)
+					slog.Info(fmt.Sprintf("[ws] %s.Run finished OK", agentType))
 				}
 
 				if (err != nil || cancelled || (runFailed && err == nil)) && !permDenied {
 					if finErr := database.FinalizeMessage(msgID); finErr != nil {
-						log.Printf("[ws] FinalizeMessage (err/cancel path): %v", finErr)
+						slog.Info(fmt.Sprintf("[ws] FinalizeMessage (err/cancel path): %v", finErr))
 					}
 					if stErr := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); stErr != nil {
-						log.Printf("[ws] UpdateSessionStatus idle (err/cancel path): %v", stErr)
+						slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle (err/cancel path): %v", stErr))
 					}
 					broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 				}
@@ -660,7 +659,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		startShellGoroutine := func(line string, absDir string) {
 			msgID, err := database.CreatePendingMessageWithRole(sessionID, db.RoleShell)
 			if err != nil {
-				log.Printf("[ws] CreatePendingMessageWithRole shell: %v", err)
+				slog.Info(fmt.Sprintf("[ws] CreatePendingMessageWithRole shell: %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -669,14 +668,14 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			shellTaskStart(sessionID, cancel, msgID)
 
 			if err := database.UpdateSessionStatus(sessionID, db.SessionStatusRunning); err != nil {
-				log.Printf("[ws] UpdateSessionStatus running (shell): %v", err)
+				slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus running (shell): %v", err))
 			}
 			broadcast(serverMsg{Type: "status", Value: StateShellExec})
 
 			go func(line string, msgID int64, workDir string) {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("[ws] shell_exec goroutine panic: %v", r)
+						slog.Info(fmt.Sprintf("[ws] shell_exec goroutine panic: %v", r))
 					}
 					shellTaskEnd(sessionID, msgID)
 				}()
@@ -694,13 +693,13 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					case shell.EventDeltaStdout:
 						chunk := appendShellDBChunk("stdout", e.Text)
 						if err := database.AppendMessageContent(msgID, chunk); err != nil {
-							log.Printf("[ws] shell append: %v", err)
+							slog.Info(fmt.Sprintf("[ws] shell append: %v", err))
 						}
 						broadcast(serverMsg{Type: "shell_delta", Stream: "stdout", Content: e.Text})
 					case shell.EventDeltaStderr:
 						chunk := appendShellDBChunk("stderr", e.Text)
 						if err := database.AppendMessageContent(msgID, chunk); err != nil {
-							log.Printf("[ws] shell append: %v", err)
+							slog.Info(fmt.Sprintf("[ws] shell append: %v", err))
 						}
 						broadcast(serverMsg{Type: "shell_delta", Stream: "stderr", Content: e.Text})
 					case shell.EventError:
@@ -728,7 +727,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					broadcast(serverMsg{Type: "shell_done", ExitCode: -1, ID: msgID})
 				}
 				if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
-					log.Printf("[ws] UpdateSessionStatus idle (shell): %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle (shell): %v", err))
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 				finishShellNotify(botToken, tgUserID, notifyCfg, sess.Name, line, shellErrText, exitCode, interrupted && err == nil, err)
@@ -738,12 +737,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		runShell := func(line string) {
 			taskCancel(sessionID)
 			if err := database.FinalizePendingMessagesForSession(sessionID); err != nil {
-				log.Printf("[ws] FinalizePendingMessagesForSession (shell): %v", err)
+				slog.Info(fmt.Sprintf("[ws] FinalizePendingMessagesForSession (shell): %v", err))
 			}
 
 			s, err := database.GetSession(sessionID)
 			if err != nil {
-				log.Printf("[ws] GetSession (shell): %v", err)
+				slog.Info(fmt.Sprintf("[ws] GetSession (shell): %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -764,7 +763,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 			dbCmds, err := database.ListShellCommandsForWorkDirKey(absDir)
 			if err != nil {
-				log.Printf("[ws] ListShellCommandsForWorkDirKey: %v", err)
+				slog.Info(fmt.Sprintf("[ws] ListShellCommandsForWorkDirKey: %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -772,7 +771,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 			runDirect, needConfirm, err := shell.ClassifyShellLine(line, effective)
 			if err != nil {
-				log.Printf("[ws] shell 分類拒絕: %v", err)
+				slog.Info(fmt.Sprintf("[ws] shell 分類拒絕: %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -792,16 +791,16 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					return
 				}
 				if err := database.AddMessage(sessionID, "user", line); err != nil {
-					log.Printf("[ws] 儲存 user 訊息 (shell confirm) 失敗: %v", err)
+					slog.Info(fmt.Sprintf("[ws] 儲存 user 訊息 (shell confirm) 失敗: %v", err))
 				}
 				broadcast(serverMsg{Type: "user_message", Content: line})
 				if err := database.UpdateShellPending(sessionID, string(b)); err != nil {
-					log.Printf("[ws] UpdateShellPending: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateShellPending: %v", err))
 					broadcast(serverMsg{Type: "error", Content: err.Error()})
 					return
 				}
 				if err := database.UpdateSessionStatus(sessionID, db.SessionStatusAwaitingShellConfirm); err != nil {
-					log.Printf("[ws] UpdateSessionStatus awaiting_shell_confirm: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus awaiting_shell_confirm: %v", err))
 				}
 				broadcast(serverMsg{Type: "shell_command_request", Command: payload.Cmd, Line: payload.Line, WorkDirKey: absDir})
 				broadcast(serverMsg{Type: "status", Value: StateAwaitingShellConfirm})
@@ -812,7 +811,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 
 			if err := database.AddMessage(sessionID, "user", line); err != nil {
-				log.Printf("[ws] 儲存 user 訊息 (shell) 失敗: %v", err)
+				slog.Info(fmt.Sprintf("[ws] 儲存 user 訊息 (shell) 失敗: %v", err))
 			}
 			broadcast(serverMsg{Type: "user_message", Content: line})
 
@@ -822,12 +821,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		handleShellAllowExecute := func(remember bool) {
 			taskCancel(sessionID)
 			if err := database.FinalizePendingMessagesForSession(sessionID); err != nil {
-				log.Printf("[ws] FinalizePendingMessagesForSession (shell allow): %v", err)
+				slog.Info(fmt.Sprintf("[ws] FinalizePendingMessagesForSession (shell allow): %v", err))
 			}
 
 			sess, err := database.GetSession(sessionID)
 			if err != nil {
-				log.Printf("[ws] GetSession (shell allow): %v", err)
+				slog.Info(fmt.Sprintf("[ws] GetSession (shell allow): %v", err))
 				broadcast(serverMsg{Type: "error", Content: err.Error()})
 				return
 			}
@@ -836,7 +835,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			var p shellPendingPayload
 			if err := json.Unmarshal([]byte(sess.ShellPending), &p); err != nil {
-				log.Printf("[ws] shell_pending JSON: %v", err)
+				slog.Info(fmt.Sprintf("[ws] shell_pending JSON: %v", err))
 				clearShellPending(database, sessionID)
 				_ = database.UpdateSessionStatus(sessionID, db.SessionStatusIdle)
 				broadcast(serverMsg{Type: "error", Content: "Shell 待確認資料損壞"})
@@ -864,7 +863,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			if remember {
 				if err := database.AddShellWorkdirCommand(absDir, p.Cmd); err != nil {
-					log.Printf("[ws] AddShellWorkdirCommand: %v", err)
+					slog.Info(fmt.Sprintf("[ws] AddShellWorkdirCommand: %v", err))
 				}
 			}
 			clearShellPending(database, sessionID)
@@ -884,10 +883,10 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 			switch msg.Type {
 			case "input":
-				log.Printf("[ws] input len=%d", len(msg.Data))
+				slog.Info(fmt.Sprintf("[ws] input len=%d", len(msg.Data)))
 				sIn, err := database.GetSession(sessionID)
 				if err != nil {
-					log.Printf("[ws] GetSession (input): %v", err)
+					slog.Info(fmt.Sprintf("[ws] GetSession (input): %v", err))
 					continue
 				}
 				if strings.TrimSpace(sIn.ShellPending) != "" {
@@ -895,7 +894,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				if err := database.AddMessage(sessionID, "user", msg.Data); err != nil {
-					log.Printf("[ws] save user message: %v", err)
+					slog.Info(fmt.Sprintf("[ws] save user message: %v", err))
 				}
 				broadcast(serverMsg{Type: "user_message", Content: msg.Data})
 				runAgent(msg.Data, nil)
@@ -919,7 +918,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				if err := database.UpdateSessionInputMode(sessionID, mode); err != nil {
-					log.Printf("[ws] UpdateSessionInputMode: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateSessionInputMode: %v", err))
 					continue
 				}
 				broadcast(serverMsg{Type: "input_mode_changed", Value: mode, ShellType: shellTypeString()})
@@ -989,7 +988,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				if !isClaude {
-					log.Printf("[ws] agent=%s: allow_once ignored", agentType)
+					slog.Info(fmt.Sprintf("[ws] agent=%s: allow_once ignored", agentType))
 					continue
 				}
 				sAllow, err := database.GetSession(sessionID)
@@ -1002,7 +1001,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				}
 				clearPendingDenials(database, sessionID)
 				if err := database.UpdateAllowedTools(sessionID, nil); err != nil {
-					log.Printf("[ws] UpdateAllowedTools: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateAllowedTools: %v", err))
 				}
 				once := make([]string, 0, len(msg.Tools))
 				for _, t := range msg.Tools {
@@ -1012,7 +1011,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					}
 				}
 				if len(once) == 0 {
-					log.Printf("[ws] allow_once: empty tools")
+					slog.Info(fmt.Sprintf("[ws] allow_once: empty tools"))
 					continue
 				}
 				runAgent("please retry the previous operation", once)
@@ -1030,7 +1029,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				if !isClaude {
-					log.Printf("[ws] agent=%s: deny_once ignored", agentType)
+					slog.Info(fmt.Sprintf("[ws] agent=%s: deny_once ignored", agentType))
 					continue
 				}
 				clearPendingDenials(database, sessionID)
@@ -1038,7 +1037,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 			case "set_mode":
 				if agentType != agent.TypeClaude && agentType != agent.TypeCursor && agentType != agent.TypeAntigravity && agentType != agent.TypeGemini && agentType != agent.TypeKiro && agentType != agent.TypeKiroACP {
-					log.Printf("[ws] agent=%s: set_mode ignored", agentType)
+					slog.Info(fmt.Sprintf("[ws] agent=%s: set_mode ignored", agentType))
 					continue
 				}
 				sMode, err := database.GetSession(sessionID)
@@ -1051,28 +1050,28 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				}
 				clearPendingDenials(database, sessionID)
 				if err := database.UpdatePermissionMode(sessionID, msg.Mode); err != nil {
-					log.Printf("[ws] UpdatePermissionMode: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdatePermissionMode: %v", err))
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
-				log.Println("[ws] permission mode:", msg.Mode)
+				slog.Info(fmt.Sprintf("[ws] permission mode: %v", msg.Mode))
 
 			case "set_model":
 				if err := database.UpdateModel(sessionID, strings.TrimSpace(msg.Model)); err != nil {
-					log.Printf("[ws] UpdateModel: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateModel: %v", err))
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
-				log.Println("[ws] model:", msg.Model)
+				slog.Info(fmt.Sprintf("[ws] model: %v", msg.Model))
 
 			case "set_effort":
 				if agentType == agent.TypeCursor {
-					log.Printf("[ws] agent=%s: set_effort ignored", agentType)
+					slog.Info(fmt.Sprintf("[ws] agent=%s: set_effort ignored", agentType))
 					continue
 				}
 				if err := database.UpdateEffort(sessionID, strings.TrimSpace(msg.Effort)); err != nil {
-					log.Printf("[ws] UpdateEffort: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateEffort: %v", err))
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
-				log.Println("[ws] effort:", msg.Effort)
+				slog.Info(fmt.Sprintf("[ws] effort: %v", msg.Effort))
 
 			case "reset_context":
 				taskCancel(sessionID)
@@ -1083,19 +1082,19 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				agentSessionID = ""
 				mu.Unlock()
 				if err := database.UpdateAgentSessionID(sessionID, ""); err != nil {
-					log.Printf("[ws] clear agent_session_id: %v", err)
+					slog.Info(fmt.Sprintf("[ws] clear agent_session_id: %v", err))
 				}
 				if err := database.ClearMessages(sessionID); err != nil {
-					log.Printf("[ws] ClearMessages: %v", err)
+					slog.Info(fmt.Sprintf("[ws] ClearMessages: %v", err))
 				}
 				clearPendingDenials(database, sessionID)
 				clearShellPending(database, sessionID)
 				if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
-					log.Printf("[ws] UpdateSessionStatus idle: %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle: %v", err))
 				}
 				broadcast(serverMsg{Type: "reset"})
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
-				log.Printf("[ws] session %s reset", sessionID)
+				slog.Info(fmt.Sprintf("[ws] session %s reset", sessionID))
 
 			case "interrupt":
 				if shellTaskActive(sessionID) {
@@ -1116,7 +1115,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				clearShellPending(database, sessionID)
 				clearInMemoryShellApproval(sessionID)
 				if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
-					log.Printf("[ws] UpdateSessionStatus idle (shell_deny): %v", err)
+					slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle (shell_deny): %v", err))
 				}
 				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 
@@ -1141,7 +1140,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				if line == "" {
 					continue
 				}
-				log.Printf("[ws] 收到 shell_exec，長度=%d", len(line))
+				slog.Info(fmt.Sprintf("[ws] 收到 shell_exec，長度=%d", len(line)))
 				runShell(line)
 
 			case "refresh_quota":

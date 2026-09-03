@@ -3,14 +3,17 @@ package kiro
 import (
 	"bytes"
 	"context"
-	"log"
+
+	"log/slog"
 	"os/exec"
 	"regexp"
 	"strings"
 	"time"
+
+	// kiroSession 是 --list-sessions 解析出的單一 session 條目。
+	"fmt"
 )
 
-// kiroSession 是 --list-sessions 解析出的單一 session 條目。
 type kiroSession struct {
 	ID    string
 	Title string // list 中顯示的 prompt 摘要（第一則 user 訊息）
@@ -133,26 +136,26 @@ func resolveNewSessionID(before, after []kiroSession, prompt string) string {
 
 	switch len(newOnes) {
 	case 1:
-		log.Printf("[kiro] session diff: 1 new session id=%s title=%q", newOnes[0].ID, newOnes[0].Title)
+		slog.Info(fmt.Sprintf("[kiro] session diff: 1 new session id=%s title=%q", newOnes[0].ID, newOnes[0].Title))
 		return newOnes[0].ID
 	case 0:
-		log.Printf("[kiro] session diff: no new session, try prompt match among %d existing", len(after))
+		slog.Info(fmt.Sprintf("[kiro] session diff: no new session, try prompt match among %d existing", len(after)))
 	default:
-		log.Printf("[kiro] session diff: %d new sessions, disambiguate by prompt", len(newOnes))
+		slog.Info(fmt.Sprintf("[kiro] session diff: %d new sessions, disambiguate by prompt", len(newOnes)))
 		if id := matchByPrompt(newOnes, prompt); id != "" {
 			return id
 		}
-		// 多個新 session 但 prompt 對不上：取 list 順序第一個（最新）
-		log.Printf("[kiro] session diff: prompt match failed, fallback to first new session id=%s", newOnes[0].ID)
+		slog.
+			// 多個新 session 但 prompt 對不上：取 list 順序第一個（最新）
+			Info(fmt.Sprintf("[kiro] session diff: prompt match failed, fallback to first new session id=%s", newOnes[0].ID))
 		return newOnes[0].ID
 	}
 
 	if id := matchByPrompt(after, prompt); id != "" {
-		log.Printf("[kiro] session diff: matched existing session by prompt id=%s", id)
+		slog.Info(fmt.Sprintf("[kiro] session diff: matched existing session by prompt id=%s", id))
 		return id
 	}
-
-	log.Printf("[kiro] session diff: could not resolve session id")
+	slog.Info(fmt.Sprintf("[kiro] session diff: could not resolve session id"))
 	return ""
 }
 
@@ -169,9 +172,9 @@ func matchByPrompt(sessions []kiroSession, prompt string) string {
 func fetchSessionIDAfterRun(workDir, prompt string, before []kiroSession) string {
 	after, err := listSessions(workDir)
 	if err != nil {
-		log.Printf("[kiro] --list-sessions (after) 失敗: %v", err)
+		slog.Info(fmt.Sprintf("[kiro] --list-sessions (after) 失敗: %v", err))
 		return ""
 	}
-	log.Printf("[kiro] --list-sessions: before=%d after=%d", len(before), len(after))
+	slog.Info(fmt.Sprintf("[kiro] --list-sessions: before=%d after=%d", len(before), len(after)))
 	return resolveNewSessionID(before, after, prompt)
 }

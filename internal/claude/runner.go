@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
+
 	"os"
 	"os/exec"
 	"strings"
@@ -15,6 +15,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/media"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
+	"log/slog"
 )
 
 func init() {
@@ -76,10 +77,9 @@ func buildClaudeArgs(opts agent.RunOptions) []string {
 // Run 實作 agent.Runner：啟動 claude -p 子進程，逐行解析 stream-json 並透過 cb 回傳事件。
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
 	args := buildClaudeArgs(opts)
-
-	log.Printf("[claude] 執行指令: claude %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt))
+	slog.Info(fmt.Sprintf("[claude] 執行指令: claude %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt)))
 	if opts.WorkDir != "" {
-		log.Printf("[claude] 工作目錄: %s", opts.WorkDir)
+		slog.Info(fmt.Sprintf("[claude] 工作目錄: %s", opts.WorkDir))
 	}
 
 	cmd := exec.CommandContext(ctx, "claude", args...)
@@ -100,7 +100,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Printf("[claude] 取得 stdout pipe 失敗: %v", err)
+		slog.Info(fmt.Sprintf("[claude] 取得 stdout pipe 失敗: %v", err))
 		return err
 	}
 
@@ -108,10 +108,10 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[claude] 子進程啟動失敗: %v", err)
+		slog.Info(fmt.Sprintf("[claude] 子進程啟動失敗: %v", err))
 		return err
 	}
-	log.Printf("[claude] 子進程已啟動，PID=%d", cmd.Process.Pid)
+	slog.Info(fmt.Sprintf("[claude] 子進程已啟動，PID=%d", cmd.Process.Pid))
 
 	scanner := bufio.NewScanner(stdout)
 	// MCP 截圖 base64 單行可達數 MB；1MB 會讓 Scan 失敗並整行丟棄。
@@ -125,46 +125,46 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			continue
 		}
 		lineCount++
-		log.Printf("[claude] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200))
+		slog.Info(fmt.Sprintf("[claude] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200)))
 
 		e, err := ParseEvent(line)
 		if err != nil {
-			log.Printf("[claude] 解析失敗: %v | 原始內容: %s", err, truncate(string(line), 200))
+			slog.Info(fmt.Sprintf("[claude] 解析失敗: %v | 原始內容: %s", err, truncate(string(line), 200)))
 			continue
 		}
-		log.Printf("[claude] 事件 type=%s subtype=%s", e.Type, e.Subtype)
+		slog.Info(fmt.Sprintf("[claude] 事件 type=%s subtype=%s", e.Type, e.Subtype))
 		if e.Event != nil {
-			log.Printf("[claude]   └─ API event type=%s", e.Event.Type)
+			slog.Info(fmt.Sprintf("[claude]   └─ API event type=%s", e.Event.Type))
 		}
 		if e.SessionID != "" {
-			log.Printf("[claude]   └─ session_id=%s", e.SessionID)
+			slog.Info(fmt.Sprintf("[claude]   └─ session_id=%s", e.SessionID))
 		}
 		if e.IsError {
-			log.Printf("[claude]   └─ IS_ERROR result=%s", e.Result)
+			slog.Info(fmt.Sprintf("[claude]   └─ IS_ERROR result=%s", e.Result))
 		}
 		if len(e.PermissionDenials) > 0 {
-			log.Printf("[claude]   └─ permission_denials=%d 項", len(e.PermissionDenials))
+			slog.Info(fmt.Sprintf("[claude]   └─ permission_denials=%d 項", len(e.PermissionDenials)))
 		}
 
 		r.dispatch(e, cb, &st)
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("[claude] scanner 錯誤: %v", err)
+		slog.Info(fmt.Sprintf("[claude] scanner 錯誤: %v", err))
 	}
 
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
 	if stderr != "" {
-		log.Printf("[claude] stderr 輸出:\n%s", stderr)
+		slog.Info(fmt.Sprintf("[claude] stderr 輸出:\n%s", stderr))
 	}
 	if waitErr != nil {
-		log.Printf("[claude] 子進程結束，exit error: %v", waitErr)
+		slog.Info(fmt.Sprintf("[claude] 子進程結束，exit error: %v", waitErr))
 		if ctx.Err() == nil {
 			return agent.NewExitError("claude", stderr, waitErr)
 		}
 	} else {
-		log.Printf("[claude] 子進程正常結束，共處理 %d 行", lineCount)
+		slog.Info(fmt.Sprintf("[claude] 子進程正常結束，共處理 %d 行", lineCount))
 	}
 	return waitErr
 }
@@ -214,7 +214,7 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *streamStat
 		for _, img := range e.Images() {
 			url, err := media.SaveBase64Image(img.MediaType, img.Data)
 			if err != nil {
-				log.Printf("[claude] 圖片存檔失敗: %v", err)
+				slog.Info(fmt.Sprintf("[claude] 圖片存檔失敗: %v", err))
 				continue
 			}
 			st.emitDelta(cb, fmt.Sprintf("\n![screenshot](%s)\n", url))

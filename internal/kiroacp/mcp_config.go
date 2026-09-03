@@ -2,14 +2,17 @@ package kiroacp
 
 import (
 	"encoding/json"
-	"log"
+
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	// kiroMcpFile 對應 ~/.kiro/settings/mcp.json 與 {cwd}/.kiro/settings/mcp.json。
+	"fmt"
 )
 
-// kiroMcpFile 對應 ~/.kiro/settings/mcp.json 與 {cwd}/.kiro/settings/mcp.json。
 type kiroMcpFile struct {
 	McpServers map[string]kiroMcpServer `json:"mcpServers"`
 }
@@ -131,7 +134,7 @@ func mergeKiroMcpConfigs(paths ...string) map[string]kiroMcpServer {
 		cfg, err := readKiroMcpFile(path)
 		if err != nil {
 			if !os.IsNotExist(err) {
-				log.Printf("[kiroacp] 讀取 MCP 設定 %s: %v", path, err)
+				slog.Info(fmt.Sprintf("[kiroacp] 讀取 MCP 設定 %s: %v", path, err))
 			}
 			continue
 		}
@@ -175,7 +178,7 @@ func toACPMcpServer(name string, srv kiroMcpServer) (map[string]any, bool) {
 
 	command := strings.TrimSpace(srv.Command)
 	if command == "" {
-		log.Printf("[kiroacp] 略過 MCP %q：缺少 command 或 url", name)
+		slog.Info(fmt.Sprintf("[kiroacp] 略過 MCP %q：缺少 command 或 url", name))
 		return nil, false
 	}
 
@@ -211,6 +214,6 @@ func acpEnvEntries(env map[string]string) []any {
 }
 
 func logMcpLoad(meta mcpLoadMeta) {
-	log.Printf("[kiroacp] MCP cwd=%s agent=%q agentSrc=%q jsonSrc=%v servers=%v count=%d",
-		meta.CWD, meta.Agent, meta.AgentSource, meta.JSONSources, meta.ServerNames, len(meta.ServerNames))
+	slog.Info(fmt.Sprintf("[kiroacp] MCP cwd=%s agent=%q agentSrc=%q jsonSrc=%v servers=%v count=%d",
+		meta.CWD, meta.Agent, meta.AgentSource, meta.JSONSources, meta.ServerNames, len(meta.ServerNames)))
 }

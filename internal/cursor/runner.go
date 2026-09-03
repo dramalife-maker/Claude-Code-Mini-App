@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"log"
+
 	"os/exec"
 	"runtime"
 	"strings"
@@ -15,6 +15,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/media"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
+	"log/slog"
 )
 
 func init() {
@@ -75,13 +76,12 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	prompt := opts.Prompt
 	if runtime.GOOS == "windows" && strings.ContainsRune(prompt, '\n') {
 		prompt = strings.ReplaceAll(prompt, "\n", `\n`)
-		log.Printf("[cursor] Windows 偵測到多行 prompt，已把 LF 轉為字面 \\n（避開 cmd.exe 截斷）")
+		slog.Info(fmt.Sprintf("[cursor] Windows 偵測到多行 prompt，已把 LF 轉為字面 \\n（避開 cmd.exe 截斷）"))
 	}
 	args = append(args, prompt)
-
-	log.Printf("[cursor] 執行指令: cursor-agent %s (prompt len=%d)", strings.Join(args, " "), len(prompt))
+	slog.Info(fmt.Sprintf("[cursor] 執行指令: cursor-agent %s (prompt len=%d)", strings.Join(args, " "), len(prompt)))
 	if opts.WorkDir != "" {
-		log.Printf("[cursor] 工作目錄: %s", opts.WorkDir)
+		slog.Info(fmt.Sprintf("[cursor] 工作目錄: %s", opts.WorkDir))
 	}
 
 	cmd := exec.CommandContext(ctx, "cursor-agent", args...)
@@ -99,7 +99,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		log.Printf("[cursor] 取得 stdout pipe 失敗: %v", err)
+		slog.Info(fmt.Sprintf("[cursor] 取得 stdout pipe 失敗: %v", err))
 		return err
 	}
 
@@ -107,10 +107,10 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[cursor] 子進程啟動失敗: %v", err)
+		slog.Info(fmt.Sprintf("[cursor] 子進程啟動失敗: %v", err))
 		return err
 	}
-	log.Printf("[cursor] 子進程已啟動，PID=%d", cmd.Process.Pid)
+	slog.Info(fmt.Sprintf("[cursor] 子進程已啟動，PID=%d", cmd.Process.Pid))
 
 	scanner := bufio.NewScanner(stdout)
 	// MCP 截圖 base64 單行可達數 MB；1MB 會讓 Scan 失敗並整行丟棄，圖片永遠進不來。
@@ -126,16 +126,16 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			continue
 		}
 		lineCount++
-		log.Printf("[cursor] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200))
+		slog.Info(fmt.Sprintf("[cursor] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200)))
 
 		e, parseErr := ParseEvent(line)
 		if parseErr != nil {
-			log.Printf("[cursor] 解析失敗: %v | 原始內容: %s", parseErr, truncate(string(line), 200))
+			slog.Info(fmt.Sprintf("[cursor] 解析失敗: %v | 原始內容: %s", parseErr, truncate(string(line), 200)))
 			continue
 		}
-		log.Printf("[cursor] 事件 type=%s subtype=%s", e.Type, e.Subtype)
+		slog.Info(fmt.Sprintf("[cursor] 事件 type=%s subtype=%s", e.Type, e.Subtype))
 		if e.SessionID != "" {
-			log.Printf("[cursor]   └─ session_id=%s", e.SessionID)
+			slog.Info(fmt.Sprintf("[cursor]   └─ session_id=%s", e.SessionID))
 		}
 
 		if e.Type == "result" {
@@ -146,13 +146,13 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("[cursor] scanner 錯誤: %v", err)
+		slog.Info(fmt.Sprintf("[cursor] scanner 錯誤: %v", err))
 	}
 
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
 	if stderr != "" {
-		log.Printf("[cursor] stderr 輸出:\n%s", stderr)
+		slog.Info(fmt.Sprintf("[cursor] stderr 輸出:\n%s", stderr))
 	}
 
 	// Cursor 失敗時可能沒有 terminal result event，exit code 才是真實判準。
@@ -161,9 +161,9 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		if ctx.Err() == nil && !sawResult {
 			cb(agent.Event{Type: agent.EventError, Err: classifyRunnerError(stderr, waitErr)})
 		}
-		log.Printf("[cursor] 子進程結束，exit error: %v", waitErr)
+		slog.Info(fmt.Sprintf("[cursor] 子進程結束，exit error: %v", waitErr))
 	} else {
-		log.Printf("[cursor] 子進程正常結束，共處理 %d 行", lineCount)
+		slog.Info(fmt.Sprintf("[cursor] 子進程正常結束，共處理 %d 行", lineCount))
 	}
 	return waitErr
 }
@@ -186,7 +186,7 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *dispatchSt
 		r.dispatchAssistant(e, cb, st)
 
 	case "tool_call":
-		log.Printf("[cursor] tool_call subtype=%s call_id=%s", e.Subtype, e.CallID)
+		slog.Info(fmt.Sprintf("[cursor] tool_call subtype=%s call_id=%s", e.Subtype, e.CallID))
 		// 工具開始時送出活動提示（transient，前端覆寫顯示）。completed 不重送，避免噪音。
 		if e.Subtype != "completed" {
 			if label := e.ToolLabel(); label != "" {
@@ -199,7 +199,7 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *dispatchSt
 		for _, img := range e.Images() {
 			url, err := media.SaveBase64Image(img.MediaType, img.Data)
 			if err != nil {
-				log.Printf("[cursor] 圖片存檔失敗: %v", err)
+				slog.Info(fmt.Sprintf("[cursor] 圖片存檔失敗: %v", err))
 				continue
 			}
 			if !st.streamStartSent {
@@ -271,8 +271,8 @@ func shouldEmitAssistantText(e *StreamEvent, st *dispatchState) (text string, ok
 func (r *Runner) dispatchAssistant(e *StreamEvent, cb agent.EventCallback, st *dispatchState) {
 	text, emit := shouldEmitAssistantText(e, st)
 	if !emit {
-		log.Printf("[cursor]   └─ 略過 assistant 事件 (ts=%v mcid=%v gotDelta=%v)",
-			e.TimestampMS != nil, e.ModelCallID != nil, st.gotStreamDelta)
+		slog.Info(fmt.Sprintf("[cursor]   └─ 略過 assistant 事件 (ts=%v mcid=%v gotDelta=%v)",
+			e.TimestampMS != nil, e.ModelCallID != nil, st.gotStreamDelta))
 		return
 	}
 	if !st.streamStartSent {
@@ -294,7 +294,6 @@ func (r *Runner) dispatchResult(e *StreamEvent, cb agent.EventCallback) {
 		ResultText: strings.TrimSpace(e.Result),
 	})
 }
-
 
 // runnerError 表示子進程異常結束而沒有 terminal result。
 type runnerError struct {

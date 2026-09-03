@@ -6,7 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+
 	"os"
 	"os/exec"
 	"strings"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
+	"log/slog"
 )
 
 func init() {
@@ -35,13 +36,13 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		return err
 	}
 	if !HasAuthConfig() {
-		log.Printf("[codex] 警告：未找到 CODEX_API_KEY 或 ~/.codex/auth.json，仍嘗試執行 exec")
+		slog.Info(fmt.Sprintf("[codex] 警告：未找到 CODEX_API_KEY 或 ~/.codex/auth.json，仍嘗試執行 exec"))
 	}
 
 	args := buildArgs(opts)
-	log.Printf("[codex] 執行指令: codex %s (prompt len=%d)", strings.Join(redactArgs(args), " "), len(opts.Prompt))
+	slog.Info(fmt.Sprintf("[codex] 執行指令: codex %s (prompt len=%d)", strings.Join(redactArgs(args), " "), len(opts.Prompt)))
 	if opts.WorkDir != "" {
-		log.Printf("[codex] 工作目錄: %s", opts.WorkDir)
+		slog.Info(fmt.Sprintf("[codex] 工作目錄: %s", opts.WorkDir))
 	}
 
 	cmd := exec.CommandContext(ctx, codexBin, args...)
@@ -73,11 +74,11 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		log.Printf("[codex] 子進程啟動失敗: %v", err)
+		slog.Info(fmt.Sprintf("[codex] 子進程啟動失敗: %v", err))
 		return err
 	}
 	_ = stdin.Close()
-	log.Printf("[codex] 子進程已啟動，PID=%d", cmd.Process.Pid)
+	slog.Info(fmt.Sprintf("[codex] 子進程已啟動，PID=%d", cmd.Process.Pid))
 
 	var st dispatchState
 	scanner := bufio.NewScanner(stdout)
@@ -90,36 +91,35 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			continue
 		}
 		lineCount++
-		log.Printf("[codex] 收到第 %d 行: %s", lineCount, truncate(string(raw), 200))
+		slog.Info(fmt.Sprintf("[codex] 收到第 %d 行: %s", lineCount, truncate(string(raw), 200)))
 		ev, parseErr := ParseEvent(raw)
 		if parseErr != nil {
-			log.Printf("[codex] 解析失敗: %v", parseErr)
+			slog.Info(fmt.Sprintf("[codex] 解析失敗: %v", parseErr))
 			continue
 		}
 		r.dispatch(ev, cb, &st)
 	}
 	if err := scanner.Err(); err != nil {
-		log.Printf("[codex] scanner 錯誤: %v", err)
+		slog.Info(fmt.Sprintf("[codex] scanner 錯誤: %v", err))
 	}
 
 	waitErr := cmd.Wait()
 	if stderr := stderrBuf.String(); stderr != "" {
-		log.Printf("[codex] stderr:\n%s", truncate(stderr, 500))
+		slog.Info(fmt.Sprintf("[codex] stderr:\n%s", truncate(stderr, 500)))
 	}
 
 	if waitErr != nil && ctx.Err() == nil {
 		if !st.sawTurnCompleted {
 			cb(agent.Event{Type: agent.EventError, Err: classifyRunnerError(stderrBuf.String(), waitErr)})
 		}
-		log.Printf("[codex] 子進程結束，exit error: %v", waitErr)
+		slog.Info(fmt.Sprintf("[codex] 子進程結束，exit error: %v", waitErr))
 		return waitErr
 	}
 
 	if !st.sawTurnCompleted && ctx.Err() == nil {
 		cb(agent.Event{Type: agent.EventError, Err: errors.New("codex 串流中斷：未收到 turn.completed")})
 	}
-
-	log.Printf("[codex] 子進程正常結束，共處理 %d 行", lineCount)
+	slog.Info(fmt.Sprintf("[codex] 子進程正常結束，共處理 %d 行", lineCount))
 	sessionID := opts.SessionID
 	if st.sessionID != "" {
 		sessionID = st.sessionID

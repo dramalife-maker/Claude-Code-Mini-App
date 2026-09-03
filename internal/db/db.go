@@ -2,9 +2,11 @@ package db
 
 import (
 	"database/sql"
-	"log"
+
 	"strings"
 
+	"fmt"
+	"log/slog"
 	_ "modernc.org/sqlite"
 )
 
@@ -79,7 +81,7 @@ func (db *DB) migrate() error {
 			if strings.Contains(msg, "duplicate column") || strings.Contains(msg, "no such column") {
 				return
 			}
-			log.Printf("[migrate] warning: %s: %v", q, err)
+			slog.Info(fmt.Sprintf("[migrate] warning: %s: %v", q, err))
 		}
 	}
 	tryAlter(`ALTER TABLE sessions ADD COLUMN pending_denials TEXT NOT NULL DEFAULT ''`)

@@ -2,9 +2,9 @@ package ws
 
 import (
 	"fmt"
-	"log"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
+	"log/slog"
 )
 
 func notifyTaskAsync(botToken string, chatID int64, cfg tg.NotifyConfig, alert tg.TaskAlert) {
@@ -13,7 +13,7 @@ func notifyTaskAsync(botToken string, chatID int64, cfg tg.NotifyConfig, alert t
 	}
 	go func() {
 		if err := tg.NotifyTask(botToken, chatID, cfg, alert); err != nil {
-			log.Printf("[tg] notify: %v", err)
+			slog.Info(fmt.Sprintf("[tg] notify: %v", err))
 		}
 	}()
 }

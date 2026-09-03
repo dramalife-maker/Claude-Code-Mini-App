@@ -2,7 +2,8 @@ package kiroacp
 
 import (
 	"fmt"
-	"log"
+
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -43,6 +44,6 @@ func resolveWorkDir(raw string) (workDirResult, error) {
 
 func logWorkDirWarning(res workDirResult) {
 	if res.Fallback {
-		log.Printf("[kiroacp] 警告: session 未設定 work_dir，使用 server 工作目錄 %s", res.Path)
+		slog.Info(fmt.Sprintf("[kiroacp] 警告: session 未設定 work_dir，使用 server 工作目錄 %s", res.Path))
 	}
 }
