@@ -76,6 +76,7 @@ func buildClaudeArgs(opts agent.RunOptions) []string {
 
 // Run 實作 agent.Runner：啟動 claude -p 子進程，逐行解析 stream-json 並透過 cb 回傳事件。
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
+	start := time.Now()
 	args := buildClaudeArgs(opts)
 	slog.Info(fmt.Sprintf("[claude] 執行指令: claude %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt)))
 	if opts.WorkDir != "" {
@@ -100,7 +101,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		slog.Info(fmt.Sprintf("[claude] 取得 stdout pipe 失敗: %v", err))
+		slog.Error(fmt.Sprintf("[claude] 取得 stdout pipe 失敗: %v", err))
 		return err
 	}
 
@@ -108,7 +109,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		slog.Info(fmt.Sprintf("[claude] 子進程啟動失敗: %v", err))
+		slog.Error(fmt.Sprintf("[claude] 子進程啟動失敗: %v", err))
 		return err
 	}
 	slog.Info(fmt.Sprintf("[claude] 子進程已啟動，PID=%d", cmd.Process.Pid))
@@ -119,28 +120,30 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	var st streamState
 	lineCount := 0
+	sessionID := opts.SessionID
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
 		lineCount++
-		slog.Info(fmt.Sprintf("[claude] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200)))
+		slog.Debug(fmt.Sprintf("[claude] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200)))
 
 		e, err := ParseEvent(line)
 		if err != nil {
-			slog.Info(fmt.Sprintf("[claude] 解析失敗: %v | 原始內容: %s", err, truncate(string(line), 200)))
+			slog.Warn(fmt.Sprintf("[claude] 解析失敗: %v | 原始內容: %s", err, truncate(string(line), 200)))
 			continue
 		}
-		slog.Info(fmt.Sprintf("[claude] 事件 type=%s subtype=%s", e.Type, e.Subtype))
+		slog.Debug(fmt.Sprintf("[claude] 事件 type=%s subtype=%s", e.Type, e.Subtype))
 		if e.Event != nil {
-			slog.Info(fmt.Sprintf("[claude]   └─ API event type=%s", e.Event.Type))
+			slog.Debug(fmt.Sprintf("[claude]   └─ API event type=%s", e.Event.Type))
 		}
 		if e.SessionID != "" {
-			slog.Info(fmt.Sprintf("[claude]   └─ session_id=%s", e.SessionID))
+			sessionID = e.SessionID
+			slog.Debug(fmt.Sprintf("[claude]   └─ session_id=%s", e.SessionID))
 		}
 		if e.IsError {
-			slog.Info(fmt.Sprintf("[claude]   └─ IS_ERROR result=%s", e.Result))
+			slog.Error(fmt.Sprintf("[claude]   └─ IS_ERROR result=%s", e.Result))
 		}
 		if len(e.PermissionDenials) > 0 {
 			slog.Info(fmt.Sprintf("[claude]   └─ permission_denials=%d 項", len(e.PermissionDenials)))
@@ -150,21 +153,22 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	}
 
 	if err := scanner.Err(); err != nil {
-		slog.Info(fmt.Sprintf("[claude] scanner 錯誤: %v", err))
+		slog.Error(fmt.Sprintf("[claude] scanner 錯誤: %v", err))
 	}
 
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
 	if stderr != "" {
-		slog.Info(fmt.Sprintf("[claude] stderr 輸出:\n%s", stderr))
+		slog.Debug(fmt.Sprintf("[claude] stderr 輸出:\n%s", stderr))
 	}
+	duration := time.Since(start)
 	if waitErr != nil {
-		slog.Info(fmt.Sprintf("[claude] 子進程結束，exit error: %v", waitErr))
+		slog.Error("[claude] run 結束", "session_id", sessionID, "duration", duration, "lines", lineCount, "ok", false, "err", waitErr)
 		if ctx.Err() == nil {
 			return agent.NewExitError("claude", stderr, waitErr)
 		}
 	} else {
-		slog.Info(fmt.Sprintf("[claude] 子進程正常結束，共處理 %d 行", lineCount))
+		slog.Info("[claude] run 結束", "session_id", sessionID, "duration", duration, "lines", lineCount, "ok", true)
 	}
 	return waitErr
 }

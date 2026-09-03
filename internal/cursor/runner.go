@@ -42,6 +42,7 @@ func (r *Runner) Name() string { return agent.TypeCursor }
 //
 // prompt 是 positional argument（不是 flag）。
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
+	start := time.Now()
 	args := []string{
 		"--print",
 		"--output-format", "stream-json",
@@ -99,7 +100,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		slog.Info(fmt.Sprintf("[cursor] 取得 stdout pipe 失敗: %v", err))
+		slog.Error(fmt.Sprintf("[cursor] 取得 stdout pipe 失敗: %v", err))
 		return err
 	}
 
@@ -107,7 +108,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		slog.Info(fmt.Sprintf("[cursor] 子進程啟動失敗: %v", err))
+		slog.Error(fmt.Sprintf("[cursor] 子進程啟動失敗: %v", err))
 		return err
 	}
 	slog.Info(fmt.Sprintf("[cursor] 子進程已啟動，PID=%d", cmd.Process.Pid))
@@ -118,6 +119,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	sawResult := false
 	lineCount := 0
+	sessionID := opts.SessionID
 	var st dispatchState
 
 	for scanner.Scan() {
@@ -126,16 +128,17 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			continue
 		}
 		lineCount++
-		slog.Info(fmt.Sprintf("[cursor] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200)))
+		slog.Debug(fmt.Sprintf("[cursor] 收到第 %d 行 (len=%d): %s", lineCount, len(line), truncate(string(line), 200)))
 
 		e, parseErr := ParseEvent(line)
 		if parseErr != nil {
-			slog.Info(fmt.Sprintf("[cursor] 解析失敗: %v | 原始內容: %s", parseErr, truncate(string(line), 200)))
+			slog.Warn(fmt.Sprintf("[cursor] 解析失敗: %v | 原始內容: %s", parseErr, truncate(string(line), 200)))
 			continue
 		}
-		slog.Info(fmt.Sprintf("[cursor] 事件 type=%s subtype=%s", e.Type, e.Subtype))
+		slog.Debug(fmt.Sprintf("[cursor] 事件 type=%s subtype=%s", e.Type, e.Subtype))
 		if e.SessionID != "" {
-			slog.Info(fmt.Sprintf("[cursor]   └─ session_id=%s", e.SessionID))
+			sessionID = e.SessionID
+			slog.Debug(fmt.Sprintf("[cursor]   └─ session_id=%s", e.SessionID))
 		}
 
 		if e.Type == "result" {
@@ -146,24 +149,25 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	}
 
 	if err := scanner.Err(); err != nil {
-		slog.Info(fmt.Sprintf("[cursor] scanner 錯誤: %v", err))
+		slog.Error(fmt.Sprintf("[cursor] scanner 錯誤: %v", err))
 	}
 
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
 	if stderr != "" {
-		slog.Info(fmt.Sprintf("[cursor] stderr 輸出:\n%s", stderr))
+		slog.Debug(fmt.Sprintf("[cursor] stderr 輸出:\n%s", stderr))
 	}
 
 	// Cursor 失敗時可能沒有 terminal result event，exit code 才是真實判準。
 	// 若被 context 取消，直接回報 waitErr 由上層處理（視為 aborted）。
+	duration := time.Since(start)
 	if waitErr != nil {
 		if ctx.Err() == nil && !sawResult {
 			cb(agent.Event{Type: agent.EventError, Err: classifyRunnerError(stderr, waitErr)})
 		}
-		slog.Info(fmt.Sprintf("[cursor] 子進程結束，exit error: %v", waitErr))
+		slog.Error("[cursor] run 結束", "session_id", sessionID, "duration", duration, "lines", lineCount, "ok", false, "err", waitErr)
 	} else {
-		slog.Info(fmt.Sprintf("[cursor] 子進程正常結束，共處理 %d 行", lineCount))
+		slog.Info("[cursor] run 結束", "session_id", sessionID, "duration", duration, "lines", lineCount, "ok", true)
 	}
 	return waitErr
 }
@@ -271,7 +275,7 @@ func shouldEmitAssistantText(e *StreamEvent, st *dispatchState) (text string, ok
 func (r *Runner) dispatchAssistant(e *StreamEvent, cb agent.EventCallback, st *dispatchState) {
 	text, emit := shouldEmitAssistantText(e, st)
 	if !emit {
-		slog.Info(fmt.Sprintf("[cursor]   └─ 略過 assistant 事件 (ts=%v mcid=%v gotDelta=%v)",
+		slog.Debug(fmt.Sprintf("[cursor]   └─ 略過 assistant 事件 (ts=%v mcid=%v gotDelta=%v)",
 			e.TimestampMS != nil, e.ModelCallID != nil, st.gotStreamDelta))
 		return
 	}

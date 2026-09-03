@@ -159,7 +159,7 @@ func main() {
 
 		ip := auth.RealIP(c)
 		if !auth.IsAllowed(ip, allowedNets) {
-			slog.Info(fmt.Sprintf("[auth] 拒絕登入請求，非內網 IP: %s", ip))
+			slog.Warn("[auth] 拒絕登入請求，非內網 IP", "ip", ip)
 			return c.Status(403).JSON(fiber.Map{"error": "僅允許內網存取"})
 		}
 
@@ -171,7 +171,7 @@ func main() {
 			return c.Status(400).JSON(fiber.Map{"error": "請提供 password 欄位"})
 		}
 		if body.Password != cfg.Web.Password {
-			slog.Info(fmt.Sprintf("[auth] Web 密碼錯誤（來源: %s）", ip))
+			slog.Warn("[auth] Web 密碼錯誤", "ip", ip)
 			return c.Status(401).JSON(fiber.Map{"error": "密碼錯誤"})
 		}
 
@@ -182,7 +182,7 @@ func main() {
 				return c.Status(500).JSON(fiber.Map{"error": "DB 錯誤"})
 			}
 			if !allowed {
-				slog.Info(fmt.Sprintf("[auth] Web 登入拒絕：tg_user_id=%d 不在白名單", body.TgUserID))
+				slog.Warn("[auth] Web 登入拒絕：不在白名單", "tg_user_id", body.TgUserID)
 				return c.Status(403).JSON(fiber.Map{"error": "tg_user_id 不在白名單內"})
 			}
 			bindTgID = body.TgUserID
@@ -196,7 +196,7 @@ func main() {
 				if ok {
 					bindTgID = cfg.Web.DefaultNotifyTgID
 				} else {
-					slog.Info(fmt.Sprintf("[auth] web.default_notify_tg_id=%d 不在白名單，略過", cfg.Web.DefaultNotifyTgID))
+					slog.Warn("[auth] default_notify_tg_id 不在白名單，略過", "tg_id", cfg.Web.DefaultNotifyTgID)
 				}
 			}
 			if bindTgID == 0 {
@@ -212,7 +212,7 @@ func main() {
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{"error": "無法建立 session"})
 		}
-		slog.Info(fmt.Sprintf("[auth] Web 登入成功（來源: %s）", ip))
+		slog.Info("[auth] Web 登入成功", "ip", ip)
 		return c.JSON(fiber.Map{"ok": true, "token": token})
 	})
 
@@ -247,7 +247,7 @@ func main() {
 		if initData != "" {
 			user, err := tg.Verify(initData, cfg.BotToken)
 			if err != nil {
-				slog.Info(fmt.Sprintf("[auth] TG 驗證失敗: %v", err))
+				slog.Warn("[auth] TG 驗證失敗", "err", err)
 				return c.Status(401).JSON(fiber.Map{"error": "Telegram 驗證失敗"})
 			}
 			allowed, err := database.IsUserAllowed(user.ID)
@@ -255,10 +255,10 @@ func main() {
 				return c.Status(500).JSON(fiber.Map{"error": "DB 錯誤"})
 			}
 			if !allowed {
-				slog.Info(fmt.Sprintf("[auth] 拒絕使用者 tg_id=%d (@%s)", user.ID, user.Username))
+				slog.Warn("[auth] 拒絕使用者", "tg_id", user.ID, "username", user.Username)
 				return c.Status(403).JSON(fiber.Map{"error": "無存取權限"})
 			}
-			slog.Info(fmt.Sprintf("[auth] TG 驗證通過: tg_id=%d (@%s)", user.ID, user.Username))
+			slog.Debug("[auth] TG 驗證通過", "tg_id", user.ID, "username", user.Username)
 			c.Locals("tg_id", user.ID)
 			return c.Next()
 		}
@@ -276,7 +276,7 @@ func main() {
 		// 方式三：Web session cookie（限內網 IP）
 		ip := auth.RealIP(c)
 		if !auth.IsAllowed(ip, allowedNets) {
-			slog.Info(fmt.Sprintf("[auth] 拒絕非內網 IP: %s", ip))
+			slog.Warn("[auth] 拒絕非內網 IP", "ip", ip)
 			return c.Status(403).JSON(fiber.Map{"error": "僅允許內網存取"})
 		}
 

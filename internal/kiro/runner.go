@@ -62,6 +62,7 @@ func stripKiroPrefix(line string) string {
 //
 // Prompt 以 positional argument 傳遞（kiro-cli.exe 為原生 EXE，無 cmd.exe wrapper）。
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
+	start := time.Now()
 	args := buildArgs(opts)
 	slog.Info(fmt.Sprintf("[kiro] 執行指令: kiro-cli %s (prompt len=%d)", strings.Join(args, " "), len(opts.Prompt)))
 	if opts.WorkDir != "" {
@@ -96,7 +97,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		slog.Info(fmt.Sprintf("[kiro] 取得 stdout pipe 失敗: %v", err))
+		slog.Error(fmt.Sprintf("[kiro] 取得 stdout pipe 失敗: %v", err))
 		return err
 	}
 
@@ -104,7 +105,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		slog.Info(fmt.Sprintf("[kiro] 子進程啟動失敗: %v", err))
+		slog.Error(fmt.Sprintf("[kiro] 子進程啟動失敗: %v", err))
 		return err
 	}
 	slog.Info(fmt.Sprintf("[kiro] 子進程已啟動，PID=%d", cmd.Process.Pid))
@@ -121,12 +122,12 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			continue
 		}
 		lineCount++
-		slog.Info(fmt.Sprintf("[kiro] 收到第 %d 行 (len=%d): %s", lineCount, len(raw), truncate(string(raw), 200)))
+		slog.Debug(fmt.Sprintf("[kiro] 收到第 %d 行 (len=%d): %s", lineCount, len(raw), truncate(string(raw), 200)))
 		st.dispatchLine(string(raw), cb)
 	}
 
 	if err := scanner.Err(); err != nil {
-		slog.Info(fmt.Sprintf("[kiro] scanner 錯誤: %v", err))
+		slog.Error(fmt.Sprintf("[kiro] scanner 錯誤: %v", err))
 	}
 
 	// 若全程未見 "> " 行，將累積內容降級為回覆。
@@ -135,11 +136,11 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
 	if stderr != "" {
-		slog.Info(fmt.Sprintf("[kiro] stderr 輸出:\n%s", truncate(stderr, 500)))
+		slog.Debug(fmt.Sprintf("[kiro] stderr 輸出:\n%s", truncate(stderr, 500)))
 	}
 
 	if waitErr != nil {
-		slog.Info(fmt.Sprintf("[kiro] 子進程結束，exit error: %v", waitErr))
+		slog.Error("[kiro] run 結束", "session_id", opts.SessionID, "duration", time.Since(start), "lines", lineCount, "ok", false, "err", waitErr)
 		if ctx.Err() == nil {
 			detail := strings.TrimSpace(stderr)
 			if detail == "" {
@@ -151,19 +152,19 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		}
 		return waitErr
 	}
-	slog.Info(fmt.Sprintf("[kiro] 子進程正常結束，共處理 %d 行", lineCount))
 
 	// 首回合：以 before/after 快照 diff + prompt 比對取得 session id。
 	sessionID := opts.SessionID
 	if sessionID == "" && ctx.Err() == nil {
 		sessionID = fetchSessionIDAfterRun(opts.WorkDir, opts.Prompt, beforeSessions)
 		if sessionID != "" {
-			slog.Info(fmt.Sprintf("[kiro] 取得 session id: %s", sessionID))
+			slog.Debug(fmt.Sprintf("[kiro] 取得 session id: %s", sessionID))
 			cb(agent.Event{Type: agent.EventSessionInit, SessionID: sessionID})
 		} else {
-			slog.Info(fmt.Sprintf("[kiro] 無法取得 session id，降級為單回合模式"))
+			slog.Warn(fmt.Sprintf("[kiro] 無法取得 session id，降級為單回合模式"))
 		}
 	}
+	slog.Info("[kiro] run 結束", "session_id", sessionID, "duration", time.Since(start), "lines", lineCount, "ok", true)
 
 	cb(agent.Event{Type: agent.EventDone, SessionID: sessionID})
 	return nil

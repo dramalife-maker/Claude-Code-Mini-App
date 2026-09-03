@@ -30,6 +30,7 @@ type Runner struct{}
 func (r *Runner) Name() string { return agent.TypeCodex }
 
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
+	start := time.Now()
 	codexBin, err := ResolveBin()
 	if err != nil {
 		cb(agent.Event{Type: agent.EventError, Err: err})
@@ -74,7 +75,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.Stderr = &stderrBuf
 
 	if err := cmd.Start(); err != nil {
-		slog.Info(fmt.Sprintf("[codex] 子進程啟動失敗: %v", err))
+		slog.Error(fmt.Sprintf("[codex] 子進程啟動失敗: %v", err))
 		return err
 	}
 	_ = stdin.Close()
@@ -91,39 +92,41 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 			continue
 		}
 		lineCount++
-		slog.Info(fmt.Sprintf("[codex] 收到第 %d 行: %s", lineCount, truncate(string(raw), 200)))
+		slog.Debug(fmt.Sprintf("[codex] 收到第 %d 行: %s", lineCount, truncate(string(raw), 200)))
 		ev, parseErr := ParseEvent(raw)
 		if parseErr != nil {
-			slog.Info(fmt.Sprintf("[codex] 解析失敗: %v", parseErr))
+			slog.Warn(fmt.Sprintf("[codex] 解析失敗: %v", parseErr))
 			continue
 		}
 		r.dispatch(ev, cb, &st)
 	}
 	if err := scanner.Err(); err != nil {
-		slog.Info(fmt.Sprintf("[codex] scanner 錯誤: %v", err))
+		slog.Error(fmt.Sprintf("[codex] scanner 錯誤: %v", err))
 	}
 
 	waitErr := cmd.Wait()
 	if stderr := stderrBuf.String(); stderr != "" {
-		slog.Info(fmt.Sprintf("[codex] stderr:\n%s", truncate(stderr, 500)))
+		slog.Debug(fmt.Sprintf("[codex] stderr:\n%s", truncate(stderr, 500)))
 	}
+
+	sessionID := opts.SessionID
+	if st.sessionID != "" {
+		sessionID = st.sessionID
+	}
+	duration := time.Since(start)
 
 	if waitErr != nil && ctx.Err() == nil {
 		if !st.sawTurnCompleted {
 			cb(agent.Event{Type: agent.EventError, Err: classifyRunnerError(stderrBuf.String(), waitErr)})
 		}
-		slog.Info(fmt.Sprintf("[codex] 子進程結束，exit error: %v", waitErr))
+		slog.Error("[codex] run 結束", "session_id", sessionID, "duration", duration, "lines", lineCount, "ok", false, "err", waitErr)
 		return waitErr
 	}
 
 	if !st.sawTurnCompleted && ctx.Err() == nil {
 		cb(agent.Event{Type: agent.EventError, Err: errors.New("codex 串流中斷：未收到 turn.completed")})
 	}
-	slog.Info(fmt.Sprintf("[codex] 子進程正常結束，共處理 %d 行", lineCount))
-	sessionID := opts.SessionID
-	if st.sessionID != "" {
-		sessionID = st.sessionID
-	}
+	slog.Info("[codex] run 結束", "session_id", sessionID, "duration", duration, "lines", lineCount, "ok", true)
 	cb(agent.Event{Type: agent.EventDone, SessionID: sessionID})
 	return waitErr
 }

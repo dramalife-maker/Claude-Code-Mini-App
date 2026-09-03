@@ -4,6 +4,7 @@ package logging
 import (
 	"log/slog"
 	"os"
+	"strings"
 
 	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
@@ -20,6 +21,8 @@ const (
 )
 
 // Init 設定 slog 的 default logger，回傳 sync 函式，main 應 defer 呼叫。
+// log level 由環境變數 LOG_LEVEL 控制（debug/info/warn/error），預設 info；
+// 逐行 protocol trace 之類的細節走 Debug，平常不落地，重現問題時用 LOG_LEVEL=debug 開。
 func Init() func() {
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		panic("logging: 建立 " + logDir + " 失敗: " + err.Error())
@@ -49,9 +52,22 @@ func Init() func() {
 		zapcore.AddSync(rotator),
 	)
 
-	core := zapcore.NewCore(encoder, writer, zapcore.InfoLevel)
+	core := zapcore.NewCore(encoder, writer, level())
 	handler := zapslog.NewHandler(core)
 	slog.SetDefault(slog.New(handler))
 
 	return func() { _ = rotator.Close() }
+}
+
+func level() zapcore.Level {
+	switch strings.ToLower(os.Getenv("LOG_LEVEL")) {
+	case "debug":
+		return zapcore.DebugLevel
+	case "warn":
+		return zapcore.WarnLevel
+	case "error":
+		return zapcore.ErrorLevel
+	default:
+		return zapcore.InfoLevel
+	}
 }
