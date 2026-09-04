@@ -241,6 +241,10 @@ func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, st *streamStat
 						st.streamStartSent = true
 						cb(agent.Event{Type: agent.EventStreamStart})
 					}
+				case "tool_use":
+					// 從逐行 stream-json 萃取語意事件：現在在呼叫哪個工具。
+					// Info 級、預設就看得到，不用開 Debug 也能確認「還在跑、跑到哪」。
+					slog.Info(fmt.Sprintf("[claude] 呼叫工具: %s", e.Event.ContentBlock.Name))
 				}
 			}
 		case "content_block_delta":
