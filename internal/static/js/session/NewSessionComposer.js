@@ -2,7 +2,6 @@
 const NEW_SESSION_AGENT_OPTIONS = [
   { value: 'claude', label: 'Claude' },
   { value: 'cursor', label: 'Cursor' },
-  { value: 'kiro', label: 'Kiro' },
   { value: 'kiroacp', label: 'Kiro ACP' },
   { value: 'codex', label: 'Codex' },
 ];

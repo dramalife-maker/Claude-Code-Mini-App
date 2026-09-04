@@ -45,7 +45,7 @@ func (d *deps) listSessions(_ context.Context, _ *gomcp.CallToolRequest, _ struc
 type createSessionIn struct {
 	WorkDir        string `json:"work_dir" jsonschema:"session 執行的工作目錄（絕對路徑）"`
 	Name           string `json:"name,omitempty" jsonschema:"顯示名稱，留空則自動產生"`
-	AgentType      string `json:"agent_type,omitempty" jsonschema:"claude/codex/gemini/cursor/kiro/antigravity，預設 claude"`
+	AgentType      string `json:"agent_type,omitempty" jsonschema:"claude/cursor/kiroacp/codex，預設 claude"`
 	PermissionMode string `json:"permission_mode,omitempty" jsonschema:"default/acceptEdits/bypassPermissions，預設 default"`
 }
 
@@ -54,8 +54,8 @@ func (d *deps) createSession(_ context.Context, _ *gomcp.CallToolRequest, in cre
 	if agentType == "" {
 		agentType = "claude"
 	}
-	if !agent.IsEnabled(agentType) {
-		reason := agent.DisabledReason(agentType)
+	if !agent.CanCreate(agentType) {
+		reason := agent.CreateDisabledReason(agentType)
 		if reason == "" {
 			reason = "不支援的 agent_type"
 		}

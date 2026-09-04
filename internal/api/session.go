@@ -149,8 +149,8 @@ func (h *SessionHandler) Create(c *fiber.Ctx) error {
 	if body.AgentType == "" {
 		body.AgentType = "claude"
 	}
-	if !agent.IsEnabled(body.AgentType) {
-		reason := agent.DisabledReason(body.AgentType)
+	if !agent.CanCreate(body.AgentType) {
+		reason := agent.CreateDisabledReason(body.AgentType)
 		if reason == "" {
 			reason = "不支援的 agent_type"
 		}

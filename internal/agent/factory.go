@@ -21,6 +21,11 @@ var disabledAgentTypes = map[string]string{
 	TypeAntigravity: "Gemini / Antigravity CLI 已停用（headless 無法使用）",
 }
 
+// createDisabledAgentTypes 不可新建，但既有 Session 仍可執行。
+var createDisabledAgentTypes = map[string]string{
+	TypeKiro: "請改用 Kiro ACP（kiroacp）建立新會話",
+}
+
 func normalizeAgentType(agentType string) string {
 	if agentType == "" {
 		return TypeClaude
@@ -31,15 +36,32 @@ func normalizeAgentType(agentType string) string {
 	return agentType
 }
 
-// IsEnabled 檢查 agent_type 是否可在應用內新建 Session 或執行 runner。
+// IsEnabled 檢查 agent_type 是否可執行 runner（既有 Session 仍可用）。
 func IsEnabled(agentType string) bool {
 	_, disabled := disabledAgentTypes[normalizeAgentType(agentType)]
+	return !disabled
+}
+
+// CanCreate 檢查 agent_type 是否可新建 Session。
+func CanCreate(agentType string) bool {
+	if !IsEnabled(agentType) {
+		return false
+	}
+	_, disabled := createDisabledAgentTypes[normalizeAgentType(agentType)]
 	return !disabled
 }
 
 // DisabledReason 回傳停用原因；未停用時為空字串。
 func DisabledReason(agentType string) string {
 	return disabledAgentTypes[normalizeAgentType(agentType)]
+}
+
+// CreateDisabledReason 回傳不可新建的原因；可新建時為空字串。
+func CreateDisabledReason(agentType string) string {
+	if reason := DisabledReason(agentType); reason != "" {
+		return reason
+	}
+	return createDisabledAgentTypes[normalizeAgentType(agentType)]
 }
 
 // runnerBuilder 由各工具套件在 init() 時註冊，避免 agent 套件反向依賴 claude/codex 等套件。
