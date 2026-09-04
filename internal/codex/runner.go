@@ -57,7 +57,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
-			return proc.GracefulStop(cmd.Process.Pid, 3*time.Second)
+			return proc.KillTree(cmd.Process.Pid)
 		}
 		return nil
 	}
@@ -80,6 +80,9 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	}
 	_ = stdin.Close()
 	slog.Info(fmt.Sprintf("[codex] 子進程已啟動，PID=%d", cmd.Process.Pid))
+	if opts.OnStart != nil {
+		opts.OnStart(cmd.Process.Pid)
+	}
 
 	var st dispatchState
 	scanner := bufio.NewScanner(stdout)

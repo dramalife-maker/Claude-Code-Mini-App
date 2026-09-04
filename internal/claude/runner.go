@@ -94,7 +94,7 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
-			return proc.GracefulStop(cmd.Process.Pid, 3*time.Second)
+			return proc.KillTree(cmd.Process.Pid)
 		}
 		return nil
 	}
@@ -113,6 +113,9 @@ func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventC
 		return err
 	}
 	slog.Info(fmt.Sprintf("[claude] 子進程已啟動，PID=%d", cmd.Process.Pid))
+	if opts.OnStart != nil {
+		opts.OnStart(cmd.Process.Pid)
+	}
 
 	scanner := bufio.NewScanner(stdout)
 	// MCP 截圖 base64 單行可達數 MB；1MB 會讓 Scan 失敗並整行丟棄。

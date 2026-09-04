@@ -369,6 +369,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				WorkDir:      wdir,
 				ExtraArgs:    extra,
 				CliExtraArgs: cliExtra,
+				OnStart:      func(pid int) { taskSetPid(sessionID, msgID, pid) },
 			}
 
 			// kiroacp 互動式授權：runner 中途收到工具授權請求時同步呼叫，
@@ -1102,8 +1103,10 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					shellTaskCancel(sessionID)
 					continue
 				}
-				// Agent 同樣只 cancel，等 Run goroutine 收尾後再 IDLE（避免進程還在跑前端已變完成）。
-				taskCancel(sessionID)
+				// 兩段式停止：第一次按只送優雅信號（可能被子進程忽略，狀態/DB 不動，任務繼續跑）；
+				// 第二次按（或 PID 還沒拿到）才 cancel context 強制 KillTree，
+				// 收尾一律由 Run goroutine 的既有邏輯處理，避免前端提早變 IDLE 但進程還在跑。
+				taskInterrupt(sessionID)
 
 			case "shell_allow_once":
 				handleShellAllowExecute(false)

@@ -5,7 +5,6 @@ package proc
 import (
 	"fmt"
 	"syscall"
-	"time"
 )
 
 // SysProcAttr 回傳 Unix 專屬的進程屬性。
@@ -24,22 +23,10 @@ func KillTree(pid int) error {
 }
 
 // SendInterrupt 對進程群組發送 SIGINT，讓進程有機會優雅退出。
+// 用於「第一次按停止」：可能被子進程忽略，此時呼叫端應再次呼叫 KillTree 強制終止。
 func SendInterrupt(pid int) error {
 	if err := syscall.Kill(-pid, syscall.SIGINT); err != nil {
 		return fmt.Errorf("SIGINT process group -%d: %w", pid, err)
 	}
-	return nil
-}
-
-// GracefulStop 先送 SIGINT，給進程 timeout 時間優雅退出；
-// 逾時後才 SIGKILL 強制終止整棵進程樹。
-func GracefulStop(pid int, timeout time.Duration) error {
-	if err := SendInterrupt(pid); err != nil {
-		return KillTree(pid)
-	}
-	go func() {
-		time.Sleep(timeout)
-		_ = KillTree(pid)
-	}()
 	return nil
 }

@@ -7,11 +7,10 @@ import (
 	"os/exec"
 	"strconv"
 	"syscall"
-	"time"
 )
 
-const ctrlBreakEvent = 1 // CTRL_BREAK_EVENT
 const createNoWindow = 0x08000000 // CREATE_NO_WINDOW，syscall 套件未匯出此常數
+const ctrlBreakEvent = 1          // CTRL_BREAK_EVENT
 
 var (
 	kernel32              = syscall.NewLazyDLL("kernel32.dll")
@@ -38,27 +37,14 @@ func KillTree(pid int) error {
 	return nil
 }
 
-// SendInterrupt 對目標進程群組發送 CTRL_BREAK 事件，讓 Node.js 有機會優雅退出。
-// 注意：需搭配 SysProcAttr() 的 CREATE_NEW_PROCESS_GROUP 才能正確定位群組。
-// CTRL_C 在 CREATE_NEW_PROCESS_GROUP 下預設被遮罩，因此改用 CTRL_BREAK。
+// SendInterrupt 對目標進程群組發送 CTRL_BREAK，讓進程有機會優雅退出。
+// 用於「第一次按停止」：可能被子進程忽略，此時呼叫端應再次呼叫 KillTree 強制終止。
+// 注意：需搭配 SysProcAttr() 的 CREATE_NEW_PROCESS_GROUP 才能正確定位群組；
+// CTRL_C 在該旗標下預設被遮罩，因此改用 CTRL_BREAK。
 func SendInterrupt(pid int) error {
 	r, _, err := generateCtrlEventProc.Call(ctrlBreakEvent, uintptr(pid))
 	if r == 0 {
 		return fmt.Errorf("GenerateConsoleCtrlEvent(CTRL_BREAK, %d): %w", pid, err)
 	}
-	return nil
-}
-
-// GracefulStop 先送 CTRL_BREAK，給進程 timeout 時間優雅退出；
-// 逾時後才 KillTree 強制終止整棵進程樹。
-func GracefulStop(pid int, timeout time.Duration) error {
-	if err := SendInterrupt(pid); err != nil {
-		// 優雅信號失敗，直接強制終止
-		return KillTree(pid)
-	}
-	go func() {
-		time.Sleep(timeout)
-		_ = KillTree(pid) // 進程可能已自行退出，忽略錯誤
-	}()
 	return nil
 }

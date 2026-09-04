@@ -78,6 +78,9 @@ func (r *Runner) runPrintText(ctx context.Context, opts agent.RunOptions, cb age
 		return err
 	}
 	slog.Info(fmt.Sprintf("[antigravity] 子進程已啟動，PID=%d", cmd.Process.Pid))
+	if opts.OnStart != nil {
+		opts.OnStart(cmd.Process.Pid)
+	}
 
 	body, readErr := io.ReadAll(stdout)
 	if readErr != nil {
@@ -137,6 +140,9 @@ func (r *Runner) execAndParseNDJSON(ctx context.Context, opts agent.RunOptions, 
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	if opts.OnStart != nil {
+		opts.OnStart(cmd.Process.Pid)
+	}
 
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
@@ -193,7 +199,7 @@ func configureCmd(cmd *exec.Cmd) {
 	cmd.WaitDelay = 5 * time.Second
 	cmd.Cancel = func() error {
 		if cmd.Process != nil {
-			return proc.GracefulStop(cmd.Process.Pid, 3*time.Second)
+			return proc.KillTree(cmd.Process.Pid)
 		}
 		return nil
 	}

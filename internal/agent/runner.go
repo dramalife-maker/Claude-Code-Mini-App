@@ -20,6 +20,9 @@ type RunOptions struct {
 	// 當 runner 在回合中途收到工具授權請求時同步呼叫，會阻塞直到使用者決定或 ctx 取消。
 	// 回傳選定的 optionID；空字串代表拒絕／取消。nil 表示呼叫端不支援互動授權。
 	RequestPermission func(ctx context.Context, req PermissionRequest) string
+	// OnStart 在子進程 cmd.Start() 成功後立即呼叫，帶入 PID。
+	// 供呼叫端記錄 PID 以便日後送出優雅停止信號（第一次按停止時使用）。nil 表示不需要。
+	OnStart func(pid int)
 }
 
 // PermissionOption 是一個授權選項（對應 ACP session/request_permission 的 options 項目）。
