@@ -57,3 +57,4 @@
 - [x] **列表狀態點**：Session 列右側只顯示進行中／未讀，IDLE 綠點拿掉。
 - [x] **外觀設定持久化**：Settings 外觀寫入 SQLite（localStorage 當快取）。
 - [x] **多主題支援**：內建 Nexus、Focus 等不同視覺風格主題。
+- [x] **工作目錄清單**：目錄 option 獨立於 session 保存，刪對話後下拉仍在。

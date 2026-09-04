@@ -231,7 +231,7 @@ function App() {
   const renderAuthedLayout = () => {
     if (!isWideScreen) {
       if (creating) {
-        return <NewSessionComposer sessions={sidebarSortedSessions} prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />;
+        return <NewSessionComposer prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />;
       }
       if (session) {
         return <ChatView session={session} onBack={() => selectSession(null)} usePermModeDropdown onJumpToSession={selectSession} allSessions={sidebarSortedSessions} />;
@@ -267,7 +267,7 @@ function App() {
         )}
         <main className="flex-1 min-w-0 min-h-0">
           {creating ? (
-            <NewSessionComposer sessions={sidebarSortedSessions} prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />
+            <NewSessionComposer prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />
           ) : session ? (
             <ChatView session={session} onBack={() => selectSession(null)} showBack={false} fullHeight={false} onJumpToSession={selectSession} allSessions={sidebarSortedSessions} />
           ) : (

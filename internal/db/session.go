@@ -49,6 +49,7 @@ type Session struct {
 
 func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string, inputMode string) (*Session, error) {
 	id := uuid.New().String()
+	workDir = strings.TrimSpace(workDir)
 	if permissionMode == "" {
 		permissionMode = "default"
 	}
@@ -60,6 +61,9 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 	}
 	if inputMode != "agent" && inputMode != "shell" {
 		inputMode = "agent"
+	}
+	if err := db.AddWorkDir(workDir); err != nil {
+		return nil, err
 	}
 	extraJSON := "[]"
 	if len(cliExtraArgs) > 0 {

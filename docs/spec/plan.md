@@ -124,6 +124,11 @@ CREATE TABLE messages (
     content TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 工作目錄清單（下拉用；與 session 鬆耦合，刪 session 不刪這裡）
+CREATE TABLE work_dirs (
+    path TEXT PRIMARY KEY
+);
 ```
 
 ---
@@ -134,8 +139,9 @@ CREATE TABLE messages (
 | 方法 | 路徑 | 說明 |
 | :--- | :--- | :--- |
 | `GET` | `/sessions` | 列出所有 Session |
-| `POST` | `/sessions` | 建立新 Session |
-| `DELETE` | `/sessions/:id` | 刪除 Session |
+| `POST` | `/sessions` | 建立新 Session（非空 `work_dir` 會寫入目錄清單） |
+| `DELETE` | `/sessions/:id` | 刪除 Session（不動目錄清單） |
+| `GET` | `/work-dirs` | 列出已記住的工作目錄 |
 | `WS` | `/sessions/:id/ws` | WebSocket 連線 |
 
 ### 5.2 WebSocket 訊息格式

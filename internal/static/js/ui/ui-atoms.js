@@ -671,6 +671,63 @@ function workDirBasename(dirKey) {
   return parts.length ? parts[parts.length - 1] : '';
 }
 
+/** 新建 session 用的工作目錄選擇：讀獨立目錄清單，不隨 session 刪除消失。 */
+function WorkDirPicker({ value, onChange }) {
+  const [dirs, setDirs] = useState([]);
+  const [customDir, setCustomDir] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch('/work-dirs')
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (!cancelled) setDirs(Array.isArray(data) ? data.filter(Boolean) : []);
+      })
+      .catch(() => { if (!cancelled) setDirs([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const showInput = customDir || dirs.length === 0;
+  const options = value && !dirs.includes(value) ? [value, ...dirs] : dirs;
+  const selectValue = options.includes(value) ? value : '';
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-wide text-gray-500">工作目錄</div>
+        {dirs.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setCustomDir((v) => !v)}
+            className="text-[11px] text-violet-400 hover:text-violet-300"
+          >
+            {showInput ? '改選既有目錄' : '自訂目錄…'}
+          </button>
+        )}
+      </div>
+      {showInput ? (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="工作目錄（選填，如 /home/user/project）"
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 font-mono focus:outline-none focus:border-violet-600"
+        />
+      ) : (
+        <select
+          value={selectValue}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
+        >
+          <option value="">（未設定工作目錄）</option>
+          {options.map((d) => (
+            <option key={d} value={d}>{workDirGroupShortLabel(d)}</option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 /** 依工作目錄排序用：空白路徑置底，其餘依路徑 localeCompare（numeric）。 */
 function cmpSessionWorkDir(a, b) {
   const da = String(a.work_dir != null ? String(a.work_dir).trim() : '').toLowerCase();

@@ -301,6 +301,7 @@ func main() {
 	app.Delete("/sessions/:id", authMiddleware, sh.Delete)
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)
 	app.Get("/model-options/:agentType", authMiddleware, sh.ModelOptions)
+	app.Get("/work-dirs", authMiddleware, sh.ListWorkDirs)
 
 	sth := api.NewSettingsHandler(database)
 	app.Get("/settings/appearance", authMiddleware, sth.GetAppearance)

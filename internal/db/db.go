@@ -70,6 +70,9 @@ func (db *DB) migrate() error {
 			key   TEXT PRIMARY KEY,
 			value TEXT NOT NULL DEFAULT '{}'
 		);
+		CREATE TABLE IF NOT EXISTS work_dirs (
+			path TEXT PRIMARY KEY
+		);
 	`)
 	if err != nil {
 		return err
@@ -112,6 +115,11 @@ func (db *DB) migrate() error {
 	tryAlter(`ALTER TABLE sessions ADD COLUMN effort TEXT NOT NULL DEFAULT ''`)
 	// last_read_at：使用者最後一次「正在看」此 session 的時間；配合 last_active 判斷未讀。
 	tryAlter(`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`)
+
+	// 既有 session 的 work_dir 補進目錄清單
+	if err := db.seedWorkDirsFromSessions(); err != nil {
+		return err
+	}
 
 	return nil
 }

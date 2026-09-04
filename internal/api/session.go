@@ -124,6 +124,15 @@ func (h *SessionHandler) ModelOptions(c *fiber.Ctx) error {
 	return c.JSON(opts)
 }
 
+// ListWorkDirs GET /work-dirs — 獨立於 session 的工作目錄清單（下拉用）。
+func (h *SessionHandler) ListWorkDirs(c *fiber.Ctx) error {
+	dirs, err := h.db.ListWorkDirs()
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(dirs)
+}
+
 func (h *SessionHandler) Create(c *fiber.Ctx) error {
 	var body struct {
 		Name           string   `json:"name"`

@@ -16,27 +16,17 @@ function autoSessionName(agentType, message) {
   return `${label} · ${time}`;
 }
 
-function NewSessionComposer({ sessions, prefill, onCreated, onCancel }) {
+function NewSessionComposer({ prefill, onCreated, onCancel }) {
   const newForm = useNewSessionForm(prefill || {});
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [errText, setErrText] = useState('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [customDir, setCustomDir] = useState(() => !!(prefill && prefill.workDir));
   const messageInputRef = useRef(null);
 
   useEffect(() => {
     messageInputRef.current?.focus();
   }, []);
-
-  const existingDirs = useMemo(() => {
-    const set = new Set();
-    (Array.isArray(sessions) ? sessions : []).forEach((s) => {
-      const d = s.work_dir != null ? String(s.work_dir).trim() : '';
-      if (d) set.add(d);
-    });
-    return [...set].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-  }, [sessions]);
 
   // codex/kiro 沒有可切換的權限模式（固定行為），不顯示切換器；kiroacp 有互動/全自動兩種
   const showPermMode = !['codex', 'kiro'].includes(newForm.agent);
@@ -145,38 +135,7 @@ function NewSessionComposer({ sessions, prefill, onCreated, onCancel }) {
           />
         </div>
 
-        {/* 工作目錄 */}
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <div className="text-[10px] uppercase tracking-wide text-gray-500">工作目錄</div>
-            <button
-              type="button"
-              onClick={() => setCustomDir((v) => !v)}
-              className="text-[11px] text-violet-400 hover:text-violet-300"
-            >
-              {customDir ? '改選既有目錄' : '自訂目錄…'}
-            </button>
-          </div>
-          {customDir || existingDirs.length === 0 ? (
-            <input
-              value={newForm.workDir}
-              onChange={(e) => newForm.setWorkDir(e.target.value)}
-              placeholder="工作目錄（選填，如 /home/user/project）"
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 font-mono focus:outline-none focus:border-violet-600"
-            />
-          ) : (
-            <select
-              value={existingDirs.includes(newForm.workDir) ? newForm.workDir : ''}
-              onChange={(e) => newForm.setWorkDir(e.target.value)}
-              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200"
-            >
-              <option value="">（未設定工作目錄）</option>
-              {existingDirs.map((d) => (
-                <option key={d} value={d}>{workDirGroupShortLabel(d)}</option>
-              ))}
-            </select>
-          )}
-        </div>
+        <WorkDirPicker value={newForm.workDir} onChange={newForm.setWorkDir} />
 
         {/* 進階設定（預設收合） */}
         <div className="rounded-lg border border-[oklch(0.26_0.02_264)]">
