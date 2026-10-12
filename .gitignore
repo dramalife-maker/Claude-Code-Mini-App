@@ -62,3 +62,7 @@ add_logging.py
 poc/kiro-cli/samples_acp_*.json
 poc/kiro-cli/samples_acp_*.md
 poc/kiro-cli/samples_kiro_msg*
+
+# Spectra app data
+.spectra/
+docs/spectra/.vector-search.db*

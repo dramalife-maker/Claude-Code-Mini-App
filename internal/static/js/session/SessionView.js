@@ -1,5 +1,5 @@
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false }) {
+function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false, isSplit = false, onToggleSplit = null }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -302,12 +302,12 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
 
   // 進入 session 前先 optimistic 標已讀（點了就消掉）；真正的 mark_read 由
   // useChatSocket.js 的 WS onopen 背景送出，失敗或被下次 poll 覆蓋都沒差。
-  const handleEnter = (s) => {
+  const handleEnter = (s, targetPane = null) => {
     if (isUnread(s)) {
       const nowStr = formatSqliteNow();
       setSessions((prev) => prev.map((row) => (row.id === s.id ? { ...row, last_read_at: nowStr } : row)));
     }
-    onEnter(s);
+    onEnter(s, targetPane);
   };
 
   const renderSessionRow = (s) => {
@@ -354,6 +354,21 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                 {s.name || '未命名'}
               </span>
               <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEnter(s, 'secondary');
+                  }}
+                  aria-label="在副視窗開啟"
+                  title="在副視窗開啟"
+                  className="text-[oklch(0.5_0.01_264)] hover:text-violet-400 p-1 rounded transition-colors"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5" aria-hidden="true">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   onClick={(e) => startRename(s, e)}
@@ -406,19 +421,24 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
           </div>
           <span className="ra-display text-base text-[oklch(0.94_0.01_264)] tracking-tight">Agent Console</span>
         </div>
-        {onToggleSidebar && (
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            aria-label="收合會話列表"
-            title="收合會話列表"
-            className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] border border-[oklch(0.28_0.02_264)] text-gray-400 hover:text-gray-200 hover:bg-[oklch(0.19_0.02_264)] transition-colors focus:outline-none"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 rotate-180" aria-hidden>
-              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01-.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-            </svg>
-          </button>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onToggleSplit && (
+            <SplitViewButton isSplit={isSplit} onClick={onToggleSplit} />
+          )}
+          {onToggleSidebar && (
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              aria-label="收合會話列表"
+              title="收合會話列表"
+              className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] border border-[oklch(0.28_0.02_264)] text-gray-400 hover:text-gray-200 hover:bg-[oklch(0.19_0.02_264)] transition-colors focus:outline-none"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 rotate-180" aria-hidden>
+                <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01-.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 搜尋／排序 — 設計列 */}
@@ -561,7 +581,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     return (
       <div className="flex flex-col h-app min-w-0 overflow-hidden items-center">
         <div
-          className="pt-[18px] pb-2.5 shrink-0"
+          className="pt-[18px] pb-2.5 shrink-0 flex flex-col items-center gap-2"
           style={{ paddingTop: 'calc(18px + env(safe-area-inset-top) + var(--tg-content-safe-top))' }}
         >
           <button
@@ -575,6 +595,9 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
               <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
             </svg>
           </button>
+          {onToggleSplit && (
+            <SplitViewButton isSplit={isSplit} onClick={onToggleSplit} />
+          )}
         </div>
         <button
           type="button"

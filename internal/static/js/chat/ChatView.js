@@ -1,6 +1,6 @@
 const EMPTY_SUGGESTIONS = ['看一下目前 git 狀態與最近的變更', '概覽這個專案的結構', '跑測試並整理失敗原因'];
 
-function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession, allSessions = [], guest = null, onOpenComposer, handoffInfo = null, onHandoffChange }) {
+function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession, allSessions = [], guest = null, onOpenComposer, handoffInfo = null, onHandoffChange, isSplit = false, onToggleSplit = null, splitOrientation = 'horizontal', onToggleSplitOrientation = null, isSecondaryPane = false, onClosePane = null, isFocused = true }) {
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
   // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex 暫無對應概念）
@@ -733,6 +733,12 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
         onEffortChange={handleEffortDraftChange}
         guest={guest}
         onShare={isGuest ? null : () => setShareOpen(true)}
+        isSplit={isSplit}
+        onToggleSplit={onToggleSplit}
+        splitOrientation={splitOrientation}
+        onToggleSplitOrientation={onToggleSplitOrientation}
+        isSecondaryPane={isSecondaryPane}
+        onClosePane={onClosePane}
       />
 
       <ShareStatusBar guest={guest} online={online} remainingMs={shareRemainingMs} ended={shareOver} endReason={shareEnded} />

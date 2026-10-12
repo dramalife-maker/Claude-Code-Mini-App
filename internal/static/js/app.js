@@ -80,9 +80,37 @@ function DebugBanner() {
   );
 }
 
+// ── 分割視窗偏好持久化 ────────────────────────────────────────────────────────
+const SPLIT_STATE_STORAGE_KEY = 'miniapp_split_chat_state';
+
+function readStoredSplitState() {
+  const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
+  try {
+    const raw = localStorage.getItem(SPLIT_STATE_STORAGE_KEY);
+    if (!raw) return { enabled: false, secondarySessionId: null, ratio: 0.5, orientation: isPortrait ? 'vertical' : 'horizontal' };
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: !!parsed.enabled,
+      secondarySessionId: parsed.secondarySessionId || null,
+      ratio: typeof parsed.ratio === 'number' && parsed.ratio >= 0.2 && parsed.ratio <= 0.8 ? parsed.ratio : 0.5,
+      orientation: parsed.orientation === 'vertical' ? 'vertical' : (parsed.orientation === 'horizontal' ? 'horizontal' : (isPortrait ? 'vertical' : 'horizontal')),
+    };
+  } catch (_) {
+    return { enabled: false, secondarySessionId: null, ratio: 0.5, orientation: isPortrait ? 'vertical' : 'horizontal' };
+  }
+}
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 function App() {
   const [session, setSession] = useState(null);
+  const [secondarySession, setSecondarySession] = useState(null);
+  const [sidebarSortedSessions, setSidebarSortedSessions] = useState([]);
+  const storedSplit = useMemo(() => readStoredSplitState(), []);
+  const [isSplit, setIsSplit] = useState(storedSplit.enabled);
+  const [splitRatio, setSplitRatio] = useState(storedSplit.ratio);
+  const [splitOrientation, setSplitOrientation] = useState(storedSplit.orientation);
+  const [activePane, setActivePane] = useState('primary'); // 'primary' | 'secondary'
+  const [mobileActivePane, setMobileActivePane] = useState('primary');
   const [creating, setCreating] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState(null);
   const [authed, setAuthed]   = useState(isTelegram);
@@ -97,6 +125,18 @@ function App() {
     hydrateAppearanceFromServer();
   }, [authed]);
 
+  // 持久化儲存分割狀態
+  useEffect(() => {
+    try {
+      localStorage.setItem(SPLIT_STATE_STORAGE_KEY, JSON.stringify({
+        enabled: isSplit,
+        secondarySessionId: secondarySession?.id || null,
+        ratio: splitRatio,
+        orientation: splitOrientation,
+      }));
+    } catch (_) {}
+  }, [isSplit, secondarySession?.id, splitRatio, splitOrientation]);
+
   const openComposer = useCallback((prefill) => {
     setComposerPrefill(prefill || {});
     setCreating(true);
@@ -104,12 +144,84 @@ function App() {
   const closeComposer = useCallback(() => setCreating(false), []);
   const handleCreated = useCallback((s) => {
     setCreating(false);
-    setSession(s);
-  }, []);
-  const selectSession = useCallback((s) => {
+    if (isSplit && activePane === 'secondary') {
+      setSecondarySession(s);
+    } else {
+      setSession(s);
+    }
+  }, [isSplit, activePane]);
+
+  const selectSession = useCallback((s, targetPane = null) => {
     setCreating(false);
-    setSession(s);
+    const dest = targetPane || (isSplit && activePane === 'secondary' ? 'secondary' : 'primary');
+    if (dest === 'secondary') {
+      setSecondarySession(s);
+      setIsSplit(true);
+      setActivePane('secondary');
+      setMobileActivePane('secondary');
+      setSession((curr) => curr || s);
+    } else {
+      setSession(s);
+      setActivePane('primary');
+      setMobileActivePane('primary');
+    }
+  }, [isSplit, activePane]);
+
+  const toggleSplit = useCallback(() => {
+    setIsSplit((prev) => {
+      const next = !prev;
+      if (next) {
+        if (!secondarySession && Array.isArray(sidebarSortedSessions)) {
+          const other = sidebarSortedSessions.find((s) => s.id !== session?.id);
+          if (other) {
+            setSecondarySession(other);
+          }
+        }
+        if (
+          typeof window !== 'undefined' &&
+          (window.innerHeight > window.innerWidth || window.innerWidth < 900) &&
+          window.innerHeight >= 600 &&
+          splitOrientation === 'horizontal'
+        ) {
+          setSplitOrientation('vertical');
+        }
+      }
+      return next;
+    });
+  }, [secondarySession, sidebarSortedSessions, session?.id, splitOrientation]);
+
+  const toggleSplitOrientation = useCallback(() => {
+    setSplitOrientation((prev) => (prev === 'vertical' ? 'horizontal' : 'vertical'));
   }, []);
+
+  const closeSecondaryPane = useCallback(() => {
+    setIsSplit(false);
+    setActivePane('primary');
+    setMobileActivePane('primary');
+  }, []);
+
+  // 鍵盤快捷鍵：Ctrl+\ 切換分割；Ctrl+Alt+O 切換方向；Ctrl+Alt+Left/Right 切換焦點
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+        e.preventDefault();
+        toggleSplit();
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'o' || e.key === 'O' || e.code === 'KeyO')) {
+        e.preventDefault();
+        setSplitOrientation((prev) => (prev === 'vertical' ? 'horizontal' : 'vertical'));
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'ArrowLeft' || e.code === 'ArrowLeft')) {
+        e.preventDefault();
+        setActivePane('primary');
+        setMobileActivePane('primary');
+      } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'ArrowRight' || e.code === 'ArrowRight')) {
+        e.preventDefault();
+        setActivePane('secondary');
+        setMobileActivePane('secondary');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [toggleSplit]);
   // ponytail: 接手提示只存本頁記憶體；取消表單不丟失，新一輪清除。需要離線恢復時再持久化。
   const [handoffBySession, setHandoffBySession] = useState({});
   const handleHandoffChange = useCallback((sessionId, value) => {
@@ -197,8 +309,6 @@ function App() {
     }
   }, []);
 
-  const [sidebarSortedSessions, setSidebarSortedSessions] = useState([]);
-
   /** 側欄輪詢 /sessions 時同步目前聊天室 Session 的 git_branch、work_dir */
   const mergeSessionMetaFromList = useCallback((list) => {
     if (!Array.isArray(list)) return;
@@ -209,7 +319,23 @@ function App() {
       if (row.git_branch === prev.git_branch && row.work_dir === prev.work_dir) return prev;
       return { ...prev, git_branch: row.git_branch, work_dir: row.work_dir };
     });
-  }, []);
+    setSecondarySession((prev) => {
+      if (!prev) {
+        if (storedSplit.secondarySessionId) {
+          const match = list.find((s) => s.id === storedSplit.secondarySessionId);
+          if (match) return match;
+        }
+        return null;
+      }
+      const row = list.find((s) => s.id === prev.id);
+      if (!row) {
+        setIsSplit(false);
+        return null;
+      }
+      if (row.git_branch === prev.git_branch && row.work_dir === prev.work_dir) return prev;
+      return { ...prev, git_branch: row.git_branch, work_dir: row.work_dir };
+    });
+  }, [storedSplit.secondarySessionId]);
 
   useEffect(() => {
     if (isTelegram) return;
@@ -252,9 +378,101 @@ function App() {
         return <NewSessionComposer prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />;
       }
       if (session) {
-        return <ChatView session={session} onBack={() => selectSession(null)} usePermModeDropdown onJumpToSession={selectSession} allSessions={sidebarSortedSessions} onOpenComposer={openComposer} handoffInfo={handoffBySession[session.id] || null} onHandoffChange={handleHandoffChange} />;
+        if (isSplit) {
+          const effectiveSecondary = secondarySession || (Array.isArray(sidebarSortedSessions) ? sidebarSortedSessions.find((s) => s.id !== session.id) : null);
+          if (effectiveSecondary) {
+            const isNarrowLayout = splitOrientation === 'vertical'
+              ? (typeof window !== 'undefined' ? window.innerHeight < 600 : false)
+              : (typeof window !== 'undefined' ? window.innerWidth < 900 : true);
+            return (
+              <SplitChatContainer
+                isSplit={true}
+                isNarrow={isNarrowLayout}
+                orientation={splitOrientation}
+                onToggleOrientation={toggleSplitOrientation}
+                splitRatio={splitRatio}
+                onSplitRatioChange={setSplitRatio}
+                activePane={activePane}
+                onFocusPane={setActivePane}
+                mobileActivePane={mobileActivePane}
+                onMobileActivePaneChange={setMobileActivePane}
+                primarySessionName={session?.name || '主聊天室'}
+                secondarySessionName={effectiveSecondary?.name || '副聊天室'}
+                onCloseSecondary={closeSecondaryPane}
+                primaryContent={
+                  <ChatView
+                    session={session}
+                    onBack={() => selectSession(null)}
+                    showBack={false}
+                    fullHeight={false}
+                    usePermModeDropdown
+                    onJumpToSession={selectSession}
+                    allSessions={sidebarSortedSessions}
+                    onOpenComposer={openComposer}
+                    handoffInfo={handoffBySession[session.id] || null}
+                    onHandoffChange={handleHandoffChange}
+                    isSplit={isSplit}
+                    onToggleSplit={toggleSplit}
+                    splitOrientation={splitOrientation}
+                    onToggleSplitOrientation={toggleSplitOrientation}
+                    isSecondaryPane={false}
+                    isFocused={activePane === 'primary'}
+                  />
+                }
+                secondaryContent={
+                  <ChatView
+                    session={effectiveSecondary}
+                    onBack={() => closeSecondaryPane()}
+                    showBack={false}
+                    fullHeight={false}
+                    usePermModeDropdown
+                    onJumpToSession={(s) => selectSession(s, 'secondary')}
+                    allSessions={sidebarSortedSessions}
+                    onOpenComposer={openComposer}
+                    handoffInfo={handoffBySession[effectiveSecondary.id] || null}
+                    onHandoffChange={handleHandoffChange}
+                    isSplit={isSplit}
+                    onToggleSplit={toggleSplit}
+                    splitOrientation={splitOrientation}
+                    onToggleSplitOrientation={toggleSplitOrientation}
+                    isSecondaryPane={true}
+                    onClosePane={closeSecondaryPane}
+                    isFocused={activePane === 'secondary'}
+                  />
+                }
+              />
+            );
+          }
+        }
+        return (
+          <ChatView
+            session={session}
+            onBack={() => selectSession(null)}
+            usePermModeDropdown
+            onJumpToSession={selectSession}
+            allSessions={sidebarSortedSessions}
+            onOpenComposer={openComposer}
+            handoffInfo={handoffBySession[session.id] || null}
+            onHandoffChange={handleHandoffChange}
+            isSplit={isSplit}
+            onToggleSplit={toggleSplit}
+            splitOrientation={splitOrientation}
+            onToggleSplitOrientation={toggleSplitOrientation}
+          />
+        );
       }
-      return <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} />;
+      return (
+        <SessionView
+          onEnter={selectSession}
+          onSessionsLoaded={mergeSessionMetaFromList}
+          onSortedSessionsChange={setSidebarSortedSessions}
+          activeSessionId={activePane === 'secondary' ? secondarySession?.id : session?.id}
+          onCreateNew={openComposer}
+          onOpenSettings={() => setSettingsOpen(true)}
+          isSplit={isSplit}
+          onToggleSplit={toggleSplit}
+        />
+      );
     }
 
     return (
@@ -263,7 +481,18 @@ function App() {
           style={{ width: sidebarCollapsed ? SIDEBAR_RAIL_WIDTH : sidebarWidthPx, flexShrink: 0 }}
           className="min-w-0 bg-[oklch(0.13_0.02_264)] border-r border-[oklch(0.26_0.02_264)] flex flex-col"
         >
-          <SessionView onEnter={selectSession} onSessionsLoaded={mergeSessionMetaFromList} onSortedSessionsChange={setSidebarSortedSessions} activeSessionId={session?.id} onCreateNew={openComposer} onOpenSettings={() => setSettingsOpen(true)} onToggleSidebar={toggleSidebarCollapsed} collapsed={sidebarCollapsed} />
+          <SessionView
+            onEnter={selectSession}
+            onSessionsLoaded={mergeSessionMetaFromList}
+            onSortedSessionsChange={setSidebarSortedSessions}
+            activeSessionId={activePane === 'secondary' ? secondarySession?.id : session?.id}
+            onCreateNew={openComposer}
+            onOpenSettings={() => setSettingsOpen(true)}
+            onToggleSidebar={toggleSidebarCollapsed}
+            collapsed={sidebarCollapsed}
+            isSplit={isSplit}
+            onToggleSplit={toggleSplit}
+          />
         </aside>
         {!sidebarCollapsed && (
           <div
@@ -287,7 +516,85 @@ function App() {
           {creating ? (
             <NewSessionComposer prefill={composerPrefill} onCreated={handleCreated} onCancel={closeComposer} />
           ) : session ? (
-            <ChatView session={session} onBack={() => selectSession(null)} showBack={false} fullHeight={false} onJumpToSession={selectSession} allSessions={sidebarSortedSessions} onOpenComposer={openComposer} handoffInfo={handoffBySession[session.id] || null} onHandoffChange={handleHandoffChange} />
+            <SplitChatContainer
+              isSplit={isSplit}
+              splitRatio={splitRatio}
+              onSplitRatioChange={setSplitRatio}
+              orientation={splitOrientation}
+              onToggleOrientation={toggleSplitOrientation}
+              activePane={activePane}
+              onFocusPane={setActivePane}
+              mobileActivePane={mobileActivePane}
+              onMobileActivePaneChange={setMobileActivePane}
+              primarySessionName={session?.name || '主聊天室'}
+              secondarySessionName={secondarySession?.name || '副聊天室'}
+              onCloseSecondary={closeSecondaryPane}
+              primaryContent={
+                <ChatView
+                  session={session}
+                  onBack={() => selectSession(null)}
+                  showBack={false}
+                  fullHeight={false}
+                  onJumpToSession={selectSession}
+                  allSessions={sidebarSortedSessions}
+                  onOpenComposer={openComposer}
+                  handoffInfo={handoffBySession[session.id] || null}
+                  onHandoffChange={handleHandoffChange}
+                  isSplit={isSplit}
+                  onToggleSplit={toggleSplit}
+                  splitOrientation={splitOrientation}
+                  onToggleSplitOrientation={toggleSplitOrientation}
+                  isSecondaryPane={false}
+                  isFocused={activePane === 'primary'}
+                />
+              }
+              secondaryContent={
+                secondarySession ? (
+                  <ChatView
+                    session={secondarySession}
+                    onBack={closeSecondaryPane}
+                    showBack={false}
+                    fullHeight={false}
+                    onJumpToSession={(s) => selectSession(s, 'secondary')}
+                    allSessions={sidebarSortedSessions}
+                    onOpenComposer={openComposer}
+                    handoffInfo={handoffBySession[secondarySession.id] || null}
+                    onHandoffChange={handleHandoffChange}
+                    isSplit={isSplit}
+                    onToggleSplit={toggleSplit}
+                    splitOrientation={splitOrientation}
+                    onToggleSplitOrientation={toggleSplitOrientation}
+                    isSecondaryPane={true}
+                    onClosePane={closeSecondaryPane}
+                    isFocused={activePane === 'secondary'}
+                  />
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)] p-6 text-center">
+                    <div className="text-sm text-gray-400">副聊天室尚未選取會話</div>
+                    <div className="text-xs text-gray-500 mb-2">點擊下方任一會話直接在副欄開啟：</div>
+                    <div className="flex flex-wrap gap-2 justify-center max-w-md">
+                      {sidebarSortedSessions.filter((s) => s.id !== session?.id).slice(0, 6).map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => selectSession(s, 'secondary')}
+                          className="px-3 py-1.5 rounded-lg bg-[oklch(0.2_0.02_264)] hover:bg-violet-600/30 text-xs text-gray-200 border border-[oklch(0.28_0.02_264)] truncate max-w-[180px]"
+                        >
+                          {s.name || '未命名'}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeSecondaryPane}
+                      className="mt-4 px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 border border-gray-700 rounded-md"
+                    >
+                      關閉副視窗
+                    </button>
+                  </div>
+                )
+              }
+            />
           ) : (
             <div className="h-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)]">
               <div className="w-10 h-10 rounded-[10px] bg-gradient-to-br from-[oklch(0.62_0.19_275)] to-[oklch(0.6_0.17_300)] flex items-center justify-center opacity-80" aria-hidden>

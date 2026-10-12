@@ -139,6 +139,12 @@ function ChatSessionHeader({
   onEffortChange,
   guest = null,
   onShare = null,
+  isSplit = false,
+  onToggleSplit = null,
+  splitOrientation = 'horizontal',
+  onToggleSplitOrientation = null,
+  isSecondaryPane = false,
+  onClosePane = null,
 }) {
   const isGuest = !!guest;
   const expanded = !headerCollapsed && !isGuest;
@@ -259,6 +265,26 @@ function ChatSessionHeader({
             {isGuest && <GuestRoleChip guest={guest} />}
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
+            {!isGuest && isSplit && onToggleSplitOrientation && (
+              <SplitOrientationButton
+                orientation={splitOrientation}
+                onClick={onToggleSplitOrientation}
+              />
+            )}
+            {!isGuest && isSecondaryPane && onClosePane && (
+              <button
+                type="button"
+                onClick={onClosePane}
+                title="關閉副欄"
+                aria-label="關閉副欄"
+                className="shrink-0 inline-flex items-center justify-center w-8 h-8 rounded-md text-[oklch(0.7_0.01_264)] hover:text-red-400 hover:bg-red-500/15 transition-colors"
+              >
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            )}
             {!isGuest && onShare && <ShareButton onClick={onShare} />}
             {showOpenButtons ? (
               <div className="flex items-center gap-0.5 pr-1 border-r border-[oklch(0.26_0.02_264)]">
