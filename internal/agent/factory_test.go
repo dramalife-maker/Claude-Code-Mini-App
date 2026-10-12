@@ -2,22 +2,29 @@ package agent
 
 import "testing"
 
-func TestIsEnabledGeminiAntigravityDisabled(t *testing.T) {
-	for _, typ := range []string{TypeGemini, TypeAntigravity, "gemini", "antigravity"} {
-		if IsEnabled(typ) {
-			t.Fatalf("%q should be disabled", typ)
+func TestIsEnabledAntigravityEnabled(t *testing.T) {
+	for _, typ := range []string{TypeAntigravity, "antigravity"} {
+		if !IsEnabled(typ) {
+			t.Fatalf("%q should be enabled", typ)
 		}
-		if reason := DisabledReason(typ); reason == "" {
-			t.Fatalf("%q should have disabled reason", typ)
+		if !CanCreate(typ) {
+			t.Fatalf("%q should be creatable", typ)
+		}
+		if reason := DisabledReason(typ); reason != "" {
+			t.Fatalf("%q should have no disabled reason, got %q", typ, reason)
 		}
 	}
 }
 
-func TestNewRunnerGeminiRejected(t *testing.T) {
-	for _, typ := range []string{TypeGemini, TypeAntigravity} {
-		if _, err := NewRunner(typ); err == nil {
-			t.Fatalf("NewRunner(%q) should fail", typ)
-		}
+func TestGeminiAliasAndCreateDisabled(t *testing.T) {
+	if !IsEnabled(TypeGemini) {
+		t.Fatal("gemini should be enabled via antigravity alias")
+	}
+	if CanCreate(TypeGemini) {
+		t.Fatal("gemini should not be creatable")
+	}
+	if reason := CreateDisabledReason(TypeGemini); reason == "" {
+		t.Fatal("gemini should have create-disabled reason")
 	}
 }
 

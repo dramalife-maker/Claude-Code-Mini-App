@@ -1,6 +1,6 @@
 把 Gemini CLI 當成一個 **CLI-based provider** 即可；你要補進既有 AI agent framework 的，核心仍是 **transport contract、session contract、stream contract、error contract、capability contract** 這五塊。
 
-> **已棄用：** 請改用 **Antigravity CLI（`agy`）**。見 [`antigravity-cli.md`](antigravity-cli.md) 與 `poc/antigravity-cli/`。本文保留 stream-json 事件細節供 `internal/antigravity` 參考。
+> **已棄用：** 請改用 **Antigravity CLI（`agy`）**。見 [`antigravity-cli.md`](antigravity-cli.md) 與 `poc/antigravity-cli/`。本文保留舊 Gemini 協議供歷史參考；目前 `internal/antigravity` 使用新的 `event`／`step_update` 協議。
 
 ## Provider 介面定位
 

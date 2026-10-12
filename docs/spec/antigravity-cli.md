@@ -1,8 +1,8 @@
 # Antigravity CLI（agy）整合規格
 
-> **取代 legacy Gemini CLI。** Gemini CLI 已退役；本專案曾以 `agent_type=antigravity`、子進程 `agy` 整合。  
-> **應用狀態（2026-06）：** 因 headless #76 未解，`gemini` / `antigravity` 已在 Mini App **停用**（不可新建 Session；舊 Session 送訊息會回錯）。POC 與 runner 程式碼保留待 upstream 修復。  
-> POC：`poc/antigravity-cli/` · 實作：`internal/antigravity/`
+> **取代 legacy Gemini CLI。** Gemini CLI 已退役；本專案以 `agent_type=antigravity`、子進程 `agy` 整合。
+> **應用狀態（2026-10-12）：** 已啟用 Antigravity，預設解析 `init`／`step_update`／`result` 串流；回歸測試與 Chrome 元件驗證通過，真實 CLI／Telegram WebView 本輪驗收待補。
+> 實作：`internal/antigravity/` · POC 與驗證：`poc/antigravity-cli/`
 
 ## 官方文件
 
@@ -14,75 +14,86 @@
 
 | 項目 | 規格 |
 |---|---|
-| 類型 | Local subprocess（`agy`） |
-| Prompt | `--print` / `-p` + **stdin pipe**（多行 prompt，避開 Windows argv 截斷） |
-| Session | `--conversation <id>`；`--continue` / `-c` 接最近對話 |
-| 權限 | `--dangerously-skip-permissions`（對應 `bypassPermissions`） |
-| 模型 | `--model <name>` |
-| stream-json | **尚未穩定**；設 `CC_AGY_STREAM_JSON=1` 時 runner 會嘗試（forward compat） |
+| 類型 | Local subprocess（`agy`，用後即棄） |
+| 通訊格式 | `--output-format stream-json`（NDJSON 串流） |
+| Prompt | **stdin pipe**（避開 Windows argv 截斷，支援多行輸入） |
+| Session 延續 | `--conversation <session_id>` 跨輪延續對話歷史 |
+| 權限模式 | 支援 `--mode accept-edits`、`--mode plan` 與 `--dangerously-skip-permissions` |
+| 模型設定 | `--model <name>`（可選用 `gemini-3.8-flash-high` 等） |
+| 推理強度 | `--effort <level>`，沿用會話設定 |
+| 工作目錄 | 設定子進程 `cmd.Dir`，並以 `--add-dir <work_dir>` 加入工作區 |
+| 配額用量 | `agy -p /usage` 解析 TSV，分別顯示 Gemini 與 Claude/GPT 的 5 小時與每週額度 |
 
-## Headless 整合風險（必讀）
-
-Mini App 以 **stdout pipe** 讀取子進程輸出（無 PTY）。  
-agy `--print` 在非 TTY 下可能 **exit 0 但 stdout 為空** → [Issue #76](https://github.com/google-antigravity/antigravity-cli/issues/76)。
-
-**部署前請執行：**
-
-```powershell
-cd poc/antigravity-cli
-./run_all_poc.ps1
-```
-
-若 `probe_headless.ps1` 失敗，需等待 upstream 修復或評估非架構內 workaround（本專案預設 **不使用 PTY**）。
-
-## 啟動範本（print 模式，預設）
-
-```bash
-agy --print \
-  [--conversation <session_id>] \
-  [--model <model>] \
-  [--dangerously-skip-permissions] \
-  [--print-timeout 5m]
-# prompt 經 stdin 餵入
-```
-
-## stream-json 模式（實驗）
-
-當 agy 支援時（或 `CC_AGY_STREAM_JSON=1`）：
+## 啟動命令範本
 
 ```bash
 agy --output-format stream-json \
   [--conversation <session_id>] \
-  ...
+  [--model <model>] \
+  [--effort <level>] \
+  [--mode accept-edits | plan] \
+  [--dangerously-skip-permissions] \
+  [--add-dir <work_dir>]
+# prompt 經 stdin 管道餵入
 ```
 
-事件格式與 legacy Gemini CLI **相容**（`init` / `message` / `tool_use` / `tool_result` / `error` / `result`）。詳細欄位見 [`gemini-cli.md`](gemini-cli.md)（stream 章節仍適用）。
+## 事件協議（NDJSON）
 
-## Permission 對應
+`agy` 輸出的頂層事件欄位以 `event` 區分：
 
-| Mini App `permission_mode` | agy |
-|---|---|
-| `default` | （無額外旗標） |
-| `acceptEdits` | 無 1:1 CLI 旗標 |
-| `bypassPermissions` | `--dangerously-skip-permissions` |
-| `plan` | 未對應 |
+1. **`init`**：
+   ```json
+   {"event":"init","conversation_id":"<id>","init":{"cwd":"...","tools":[...],"permission_mode":"..."}}
+   ```
+2. **`step_update` (文字增量)**：
+   ```json
+   {"event":"step_update","step_update":{"step_type":"agent_response","state":"ACTIVE","text_delta":"..."}}
+   ```
+3. **`step_update` (工具呼叫與結果)**：
+   ```json
+   {"event":"step_update","step_update":{"step_type":"tool","state":"ACTIVE","tool_name":"...","tool_info":{"parameters":{...}}}}
+   {"event":"step_update","step_update":{"step_type":"tool","state":"DONE","tool_name":"...","tool_info":{"output":"..."}}}
+   ```
+4. **`result`**：
+   ```json
+   {"event":"result","result":{"status":"SUCCESS","response":"...","usage":{"input_tokens":...,"output_tokens":...}}}
+   ```
 
-**無** Claude 式 `permission_denials` / `allow_once`；WS `allow_once` 對 antigravity session 為 no-op。
+## Permission Mode 對應
+
+| Mini App `permission_mode` | agy 命令列旗標 | 行為說明 |
+|---|---|---|
+| `default` | *(無額外旗標)* | 預設審核模式；無權限工具軟性拒絕 |
+| `acceptEdits` | `--mode accept-edits` | 自動允許檔案讀寫與編輯 |
+| `plan` | `--mode plan` | 唯讀規劃模式 |
+| `bypassPermissions` / `yolo` | `--dangerously-skip-permissions` | 全自動放行所有工具 |
 
 ## agent_type 遷移
 
 | 舊值 | 新值 |
 |---|---|
-| `gemini` | `antigravity`（factory 自動別名） |
+| `gemini` | `antigravity`（factory 自動別名導向 Antigravity runner） |
+
+舊 `gemini` Session 可繼續執行，但不可用此舊值新建 Session。新建使用 `antigravity`。
+
+## 模型與用量顯示
+
+- 模型選擇優先序：會話 `model` → `cli_extra_args` 的 `--model` → 標籤 fallback `gemini-3.8-flash-high`。fallback 是應用推論值；沒有指定 `--model` 時，CLI 仍使用自己的預設設定。
+- 切換模型時立即發送 `model_update`，執行前更新持久化資訊；重新連線與清除選擇後重新解析，避免沿用過期標籤。
+- 配額是帳戶級快取，將 CLI 回報的剩餘比例換算為已使用比例（限制在 0–100%），以 Gemini／Claude/GPT 標籤區分兩組窗口；5 小時窗口附重置倒數。
+- 手機精簡徽章取兩組窗口的最高使用率，展開頂欄及 tooltip 保留各組明細；100% 使用率沿用紅色警示，支援手動刷新。
+
+## 錯誤收尾與驗證
+
+- `CC_AGY_FORCE_PRINT_TEXT=1` 純文字後備模式若 exit 0、未取消且 stdout 為空白，發送 `EventError` 並保留 stderr，交由 WebSocket 既有流程收尾。
+- `result.usage` 已可解析，但目前沒有透過 `agent.Event` 傳遞回合 Token 統計，帳戶配額顯示另由 `/usage` 取得。
+- 驗證範圍與命令見 [審查修復紀錄](../plan/done/agy-review-fixes.md)。
 
 ## 環境變數
 
 | 變數 | 用途 |
 |---|---|
 | `CC_AGY_BIN` | 覆寫 agy 執行檔路徑 |
-| `CC_AGY_STREAM_JSON=1` | 啟用 stream-json 嘗試 |
+| `CC_AGY_FORCE_PRINT_TEXT=1` | 強制降級為純文字 print 模式（後備方案） |
 
-## 相關文件
-
-- [`gemini-cli.md`](gemini-cli.md) — legacy 規格（stream-json 事件細節）；**已棄用為執行目標**
-- [`headless.md`](headless.md) — 子進程 headless 通用模式
+舊 `CC_AGY_STREAM_JSON` 不再控制 runner；未強制純文字時預設使用串流。

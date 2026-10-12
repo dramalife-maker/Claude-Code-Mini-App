@@ -5,6 +5,7 @@
 ---
 
 ## 🚀 待執行項目
+- [ ] Antigravity 後續驗收：真實 CLI 多輪對話、權限模式、帳戶配額與 TG WebView；回合 Token 統計串接待補（見 [整合計劃](agy-integration.md)）
 - [x] 附件輸入與聊天呈現：輸入框內佔位／重試、訊息附件卡片、驗證預覽與歷史持久化；實機驗證待補（見 [計劃](todo/attachment-experience.md)）
 - [ ] Claude ask 規則走 miniapp 授權：`bypassPermissions` 下命中 `permissions.ask` 時跳出允許／拒絕，按允許同輪執行（見 [計劃](todo/claude-permission-prompt.md)）
 - [ ] 手機實機驗證：TG WebView（iOS／Android）📎 檔案選擇器、佇列 UI
@@ -13,6 +14,10 @@
 - [ ] 主要情境即時回饋與可靠性：授權／中斷 send 失敗處理、WS 斷線指示、用量刷新（手機）、建立 session 重複、載入中與登入卡住（見 [計劃](todo/ux-feedback.md)）
 - [ ] Kiro 故障復原：重新建置／啟動新版後觀察真實 EmptyResponse；自動接手的權限／工具設定與連鎖防護仍待 review（手動入口及 handoff 測試 race 已完成，見 [驗收紀錄](done/kiro-fault-recovery.md)）
 - [ ] 接手提示的整頁重載／離線恢復，及 TG WebView／真實供應商接手實機驗收（目前提示保存在 App 記憶體，見 [紀錄](done/manual-session-handoff.md)）
+
+## ✅ 本輪完成（2026-10-12）
+
+- [x] Antigravity 審查修復：空白輸出收尾、模型切換／執行／重連標籤同步、Gemini／Claude/GPT 配額與手機耗盡警示；回歸測試、全專案測試、建置及 Chrome 元件驗證通過（見 [完成紀錄](done/agy-review-fixes.md)）；真實 CLI 與 TG WebView 實機驗收待補
 
 ## ✅ 本輪完成（2026-10-07）
 

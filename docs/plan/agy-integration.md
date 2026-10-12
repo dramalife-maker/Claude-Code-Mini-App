@@ -1,160 +1,124 @@
-# Antigravity CLI（agy）整合計畫
+# Antigravity CLI（agy v1.3.3）整合升級計畫
 
-> 狀態：規劃中（POC 通過）
-> 日期：2026-08-11
-> 實測環境：Windows · **agy 1.1.12**（前次評估 1.0.14）
-> 關聯：`docs/spec/antigravity-cli.md`、`internal/antigravity/`、`poc/antigravity-cli/`
-> POC 證據：`poc/antigravity-cli/samples/poc-results.md`、`samples/stream-json-1.1.12.jsonl`
-
----
-
-## 1. 為何現在可做（先前封鎖已解除）
-
-前次（1.0.14）兩大 blocker 於 1.1.12 皆修復（已實測）：
-
-| Blocker | 1.0.14 | 1.1.12 |
-|---|---|---|
-| Issue #76：非 TTY pipe 下 `--print` 空 stdout | FAIL | **PASS**（stdout 有內容） |
-| 無 stream-json | SKIP | **PASS**（`--output-format stream-json` 真 NDJSON） |
-
-新增可用旗標：`--output-format`、`--mode`(accept-edits/plan)、`--effort`、`--json-schema`。
-`--conversation` 續接、`agy models` 亦實測可用。
-
-**ACP 不在路徑上**：agy 無 `--acp`/`acp` server（POC FAIL）。整合走 **stream-json + 每訊息 spawn**（與 `CLAUDE.md`「用後即棄」一致，不做常駐進程）。
+> **狀態**：核心實作、回歸測試與 Chrome 元件驗證完成；真實 CLI／TG WebView 驗收及回合 Token 統計串接待補
+> **日期**：2026-10-12
+> **目標版本**：Antigravity CLI **1.3.3**（前次規劃為 1.1.12，歷史停用點為 1.0.14）
+> **關聯文件**：[`docs/spec/antigravity-cli.md`](../spec/antigravity-cli.md)、[`internal/antigravity/`](../../internal/antigravity/)；本機 PoC：`poc/antigravity-cli/`（Git 忽略目錄）
 
 ---
 
-## 2. 目標與範圍
+## 1. 歷史限制與目前實作
 
-**目標**：重新啟用 `agent_type=antigravity`，讓使用者能新建 Antigravity session、串流回覆、續接對話、選 model 與模式。
+本專案於 2026 年 6 月曾以 `agent_type=antigravity` 與子進程 `agy` 整合，但因受限於官方 CLI 的兩大致命阻礙而宣告停用：
+1. **Issue #76**：在 Windows 非 TTY（Go 子進程 pipe）環境下執行 `--print` 會 exit 0 但 stdout 完全空白。
+2. **缺乏穩定 NDJSON 串流**：舊版無 `--output-format stream-json`。
 
-**MVP 範圍**：
-- stream-json runner 改寫（對齊 1.1.12 事件 schema）
-- 後端解除停用、前端 composer 可選
-- model / `--mode` / `--effort` 旗標對應
-- 單元測試 + 手動對照
+### 目前實作與驗證（2026-10-12）
 
-**非目標（暫緩）**：
-- 結構化工具事件端到端顯示（WS + 前端 tool UI）→ Phase 2
-- 常駐多工進程 → 不做
-- 配額徽章 → agy 無配額概念，維持隱藏
-- thinking 顯示 → agy 不吐思考文字，不實作
+- 既有本機 agy 1.1.12 PoC（`poc/antigravity-cli/samples/poc-results.md`）已記錄非 TTY 輸出及 NDJSON 成功；本輪沒有重跑真實 CLI。
+- runner 已改為預設 `stream-json`，解析 `init`、`step_update`、`result`，並以 `--conversation` 延續會話。
+- 權限模式映射、模型／推理強度參數與 Gemini／Claude/GPT 兩組帳戶配額已實作。
+- 空白 print 輸出收尾、模型標籤同步及手機最高使用率警示已有回歸測試；全專案測試、建置與 Chrome 元件驗證通過。
+- `usage` 欄位已解析，但尚未透過 `agent.Event` 傳遞回合 Token 統計。真實多輪對話、權限模式、帳戶配額及 TG WebView 驗收仍待補。
+
+詳細驗證見 [審查修復紀錄](done/agy-review-fixes.md)。
 
 ---
 
-## 3. 已驗證的 schema（1.1.12 與現有解析器不相容）
-
-現有 `events.go` / `resolve.go` 假設 legacy Gemini schema（頂層 `type`、`message`/`tool_use`/`tool_result`），**全部過時**。實際：
+## 2. 整合架構與契約對照
 
 ```
-event:init      → { conversation_id, init:{ cwd, tools[], permission_mode } }   // 無 model 欄位
-event:step_update → { step_update:{ conversation_id, step_index, state, step_type, ... } }
-    step_type:
-      user_input | unknown | checkpoint | system_message
-      agent_response → text_delta（該 step 的完整文字，非字元級）、usage{ thinking_tokens... }
-      tool          → state ACTIVE|DONE、tool_name、tool_info{ name, parameters }（無工具輸出內容）
-event:result    → { conversation_id, status: SUCCESS|ERROR, response, num_turns, usage }
+桌面視窗 / 瀏覽器 / Telegram Mini App
+        ↕ WebSocket
+┌──────────────────────────────────────────────┐
+│  Go 後端 (internal/ws, internal/agent)        │
+│  - factory.go 註冊檢查與舊值別名              │
+│  - runner.go 啟動子進程                      │
+│  - events.go 解析 NDJSON 串流                │
+└──────────────────────┬───────────────────────┘
+                       ↓ stdin: prompt (pipe)
+  agy --output-format stream-json
+      --conversation <session_id>
+      --model <model>
+      --mode <accept-edits | plan>
+      --dangerously-skip-permissions
+      --add-dir <work_dir>
+                       ↓ stdout: NDJSON events
+┌──────────────────────────────────────────────┐
+│  event: init (conversation_id)               │
+│  event: step_update (agent_response / tool)  │
+│  event: result (status, response, usage)     │
+└──────────────────────────────────────────────┘
 ```
 
-事件對應 `agent.Event`：
+### 2.1 事件對應表
 
-| 介面事件 | 來源 | UI 是否已消費 |
+| agy 1.3.3 事件 | 欄位細節 | 映射為 `agent.Event` | 處理方式 |
+|---|---|---|---|
+| `event: "init"` | `conversation_id`, `init.tools` | `EventSessionInit` | 綁定會話 ID |
+| `event: "step_update"` | `step_type: "agent_response"`, `text_delta` | `EventStreamStart` (首筆) + `EventDelta` | 增量文字串流廣播 |
+| `event: "step_update"` | `step_type: "tool"`, `state: "ACTIVE"` | `EventActivity` / `EventToolStarted` | 提示工具執行中 |
+| `event: "step_update"` | `step_type: "tool"`, `state: "DONE"` | `EventToolCompleted` | 工具完成 |
+| `event: "result"` | `status: "SUCCESS"`, `response`, `usage` | `EventDone` | 回合完成並保留回覆；usage 僅解析，尚未轉交 Token 統計 |
+| `event: "result"` | `status: "ERROR"`, `error` | `EventError` | 錯誤通知 |
+
+### 2.2 權限模式 (Permission Mode) 映射
+
+| Mini App `permission_mode` | agy 1.3.3 旗標 | 實測行為 |
 |---|---|---|
-| `EventSessionInit` | `init.conversation_id` | ✅ |
-| `EventStreamStart` | 首個 `agent_response` | ✅ |
-| `EventDelta` | `agent_response.text_delta` | ✅（整段式） |
-| `EventDone` | `result.response` + `conversation_id` | ✅ |
-| `EventError` | `result.status==ERROR` / stderr | ✅ |
-| `EventActivity`（選用） | `tool` step 的 `tool_name` | ✅（進度提示，如 Codex/Kiro） |
-| `EventToolStarted/Completed` | `tool` step ACTIVE/DONE + `tool_info.parameters` | ❌ WS 無 case，Phase 2 |
-| `EventThinking` | 無文字（只有 token 數） | 不實作 |
-| `EventPermDenied` | 無互動授權 | 不實作 |
+| `default` | *(無額外旗標)* | 預設審核模式；無權限工具軟性拒絕並帶 `denied_actions` |
+| `acceptEdits` | `--mode accept-edits` | 自動允許檔案讀寫與編輯，終端機指令仍需白名單 |
+| `plan` | `--mode plan` | 唯讀規劃模式，不進行實際檔案或指令執行 |
+| `bypassPermissions` / `yolo` | `--dangerously-skip-permissions` | 全自動放行所有工具 |
 
 ---
 
-## 4. 工作項目（對應檔案）
+## 3. 工作項目 (Action Items)
 
-### 4.1 後端 runner（核心）
+### Phase 1：核心協定與 Runner 重構 (`internal/antigravity`)
+- [x] **重寫 `internal/antigravity/events.go`**：
+  - 定義 `StreamTopEvent`（含 `Event`、`ConversationID`）。
+  - 定義 `StepUpdatePayload`（含 `StepType`, `State`, `TextDelta`, `ToolName`, `ToolInfo`）。
+  - 定義 `ResultPayload`（含 `Status`, `Response`, `NumTurns`, `Usage`, `DeniedActions`）。
+  - 清理過時的 legacy Gemini 結構。
+- [x] **改寫 `internal/antigravity/runner.go`**：
+  - 預設啟用 `stream-json` 模式（移除 `CC_AGY_STREAM_JSON` 環境變數門檻）。
+  - 完善 `appendCommonArgs()`：對應 `--conversation`, `--model`, `--mode accept-edits`, `--mode plan`, `--dangerously-skip-permissions`, `--add-dir`。
+  - 重構 `dispatch()`：處理 `agent_response` 增量串流與 `result` 完成事件。
+  - 移除 Issue #76 專用錯誤型別，保留一般空白 print 輸出的錯誤收尾。
+- [x] **更新 `internal/antigravity/runner_test.go`**：
+  - 以新 NDJSON schema 建立測試案例，並用假 CLI 驗證空白輸出、程序失敗與取消。
 
-- [ ] **`internal/antigravity/events.go`**：重寫 `StreamEvent` 為新 schema
-  （`Event`、巢狀 `Init`/`StepUpdate`/`Result`、`ConversationID`、`StepType`、`TextDelta`、`ToolInfo`）。
-  刪除過時的 `type`/`message`/`IsAssistantDelta`。
-- [ ] **`internal/antigravity/runner.go`**：
-  - `Run` 預設走 stream-json（移除 `CC_AGY_STREAM_JSON` gate；print-text 保留為降級路徑）。
-  - `appendCommonArgs`：
-    - `--model`（沿用 `ArgModel`）
-    - `permission_mode`：`bypassPermissions`→`--dangerously-skip-permissions`；`plan`→`--mode plan`；`acceptEdits`→`--mode accept-edits`
-    - `ArgEffort`→`--effort low|medium|high`
-    - `--add-dir <WorkDir>`：收斂 agy 工作範圍（緩解「跑去讀別的 repo」，見 §6）
-  - `dispatch()`：改用 `switch e.Event`：init→SessionInit、agent_response→StreamStart(首次)+Delta、tool→（選用 Activity）、result→Done/Error。
-  - sessionID 一律取 `conversation_id`。
-- [ ] **`internal/antigravity/runner_test.go`**：改用 1.1.12 樣本；表格式解析測試（用 `samples/stream-json-1.1.12.jsonl`）；`mapPermissionMode` 三種模式測試。
+### Phase 2：解除停用、Model 擷取與 Quota 實作
+- [x] **解除後端停用開關**：
+  - 移除空的 `disabledAgentTypes` 與無效分支；保留註冊檢查及 Kiro／Gemini 新建限制。
+- [x] **Model 資訊擷取**：
+  - 更新 `ExtractFromAntigravityLines()`，並在 WebSocket 切換、執行及重連時同步模型標籤。
+- [x] **實作 Quota 配額擷取**：
+  - 在 `internal/usage/quota.go` 實作 `FromAgyUsageText()` 解析 TSV。
+  - 在 `internal/quota/antigravity.go` 實作 `Fetch()` 呼叫 `agy -p "/usage"`。
 
-### 4.2 啟用與 model 顯示
+### Phase 3：前端介面解鎖
+- [x] **開放 Session 建立選項**：
+  - 更新 `internal/static/js/session/NewSessionComposer.js`，允許選擇 Antigravity 與自訂模型。
+- [x] **校準權限模式標籤**：
+  - 更新 `internal/static/js/ui/ui-atoms.js`，顯示標準權限選項。
+- [x] **開放 Quota 徽章**：
+  - 更新 `internal/static/js/chat/chat-header.js`，解除 Antigravity 配額重新整理限制。
 
-- [ ] **`internal/agent/factory.go`**：從 `disabledAgentTypes` 移除 `antigravity`（連帶 `gemini` alias 解封）。
-- [ ] **`internal/model/resolve.go`** `ExtractFromAntigravityLines`：新 init **不帶 model** → 改為讀 `--model` flag / 預設值；stream 無法取得時回退 flag。低優先。
-
-### 4.3 前端（多數已就緒，只補兩處）
-
-- [ ] **`session/NewSessionComposer.js`**：`NEW_SESSION_AGENT_OPTIONS` 加入 `{ value:'antigravity', label:'Antigravity' }`；
-  解除進階 model 輸入對 antigravity 的隱藏（`newForm.agent !== 'antigravity'`，因 `--model` 現可用）。
-- [ ] **`ui/ui-atoms.js`**（約 L119-140）：antigravity 權限選項由舊的 `auto_edit/plan/yolo（--approval-mode）`
-  改為對齊 1.1.12：`default / acceptEdits / plan / bypassPermissions`。
-- 已就緒（無需改）：`core.js` AGENT_LABEL、chat-header quota 排除、`useChatSocket.js`、徽章。
-
-### 4.4 文件
-
-- [ ] `docs/spec/antigravity-cli.md`：移除停用橫幅，改寫新 schema 與旗標。
-- [ ] `poc/antigravity-cli/README.md`：更新「最新實測」。
-- [ ] `docs/plan/todo.md`：勾記；完成後移入 `docs/plan/done/`。
-
-### 4.5 Phase 2（選用，不阻擋 MVP）
-
-- [ ] `internal/ws/handler.go` 加 `EventToolStarted/Completed` case → 廣播 tool WS 訊息。
-- [ ] 前端 tool 呼叫 UI（含 `tool_info.parameters`；注意 agy 無工具輸出內容）。
-  此為**共用基礎建設**（Claude/Kiro 未來亦受惠），故獨立於 agy MVP。
+### Phase 4：文件更新與端到端驗證
+- [x] 更新 `docs/spec/antigravity-cli.md`。
+- [x] 執行 `go test ./...` 與 `go build ./cmd/server ./cmd/desktop`。
+- [x] 執行 `node scripts/quota-compact.test.cjs`，並以 Chrome 驗證桌面／手機配額元件。
+- [ ] 驗證多輪對話、權限模式與用量更新。
+- [ ] 將 `result.usage` 串接至回合 Token 統計。
 
 ---
 
-## 5. 使用者可見表現（設定預期）
+## 4. 完成定義 (Definition of Done)
 
-- 回覆**整段跳出**（`text_delta` 非字元級），不如 Claude/Cursor 平滑。
-- agy 很 **agentic**：簡單問題也會自主多次呼叫工具，偶有 `status:ERROR` 迴圈。
-- **慢且吃 token**（實測 trivial 任務 ~11 萬 input tokens / 19s）。可考慮預設 `gemini-3.x-flash` 降低成本。
-- 中間 narration 會混入正文（agy 把過程話算進 `agent_response`）。
-- 無 thinking 泡泡、無配額徽章。
-
----
-
-## 6. 決策與風險
-
-| 項目 | 決策 | 理由 / 殘留風險 |
-|---|---|---|
-| 生命週期 | 每訊息 spawn（stream-json） | 與現有架構一致；agy print 本為一問一答 |
-| WorkDir 逸出 | 加 `--add-dir <WorkDir>` | 實測 agy 曾讀到別的 repo；`--add-dir` 收斂但**不保證**完全不逛出，需手動複驗 |
-| 工具事件 | MVP 不接，Phase 2 | 正文已含 narration，先能用；結構化顯示是共用工程 |
-| 成本/延遲 | 文件標註，預設可選 flash | 交由使用者選 model |
-| print-text 降級 | 保留 | stream-json 若異常仍有一問一答回退 |
-
----
-
-## 7. 完成定義（DOD / 驗證）
-
-1. `go build ./...` 通過；`go test ./internal/antigravity/... ./internal/model/...` 通過。
-2. 解析單元測試：用 `samples/stream-json-1.1.12.jsonl` 還原 init/agent_response/result → 對應事件正確。
-3. 手動對照（登入 agy、重啟 server）：
-   - 新建 **Antigravity** session → 送 prompt → 看到串流回覆 + 收尾。
-   - 第二則訊息 `--conversation` 續接記得前文（密語測試）。
-   - 進階填 `--model gemini-3.x-flash` → log 顯示旗標生效。
-   - 權限模式 `plan` / `bypassPermissions` → log 顯示 `--mode plan` / `--dangerously-skip-permissions`。
-4. 未啟用 Phase 2 時，工具事件被安全忽略（不報錯、不空訊息）。
-
----
-
-## 8. 明確不做
-
-- 不做 ACP（agy 不支援）。
-- 不做常駐進程 / process manager。
-- 不做配額徽章、thinking 顯示。
-- 不上小模型清洗 narration（可 Phase 2 用確定性 marker 過濾，比照 Kiro）。
+1. `go build ./cmd/server` 與 `go test ./...` 無報錯通過。
+2. 前端可成功建立 `agent_type=antigravity` 之 Session 並正常收發訊息。
+3. 對話即時串流與 Markdown 渲染流暢，回合收尾帶有正確 Token 用量（Token 統計串接尚未完成）。
+4. 第二則訊息帶相同 `--conversation <id>`，可成功保留上下文。
+5. 點擊頂部 Quota 按鈕可正常顯示並更新配額資訊。

@@ -9,7 +9,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/model"
 )
 
-// resolveStreamless 解析 stream 不含 model 的 agent（codex / kiro）實際會用的 model：
+// resolveStreamless 解析 stream 不含 model 的 agent 實際會用的 model：
 // 下拉選的 sess.Model 優先（與 run 時 extra[ArgModel] 的優先序一致），否則 cli_extra_args，最後才是全域設定。
 func resolveStreamless(sess *db.Session, agentType string) model.Info {
 	args := sess.CliExtraArgs
@@ -20,7 +20,7 @@ func resolveStreamless(sess *db.Session, agentType string) model.Info {
 }
 
 func isStreamless(agentType string) bool {
-	return agentType == agent.TypeCodex || agentType == agent.TypeKiro
+	return agentType == agent.TypeCodex || agentType == agent.TypeKiro || agentType == agent.TypeAntigravity || agentType == agent.TypeGemini
 }
 
 func sessionModelPayload(sess *db.Session) *model.Payload {
@@ -31,10 +31,11 @@ func sessionModelPayload(sess *db.Session) *model.Payload {
 	if agentType == "" {
 		agentType = agent.TypeClaude
 	}
-	if agentType == agent.TypeAntigravity || agentType == agent.TypeGemini {
-		return nil
-	}
 	storedModel, storedSource := sess.ActiveModel, sess.ActiveModelSource
+	// Antigravity 的模型是由設定推論，清除選擇後也須重新解析，避免保留舊標籤。
+	if agentType == agent.TypeAntigravity || agentType == agent.TypeGemini {
+		storedModel, storedSource = "", ""
+	}
 	// 這類 agent 的 ActiveModel 只是推論值（可能是舊版寫入的全域預設），有明確選擇時以選擇為準。
 	if isStreamless(agentType) && strings.TrimSpace(sess.Model) != "" {
 		storedModel, storedSource = sess.Model, string(model.SourceCliFlag)

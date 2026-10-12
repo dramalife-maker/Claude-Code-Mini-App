@@ -630,8 +630,8 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					}
 				}()
 
-				// Kiro / Codex stream 不含 model，run 前解析並推送。
-				if agentType == agent.TypeKiro || agentType == agent.TypeKiroACP || agentType == agent.TypeCodex {
+				// stream 不含 model，run 前解析並推送。
+				if isStreamless(agentType) || agentType == agent.TypeKiroACP {
 					info := resolveStreamless(s, agentType)
 					if p := persistInfoUpdate(database, sessionID, info); p != nil {
 						broadcast(serverMsg{Type: "model_update", Model: p})

@@ -4,10 +4,10 @@
 
 ## 代理與 Session
 
-- **多代理** — Claude Code、Cursor Agent、Codex、Kiro ACP（透過 Agent Client Protocol 提供互動式授權提示）；依 Session 選擇。既有的 Kiro CLI Session 仍可執行，新建請改用 Kiro ACP（Gemini / Antigravity 因 headless 限制暫停）。模型清單於啟動時向各 CLI 取得（含 Claude），也可在 設定 → 一般 不重啟直接重新抓取
+- **多代理** — Claude Code、Cursor Agent、Codex、Antigravity（`agy`，NDJSON 串流）、Kiro ACP（透過 Agent Client Protocol 提供互動式授權提示）；依 Session 選擇。既有 Kiro CLI Session 仍可執行，新建請改用 Kiro ACP；舊 `gemini` Session 使用 Antigravity runner，新建請選 Antigravity。支援的模型清單於啟動時向各 CLI 取得（含 Claude），也可在 設定 → 一般 不重啟直接重新抓取
 - **Session 管理** — 多對話、各自綁定代理、`work_dir` 與權限模式
 - **權限流程** — 顯示完整指令／檔案內容；Claude prompt-tool 與 Kiro ACP 可允許單次操作。舊 Claude 遭拒後選「允許工具並重試」，會在本次重試放行列出的工具；編輯類工具另可允許並自動允許編輯
-- **用量徽章** — Session header 顯示帳戶用量（如 Claude `5h 16% · Week 9%`）
+- **用量徽章** — Session header 顯示帳戶用量（如 Claude `5h 16% · Week 9%`）；Antigravity 分別顯示 Gemini 與 Claude/GPT 額度，手機精簡徽章顯示最高使用率
 - **未讀追蹤** — 列表標示有新動態的 Session，可一鍵「全部標為已讀」。列表透過 `/events` WebSocket 即時更新（輪詢 30 秒作為保底）；分頁標題顯示未讀數，其他 Session 完成或待授權時會跳 toast
 - **快速跳轉** — Ctrl/Cmd+P 開啟類 VS Code 的跳轉面板，可依名稱、目錄、分支搜尋並切換 Session
 - **訊息佇列** — 執行中送出的訊息會排隊（存 DB、重啟不遺失）依序執行；失敗／中斷時暫停，可手動繼續或移除

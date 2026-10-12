@@ -29,6 +29,28 @@ func TestFromClaudeUsageText(t *testing.T) {
 	}
 }
 
+func TestFromAgyUsageText(t *testing.T) {
+	raw := "Gemini Models\tWeekly Limit Remaining\t84%\t2026-10-14T08:22:23Z\n" +
+		"Gemini Models\tFive Hour Limit Remaining\t98%\t2026-10-12T06:52:28Z\n" +
+		"Claude and GPT models\tWeekly Limit Remaining\t100%\t2026-10-19T01:57:08Z\n" +
+		"Claude and GPT models\tFive Hour Limit Remaining\t100%\t2026-10-12T06:57:08Z\n"
+	q := FromAgyUsageText(raw)
+	if len(q.Windows) != 4 {
+		t.Fatalf("expected 4 windows, got %d", len(q.Windows))
+	}
+	// Gemini Weekly: 84% remaining -> 16% used
+	if *q.Windows[0].Percent != 16 {
+		t.Fatalf("gemini weekly: got %v, expected 16", *q.Windows[0].Percent)
+	}
+	// Gemini 5h: 98% remaining -> 2% used
+	if *q.Windows[1].Percent != 2 {
+		t.Fatalf("gemini 5h: got %v, expected 2", *q.Windows[1].Percent)
+	}
+	if q.Windows[1].Kind != "session" {
+		t.Fatalf("expected session kind, got %s", q.Windows[1].Kind)
+	}
+}
+
 func TestFromClaudeOAuthUsageJSON(t *testing.T) {
 	q, err := FromClaudeOAuthUsageJSON([]byte(sampleClaudeOAuthJSON))
 	if err != nil {

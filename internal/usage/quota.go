@@ -10,7 +10,7 @@ import (
 
 // QuotaWindow 表示單一用量窗口（5 小時、週、帳單週期等）。
 type QuotaWindow struct {
-	Kind     string   `json:"kind"`               // session | weekly | billing | credits
+	Kind     string   `json:"kind"` // session | weekly | billing | credits
 	Label    string   `json:"label,omitempty"`
 	Percent  *float64 `json:"percent,omitempty"`
 	Used     *float64 `json:"used,omitempty"`
@@ -27,8 +27,8 @@ type QuotaInfo struct {
 }
 
 var (
-	claudeSessionRe = regexp.MustCompile(`(?i)Current session:\s*(\d+(?:\.\d+)?)%\s*used\s+[^\r\n]*?resets\s*(.+)`)
-	claudeWeeklyRe  = regexp.MustCompile(`(?i)Current week \(all models\):\s*(\d+(?:\.\d+)?)%\s*used\s+[^\r\n]*?resets\s*(.+)`)
+	claudeSessionRe    = regexp.MustCompile(`(?i)Current session:\s*(\d+(?:\.\d+)?)%\s*used\s+[^\r\n]*?resets\s*(.+)`)
+	claudeWeeklyRe     = regexp.MustCompile(`(?i)Current week \(all models\):\s*(\d+(?:\.\d+)?)%\s*used\s+[^\r\n]*?resets\s*(.+)`)
 	kiroQuotaCreditsRe = regexp.MustCompile(`Credits\s*\(([\d.]+)\s+of\s+([\d.]+)`)
 	kiroQuotaPercentRe = regexp.MustCompile(`(\d+(?:\.\d+)?)%`)
 )
@@ -50,6 +50,62 @@ func FromClaudeUsageText(text string) *QuotaInfo {
 			Label:    "Current week (all models)",
 			Percent:  floatPtr(parseFloat(m[1])),
 			ResetsAt: strings.TrimSpace(m[2]),
+		})
+	}
+	return out
+}
+
+// FromAgyUsageText 解析 `agy -p "/usage"` 的 TSV 輸出。
+func FromAgyUsageText(text string) *QuotaInfo {
+	out := &QuotaInfo{Provider: "antigravity", Source: "agy -p /usage text"}
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 3 {
+			continue
+		}
+		group := strings.TrimSpace(parts[0])     // e.g. "Gemini Models" or "Claude and GPT models"
+		limitType := strings.TrimSpace(parts[1]) // e.g. "Weekly Limit Remaining" or "Five Hour Limit Remaining"
+		pctStr := strings.TrimSpace(parts[2])    // e.g. "84%"
+		resetTime := ""
+		if len(parts) >= 4 {
+			resetTime = strings.TrimSpace(parts[3])
+		}
+
+		pctNum := parseFloat(strings.TrimSuffix(pctStr, "%"))
+		// agy 回報的是 "Remaining" 百分比，系統慣例為已使用（Used）百分比
+		usedPct := min(100, max(0, 100-pctNum))
+
+		kind := "custom"
+		label := group
+		isGemini := strings.Contains(strings.ToLower(group), "gemini")
+		if strings.Contains(strings.ToLower(limitType), "five hour") || strings.Contains(strings.ToLower(limitType), "5 hour") {
+			if isGemini {
+				kind = "session"
+				label = "Gemini 5h"
+			} else {
+				kind = "session_claude"
+				label = "Claude/GPT 5h"
+			}
+		} else if strings.Contains(strings.ToLower(limitType), "weekly") {
+			if isGemini {
+				kind = "weekly"
+				label = "Gemini Week"
+			} else {
+				kind = "weekly_claude"
+				label = "Claude/GPT Week"
+			}
+		}
+
+		out.Windows = append(out.Windows, QuotaWindow{
+			Kind:     kind,
+			Label:    label,
+			Percent:  floatPtr(usedPct),
+			ResetsAt: resetTime,
 		})
 	}
 	return out

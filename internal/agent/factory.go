@@ -4,26 +4,21 @@ import "fmt"
 
 // AgentType 常數對應 sessions.agent_type 欄位允許的值。
 const (
-	TypeClaude = "claude"
-	TypeCursor = "cursor"
+	TypeClaude      = "claude"
+	TypeCursor      = "cursor"
 	TypeCodex       = "codex"
 	TypeAntigravity = "antigravity"
 	TypeKiro        = "kiro"
 	// TypeKiroACP：kiro-cli acp（JSON-RPC），與 TypeKiro（--no-interactive）並存。
 	TypeKiroACP = "kiroacp"
-	// TypeGemini 已棄用；與 TypeAntigravity 一併停用（headless 無法使用，見 issue #76）。
+	// TypeGemini 是 Antigravity 的舊別名，既有 Session 可執行，但不可新建。
 	TypeGemini = "gemini"
 )
 
-// disabledAgentTypes 為應用內停用的 agent_type（仍可讀取舊 Session，但不可新建或執行）。
-var disabledAgentTypes = map[string]string{
-	TypeGemini:      "Gemini / Antigravity CLI 已停用（headless 無法使用）",
-	TypeAntigravity: "Gemini / Antigravity CLI 已停用（headless 無法使用）",
-}
-
 // createDisabledAgentTypes 不可新建，但既有 Session 仍可執行。
 var createDisabledAgentTypes = map[string]string{
-	TypeKiro: "請改用 Kiro ACP（kiroacp）建立新會話",
+	TypeKiro:   "請改用 Kiro ACP（kiroacp）建立新會話",
+	TypeGemini: "請改用 Antigravity（antigravity）建立新會話",
 }
 
 func normalizeAgentType(agentType string) string {
@@ -36,29 +31,24 @@ func normalizeAgentType(agentType string) string {
 	return agentType
 }
 
-// IsEnabled 檢查 agent_type 是否可執行 runner（既有 Session 仍可用）。
-func IsEnabled(agentType string) bool {
-	_, disabled := disabledAgentTypes[normalizeAgentType(agentType)]
-	return !disabled
-}
+// IsEnabled 保留既有 API；ponytail: 目前沒有停用的 agent_type，註冊檢查由 IsRegistered 處理。
+func IsEnabled(string) bool { return true }
 
 // CanCreate 檢查 agent_type 是否可新建 Session。
 func CanCreate(agentType string) bool {
-	if !IsEnabled(agentType) {
+	if _, disabled := createDisabledAgentTypes[agentType]; disabled {
 		return false
 	}
 	_, disabled := createDisabledAgentTypes[normalizeAgentType(agentType)]
 	return !disabled
 }
 
-// DisabledReason 回傳停用原因；未停用時為空字串。
-func DisabledReason(agentType string) string {
-	return disabledAgentTypes[normalizeAgentType(agentType)]
-}
+// DisabledReason：目前沒有停用的 agent_type。
+func DisabledReason(string) string { return "" }
 
 // CreateDisabledReason 回傳不可新建的原因；可新建時為空字串。
 func CreateDisabledReason(agentType string) string {
-	if reason := DisabledReason(agentType); reason != "" {
+	if reason, ok := createDisabledAgentTypes[agentType]; ok {
 		return reason
 	}
 	return createDisabledAgentTypes[normalizeAgentType(agentType)]
@@ -78,9 +68,6 @@ func Register(name string, build runnerBuilder) {
 // agentType 為空字串時預設為 "claude"。
 func NewRunner(agentType string) (Runner, error) {
 	agentType = normalizeAgentType(agentType)
-	if reason := disabledAgentTypes[agentType]; reason != "" {
-		return nil, fmt.Errorf("%s", reason)
-	}
 	b, ok := registry[agentType]
 	if !ok {
 		return nil, fmt.Errorf("unknown agent type: %q", agentType)
@@ -91,9 +78,6 @@ func NewRunner(agentType string) (Runner, error) {
 // IsRegistered 檢查某個 agent type 是否已註冊（有對應實作）。
 func IsRegistered(agentType string) bool {
 	agentType = normalizeAgentType(agentType)
-	if !IsEnabled(agentType) {
-		return false
-	}
 	_, ok := registry[agentType]
 	return ok
 }

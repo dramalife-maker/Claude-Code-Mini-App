@@ -29,6 +29,8 @@ func ResolveForSession(provider string, cliArgs []string, storedModel, storedSou
 		return ExtractFromCodexLines(nil, flag)
 	case agent.TypeKiro, agent.TypeKiroACP:
 		return ResolveKiro(flag)
+	case agent.TypeAntigravity, agent.TypeGemini:
+		return ExtractFromAntigravityLines(nil, flag)
 	default:
 		return Info{Provider: provider, DisplayText: "—", Source: SourceUnknown}
 	}

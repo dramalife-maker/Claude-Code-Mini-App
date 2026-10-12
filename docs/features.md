@@ -4,10 +4,10 @@
 
 ## Agents & sessions
 
-- **Multi-agent** — Claude Code, Cursor Agent, Codex, Kiro ACP (interactive permission prompts over Agent Client Protocol); per session. Existing Kiro CLI sessions keep working, but new ones use Kiro ACP (Gemini / Antigravity paused due to headless limits). Model lists are fetched from each CLI on startup (Claude included) and can be refreshed without a restart from Settings → General
+- **Multi-agent** — Claude Code, Cursor Agent, Codex, Antigravity (`agy`, NDJSON streaming), Kiro ACP (interactive permission prompts over Agent Client Protocol); per session. Existing Kiro CLI sessions keep working, but new ones use Kiro ACP. Legacy `gemini` sessions use the Antigravity runner; choose Antigravity for new sessions. Supported model lists are fetched from each CLI on startup (Claude included) and can be refreshed without a restart from Settings → General
 - **Sessions** — Multiple conversations, each with its own agent, `work_dir` and permission mode
 - **Permissions** — Shows the full command / file content. Claude prompt-tool and Kiro ACP approve a single operation; the legacy Claude denial flow allows the listed tools for the retry run. Edit tools can also be allowed with auto-accept edits
-- **Quota badge** — Session header shows usage (e.g. Claude `5h 16% · Week 9%`)
+- **Quota badge** — Session header shows usage (e.g. Claude `5h 16% · Week 9%`). Antigravity shows separate Gemini and Claude/GPT allowances; the compact mobile badge shows the highest usage percentage
 - **Unread tracking** — Sessions with new activity are marked unread in the list; "read all" to clear. The list updates in real time over a `/events` WebSocket (30 s polling as a fallback); the tab title shows the unread count, and a toast appears when another session finishes or needs approval
 - **Quick switcher** — Ctrl/Cmd+P opens a VS Code-style palette to jump to any session (search by name, directory, or branch)
 - **Message queue** — Messages sent while a task is running are queued (persisted in the DB, survives restarts) and run in order; the queue pauses on failure or interrupt, and can be resumed or edited

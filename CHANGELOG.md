@@ -4,6 +4,19 @@
 
 發版流程：更新 `VERSION`、`internal/version/version.go`、README 版本徽章與本檔 → commit → 打 `vX.Y.Z` tag 並 push，GitHub Actions 會自動建置並發佈 Release（說明文字取自本檔對應段落）。
 
+## [0.9.0] - 2026-10-12
+
+### 變更
+- 重新啟用 Antigravity（`agy`）：預設解析 NDJSON 串流，支援模型、推理強度與權限模式；舊 `gemini` Session 使用 Antigravity runner，新建請選 Antigravity
+- Antigravity 配額顯示 Gemini 與 Claude/GPT 的 5 小時／每週已使用比例；手機精簡徽章顯示最高使用率
+
+### 修正
+- Antigravity 純文字後備模式成功退出但無輸出時回報錯誤，避免會話停留在執行中
+- Antigravity 模型標籤與選擇同步，涵蓋切換、執行前推送、重新連線與清除選擇
+
+### 驗證範圍
+- 全專案測試、建置、Node 配額檢查與 Chrome 元件驗證通過；本輪使用假 CLI，真實 CLI／Telegram WebView 實機驗收及回合 Token 統計串接待補
+
 ## [0.8.0] - 2026-10-08
 
 ### 新增

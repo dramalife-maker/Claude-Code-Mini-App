@@ -147,7 +147,7 @@ function ChatSessionHeader({
   const showOpenButtons = !isGuest && shellEnabled && !!(session.work_dir && String(session.work_dir).trim());
   const permTitle =
     agentType === 'antigravity'
-      ? 'Antigravity 核准模式（--approval-mode）'
+      ? 'Antigravity 權限模式'
       : agentType === 'cursor'
       ? '權限模式（bypass：Cursor 會加 --force）'
       : '權限模式';
@@ -191,7 +191,7 @@ function ChatSessionHeader({
             <AgentBadgeIcon agentType={agentType} />
             {AGENT_LABEL[agentType] || agentType}
           </span>
-          {!isGuest && <QuotaBadge quota={quota} compact agentType={agentType} onRefresh={agentType !== 'antigravity' ? onQuotaRefresh : null} refreshing={quotaRefreshing} />}
+          {!isGuest && <QuotaBadge quota={quota} compact agentType={agentType} onRefresh={onQuotaRefresh} refreshing={quotaRefreshing} />}
           {showPerm ? (
             <PermModeIconChip
               agentType={agentType}
@@ -318,7 +318,7 @@ function ChatSessionHeader({
               <QuotaSegments quota={quota} text={quotaText} />
             </span>
           ) : null}
-          {agentType !== 'antigravity' && quotaText ? (
+          {quotaText ? (
             <button
               type="button"
               onClick={onQuotaRefresh}
@@ -335,4 +335,3 @@ function ChatSessionHeader({
     </div>
   );
 }
-

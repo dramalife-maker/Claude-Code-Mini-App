@@ -66,22 +66,19 @@ func (s *Service) ttl(provider string) time.Duration {
 	return 5 * time.Minute
 }
 
-func (s *Service) antigravitySnapshot() Snapshot {
-	return Snapshot{
-		Provider:    agent.TypeAntigravity,
-		DisplayText: "未實作",
-		UpdatedAt:   time.Now(),
+func normalizeProvider(p string) string {
+	if p == "" {
+		return agent.TypeClaude
 	}
+	if p == agent.TypeGemini {
+		return agent.TypeAntigravity
+	}
+	return p
 }
 
 // Get 回傳 cache 快照（不觸發 fetch）。
 func (s *Service) Get(provider string) Snapshot {
-	if provider == "" {
-		provider = agent.TypeClaude
-	}
-	if provider == agent.TypeAntigravity || provider == agent.TypeGemini {
-		return s.antigravitySnapshot()
-	}
+	provider = normalizeProvider(provider)
 	s.mu.RLock()
 	ent, ok := s.cache[provider]
 	s.mu.RUnlock()
@@ -98,10 +95,8 @@ func (s *Service) Get(provider string) Snapshot {
 
 // GetAll 回傳已知 provider 的 cache。
 func (s *Service) GetAll() map[string]Snapshot {
-	out := map[string]Snapshot{
-		agent.TypeAntigravity: s.antigravitySnapshot(),
-	}
-	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro, agent.TypeKiroACP, agent.TypeCodex} {
+	out := make(map[string]Snapshot)
+	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro, agent.TypeKiroACP, agent.TypeCodex, agent.TypeAntigravity} {
 		out[p] = s.Get(p)
 	}
 	return out
@@ -109,7 +104,7 @@ func (s *Service) GetAll() map[string]Snapshot {
 
 // Warmup 冷啟動時背景 prefetch（各 provider 一次）。
 func (s *Service) Warmup(ctx context.Context) {
-	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro, agent.TypeKiroACP, agent.TypeCodex} {
+	for _, p := range []string{agent.TypeClaude, agent.TypeCursor, agent.TypeKiro, agent.TypeKiroACP, agent.TypeCodex, agent.TypeAntigravity} {
 		provider := p
 		go func() {
 			if _, err := s.refresh(ctx, provider, false); err != nil {
@@ -121,9 +116,7 @@ func (s *Service) Warmup(ctx context.Context) {
 
 // RefreshAfterRun agent 完成後若 cache 過期則背景更新。
 func (s *Service) RefreshAfterRun(ctx context.Context, provider string) (Snapshot, error) {
-	if provider == agent.TypeAntigravity || provider == agent.TypeGemini || provider == "" {
-		return s.Get(provider), nil
-	}
+	provider = normalizeProvider(provider)
 	s.mu.RLock()
 	ent, ok := s.cache[provider]
 	s.mu.RUnlock()
@@ -135,9 +128,7 @@ func (s *Service) RefreshAfterRun(ctx context.Context, provider string) (Snapsho
 
 // RefreshManual 手動刷新（60s cooldown，force fetch）。
 func (s *Service) RefreshManual(ctx context.Context, provider string) (Snapshot, error) {
-	if provider == agent.TypeAntigravity || provider == agent.TypeGemini {
-		return s.antigravitySnapshot(), nil
-	}
+	provider = normalizeProvider(provider)
 	s.mu.Lock()
 	if t, ok := s.lastManual[provider]; ok && time.Since(t) < ManualCooldown {
 		s.mu.Unlock()

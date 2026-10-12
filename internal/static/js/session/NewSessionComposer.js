@@ -2,6 +2,7 @@
 const NEW_SESSION_AGENT_OPTIONS = [
   { value: 'claude', label: 'Claude' },
   { value: 'cursor', label: 'Cursor' },
+  { value: 'antigravity', label: 'Antigravity' },
   { value: 'kiroacp', label: 'Kiro ACP' },
   { value: 'codex', label: 'Codex' },
 ];
@@ -148,8 +149,7 @@ function NewSessionComposer({ prefill, onCreated, onCancel }) {
           </button>
           {advancedOpen && (
             <div className="px-3 pb-3 space-y-2.5 border-t border-[oklch(0.26_0.02_264)] pt-2.5">
-              {newForm.agent !== 'antigravity' && (
-                <div>
+              <div>
                   <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Model（選填，寫入 --model）</div>
                   <input
                     value={newForm.model}
@@ -158,7 +158,6 @@ function NewSessionComposer({ prefill, onCreated, onCancel }) {
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 font-mono focus:outline-none focus:border-violet-600"
                   />
                 </div>
-              )}
               {newForm.agent !== 'cursor' && (
                 <div>
                   <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">Effort（選填）</div>

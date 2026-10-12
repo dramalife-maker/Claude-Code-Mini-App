@@ -589,6 +589,11 @@ function formatKiroCreditUsed(displayText) {
 
 function formatQuotaCompact(displayText, agentType) {
   if (!displayText || displayText === '—') return '';
+  if (['antigravity', 'gemini'].includes(String(agentType || '').toLowerCase())) {
+    // ponytail: 精簡徽章顯示最高使用率，各組明細沿用展開頂欄與 tooltip。
+    const percents = String(displayText).match(/\d+(?:\.\d+)?\s*%/g);
+    if (percents) return Math.max(...percents.map((pct) => parseFloat(pct))) + '%';
+  }
   if (String(agentType || '').toLowerCase() === 'kiro' || String(agentType || '').toLowerCase() === 'kiroacp') {
     const kiro = formatKiroCreditUsed(displayText);
     if (kiro) return kiro;
@@ -617,4 +622,3 @@ function sessionStateChipClass(state) {
   if (state === 'AWAITING_SHELL_CONFIRM' || state === 'SHELL_AWAITING_APPROVAL' || state === 'AWAITING_CONFIRM') return 'bg-orange-500/20 text-orange-200';
   return 'bg-amber-500/20 text-amber-200';
 }
-

@@ -57,7 +57,7 @@
 
 完成標準：桌面與手機都能點、點了有動畫；成功、錯誤、逾時三種結果各有 toast；背景自動推送的 `quota_update` 不跳 toast。
 
-待確認：quota 為空時（`quotaText` 為空，刷新鍵消失）是否要保留刷新入口，取決於哪些 agent 本來就沒有 quota（antigravity 已排除）。確認前不動。
+待確認：quota 為空時（`quotaText` 為空，刷新鍵消失）是否要保留刷新入口。Antigravity 已支援配額取得及刷新，需納入首次取得或取得失敗的情境。確認前不動。
 
 ### 2.4 建立 session 後送首則訊息失敗，重試會產生重複 session
 

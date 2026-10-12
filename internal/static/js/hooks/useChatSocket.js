@@ -574,7 +574,6 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
 
   const handleQuotaRefresh = useCallback(() => {
     if (quotaRefreshing) return;
-    if (agentType === 'antigravity') return;
     if (!send({ type: 'refresh_quota' })) {
       showToast('連線中斷，無法更新用量', { error: true, duration: 2500 });
       return;

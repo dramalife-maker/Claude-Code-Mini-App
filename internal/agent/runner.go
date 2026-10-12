@@ -124,8 +124,8 @@ const (
 	// 共用語意：授權/權限模式
 	// Claude 值：default / acceptEdits / bypassPermissions / plan
 	// Cursor 值：default / bypassPermissions（僅決定是否加 --force）
-	// Antigravity（agy）值：default；bypassPermissions → --dangerously-skip-permissions
-	// legacy Gemini 值仍經 UI 映射為 antigravity
+	// Antigravity（agy）：default；acceptEdits / plan → --mode；bypassPermissions / yolo → --dangerously-skip-permissions
+	// legacy Gemini agent_type 由 factory 別名導向 antigravity
 	ArgPermissionMode = "permission_mode"
 
 	// Claude 專屬

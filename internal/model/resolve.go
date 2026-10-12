@@ -51,10 +51,10 @@ func ExtractFromClaudeLines(lines []string, cliFlag string) Info {
 			continue
 		}
 		var obj struct {
-			Type        string `json:"type"`
-			Subtype     string `json:"subtype"`
-			Model       string `json:"model"`
-			ModelUsage  map[string]json.RawMessage `json:"modelUsage"`
+			Type       string                     `json:"type"`
+			Subtype    string                     `json:"subtype"`
+			Model      string                     `json:"model"`
+			ModelUsage map[string]json.RawMessage `json:"modelUsage"`
 		}
 		if json.Unmarshal([]byte(line), &obj) != nil {
 			continue
@@ -164,7 +164,7 @@ func ExtractFromCursorLines(lines []string, cliFlag string) Info {
 }
 
 // ExtractFromAntigravityLines 從 agy/gemini stream-json 擷取 model。
-// 優先序：init.model → result.stats.models key → --model flag。
+// 優先序：init.model / result.model → result.stats.models key → --model flag → 預設 gemini-3.8-flash-high。
 func ExtractFromAntigravityLines(lines []string, cliFlag string) Info {
 	out := Info{Provider: "antigravity"}
 
@@ -174,16 +174,28 @@ func ExtractFromAntigravityLines(lines []string, cliFlag string) Info {
 			continue
 		}
 		var obj struct {
-			Type  string `json:"type"`
 			Model string `json:"model"`
+			Init  *struct {
+				Model string `json:"model"`
+			} `json:"init"`
+			Result *struct {
+				Model string `json:"model"`
+			} `json:"result"`
 		}
 		if json.Unmarshal([]byte(line), &obj) != nil {
 			continue
 		}
-		if obj.Type == "init" && strings.TrimSpace(obj.Model) != "" {
-			out.Model = strings.TrimSpace(obj.Model)
+		m := obj.Model
+		if m == "" && obj.Init != nil {
+			m = obj.Init.Model
+		}
+		if m == "" && obj.Result != nil {
+			m = obj.Result.Model
+		}
+		if strings.TrimSpace(m) != "" {
+			out.Model = strings.TrimSpace(m)
 			out.Source = SourceInitEvent
-			out.RawDetail = "init.model"
+			out.RawDetail = "stream model"
 			out.Ok = true
 			out.DisplayText = FormatDisplay(out.Model)
 			return out
@@ -196,12 +208,11 @@ func ExtractFromAntigravityLines(lines []string, cliFlag string) Info {
 			continue
 		}
 		var obj struct {
-			Type  string `json:"type"`
 			Stats struct {
 				Models map[string]json.RawMessage `json:"models"`
 			} `json:"stats"`
 		}
-		if json.Unmarshal([]byte(line), &obj) != nil || obj.Type != "result" {
+		if json.Unmarshal([]byte(line), &obj) != nil {
 			continue
 		}
 		for k := range obj.Stats.Models {
@@ -226,9 +237,11 @@ func ExtractFromAntigravityLines(lines []string, cliFlag string) Info {
 		return out
 	}
 
-	out.Error = "stream 無 model，且無 --model fallback"
-	out.Source = SourceUnknown
-	out.DisplayText = "—"
+	out.Model = "gemini-3.8-flash-high"
+	out.Source = SourceGlobalConfig
+	out.RawDetail = "antigravity 預設模型"
+	out.Ok = true
+	out.DisplayText = FormatDisplay(out.Model)
 	return out
 }
 
@@ -333,9 +346,9 @@ func ResolveKiroWithListModels(cliFlag string, listModelsJSON string) Info {
 	}
 
 	return Info{
-		Provider: "kiro",
-		Error:    "kiro headless 輸出無 model；需 --model 或 settings fallback",
-		Source:   SourceUnknown,
+		Provider:    "kiro",
+		Error:       "kiro headless 輸出無 model；需 --model 或 settings fallback",
+		Source:      SourceUnknown,
 		DisplayText: "—",
 	}
 }

@@ -4,17 +4,18 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
-
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 
-	"fmt"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
-	"log/slog"
 )
 
 func init() {
@@ -24,22 +25,17 @@ func init() {
 }
 
 // Runner 是 Antigravity CLI（agy）的 agent.Runner 實作。
-//
-// Headless 整合注意：agy --print 在非 TTY stdout（Go pipe）下可能無輸出（GitHub #76）。
-// 本 runner 先嘗試 stream-json（若 CLI 支援），否則走 print 文字模式並在空 stdout 時回報明確錯誤。
-// 部署前請執行 poc/antigravity-cli/run_all_poc.ps1 驗證環境。
 type Runner struct{}
 
 // Name 實作 agent.Runner。
 func (r *Runner) Name() string { return agent.TypeAntigravity }
 
-// Run 實作 agent.Runner。
+// Run 實作 agent.Runner。預設使用 stream-json 模式。
 func (r *Runner) Run(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
-	useStreamJSON := os.Getenv("CC_AGY_STREAM_JSON") == "1"
-	if useStreamJSON {
-		return r.runStreamJSON(ctx, opts, cb)
+	if os.Getenv("CC_AGY_FORCE_PRINT_TEXT") == "1" {
+		return r.runPrintText(ctx, opts, cb)
 	}
-	return r.runPrintText(ctx, opts, cb)
+	return r.runStreamJSON(ctx, opts, cb)
 }
 
 func (r *Runner) runStreamJSON(ctx context.Context, opts agent.RunOptions, cb agent.EventCallback) error {
@@ -96,16 +92,12 @@ func (r *Runner) runPrintText(ctx context.Context, opts agent.RunOptions, cb age
 	text := strings.TrimSpace(string(body))
 	if text == "" && waitErr == nil && ctx.Err() == nil {
 		cb(agent.Event{
-			Type: agent.EventError,
-			Err: &headlessError{
-				stderr: stderr,
-				hint:   "agy --print 在非 TTY（子進程 pipe）可能無 stdout；請執行 poc/antigravity-cli/probe_headless.ps1，或追蹤 google-antigravity/antigravity-cli#76",
-			},
+			Type:      agent.EventError,
+			Err:       errors.New(strings.TrimSpace("antigravity CLI 沒有回傳內容\n" + stderr)),
 			SessionID: opts.SessionID,
 		})
 		return nil
 	}
-
 	if text != "" {
 		cb(agent.Event{Type: agent.EventStreamStart})
 		cb(agent.Event{Type: agent.EventDelta, Text: text})
@@ -120,6 +112,13 @@ func (r *Runner) runPrintText(ctx context.Context, opts agent.RunOptions, cb age
 		})
 	}
 	return waitErr
+}
+
+type dispatchState struct {
+	streamStartSent bool
+	sawResult       bool
+	sessionID       string
+	accumulatedText string
 }
 
 func (r *Runner) execAndParseNDJSON(ctx context.Context, opts agent.RunOptions, args []string, cb agent.EventCallback) error {
@@ -145,37 +144,33 @@ func (r *Runner) execAndParseNDJSON(ctx context.Context, opts agent.RunOptions, 
 	}
 
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 1024*1024), 2*1024*1024)
 
-	streamStartSent := false
-	sawResult := false
-	lineCount := 0
-	sessionID := opts.SessionID
+	st := dispatchState{
+		sessionID: opts.SessionID,
+	}
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
 			continue
 		}
-		lineCount++
 		e, parseErr := ParseEvent(line)
 		if parseErr != nil {
-			slog.Info(fmt.Sprintf("[antigravity] 解析失敗: %v", parseErr))
+			slog.Debug(fmt.Sprintf("[antigravity] 解析失敗或非 JSON: %v", parseErr))
 			continue
 		}
-		if e.Type == "init" && e.SessionID != "" {
-			sessionID = e.SessionID
-		}
-		if e.Type == "result" {
-			sawResult = true
-		}
-		r.dispatch(e, cb, &streamStartSent, sessionID)
+		r.dispatch(e, cb, &st)
 	}
 
 	waitErr := cmd.Wait()
 	stderr := stderrBuf.String()
-	if waitErr != nil && ctx.Err() == nil && !sawResult {
-		cb(agent.Event{Type: agent.EventError, Err: &runnerError{stderr: stderr, waitErr: waitErr}, SessionID: sessionID})
+	if waitErr != nil && ctx.Err() == nil && !st.sawResult {
+		cb(agent.Event{
+			Type:      agent.EventError,
+			Err:       &runnerError{stderr: stderr, waitErr: waitErr},
+			SessionID: st.sessionID,
+		})
 	}
 	return waitErr
 }
@@ -184,13 +179,154 @@ func (r *Runner) appendCommonArgs(args *[]string, opts agent.RunOptions) {
 	if opts.SessionID != "" {
 		*args = append(*args, "--conversation", opts.SessionID)
 	}
+	if opts.WorkDir != "" {
+		*args = append(*args, "--add-dir", opts.WorkDir)
+	}
 	if opts.ExtraArgs != nil {
 		if m := strings.TrimSpace(opts.ExtraArgs[agent.ArgModel]); m != "" {
 			*args = append(*args, "--model", m)
 		}
+		if ef := strings.TrimSpace(opts.ExtraArgs[agent.ArgEffort]); ef != "" {
+			*args = append(*args, "--effort", ef)
+		}
 	}
-	if mapSkipPermissions(opts.ExtraArgs) {
+	mapPermissionArgs(args, opts.ExtraArgs)
+}
+
+func (r *Runner) dispatch(e *StreamTopEvent, cb agent.EventCallback, st *dispatchState) {
+	if e == nil {
+		return
+	}
+
+	switch e.Event {
+	case "init":
+		if e.ConversationID != "" {
+			st.sessionID = e.ConversationID
+			cb(agent.Event{Type: agent.EventSessionInit, SessionID: e.ConversationID})
+		}
+	case "step_update":
+		if e.StepUpdate == nil {
+			return
+		}
+		su := e.StepUpdate
+		if su.ConversationID != "" && st.sessionID == "" {
+			st.sessionID = su.ConversationID
+		}
+
+		switch su.StepType {
+		case "agent_response":
+			if su.TextDelta != "" {
+				if !st.streamStartSent {
+					st.streamStartSent = true
+					cb(agent.Event{Type: agent.EventStreamStart})
+				}
+				st.accumulatedText += su.TextDelta
+				cb(agent.Event{Type: agent.EventDelta, Text: su.TextDelta})
+			}
+		case "tool":
+			toolName := su.ToolName
+			if toolName == "" && su.ToolInfo != nil {
+				toolName = su.ToolInfo.Name
+			}
+
+			if su.State == "ACTIVE" {
+				var params json.RawMessage
+				if su.ToolInfo != nil {
+					params = su.ToolInfo.Parameters
+				}
+				if toolName != "" {
+					cb(agent.Event{
+						Type: agent.EventActivity,
+						Text: fmt.Sprintf("執行工具：%s", toolName),
+					})
+				}
+				cb(agent.Event{
+					Type: agent.EventToolStarted,
+					Tool: &agent.ToolCall{
+						CallID:    fmt.Sprintf("step-%d", su.StepIndex),
+						Name:      toolName,
+						Arguments: params,
+					},
+				})
+			} else if su.State == "DONE" || su.State == "ERROR" {
+				var output string
+				var errMsg string
+				if su.ToolInfo != nil {
+					output = su.ToolInfo.OutputText()
+					if su.ToolInfo.Error != nil {
+						errMsg = su.ToolInfo.Error.Message
+					}
+				}
+				cb(agent.Event{
+					Type: agent.EventToolCompleted,
+					Tool: &agent.ToolCall{
+						CallID:     fmt.Sprintf("step-%d", su.StepIndex),
+						Name:       toolName,
+						Output:     output,
+						OK:         su.State == "DONE",
+						ErrMessage: errMsg,
+					},
+				})
+			}
+		}
+	case "result":
+		st.sawResult = true
+		res := e.Result
+		if res == nil {
+			cb(agent.Event{Type: agent.EventDone, SessionID: st.sessionID})
+			return
+		}
+
+		if res.ConversationID != "" {
+			st.sessionID = res.ConversationID
+		}
+
+		if res.Status == "ERROR" {
+			errMsg := res.Error
+			if errMsg == "" {
+				errMsg = "antigravity execution failed"
+			}
+			cb(agent.Event{
+				Type:      agent.EventError,
+				SessionID: st.sessionID,
+				Err:       errors.New(errMsg),
+			})
+			return
+		}
+
+		if len(res.DeniedActions) > 0 {
+			var actions []string
+			for _, a := range res.DeniedActions {
+				actions = append(actions, a.DisplayName)
+			}
+			slog.Info(fmt.Sprintf("[antigravity] 部分操作受權限限制已略過: %s", strings.Join(actions, ", ")))
+		}
+
+		resultText := res.Response
+		if resultText == "" {
+			resultText = st.accumulatedText
+		}
+		cb(agent.Event{
+			Type:       agent.EventDone,
+			SessionID:  st.sessionID,
+			ResultText: resultText,
+		})
+	}
+}
+
+// mapPermissionArgs 完整映射 4 種 permission_mode 至 agy 旗標。
+func mapPermissionArgs(args *[]string, extra map[string]string) {
+	if extra == nil {
+		return
+	}
+	pm := strings.TrimSpace(extra[agent.ArgPermissionMode])
+	switch pm {
+	case "yolo", "bypassPermissions":
 		*args = append(*args, "--dangerously-skip-permissions")
+	case "acceptEdits":
+		*args = append(*args, "--mode", "accept-edits")
+	case "plan":
+		*args = append(*args, "--mode", "plan")
 	}
 }
 
@@ -212,56 +348,6 @@ func agyBinary() string {
 	return "agy"
 }
 
-func (r *Runner) dispatch(e *StreamEvent, cb agent.EventCallback, streamStartSent *bool, sessionID string) {
-	switch e.Type {
-	case "init":
-		if e.SessionID != "" {
-			cb(agent.Event{Type: agent.EventSessionInit, SessionID: e.SessionID})
-		}
-	case "message":
-		if !e.IsAssistantDelta() || e.Content == "" {
-			return
-		}
-		if e.Thought != nil && *e.Thought {
-			cb(agent.Event{Type: agent.EventThinking, Text: e.Content})
-			return
-		}
-		if !*streamStartSent {
-			*streamStartSent = true
-			cb(agent.Event{Type: agent.EventStreamStart})
-		}
-		cb(agent.Event{Type: agent.EventDelta, Text: e.Content})
-	case "tool_use":
-		cb(agent.Event{
-			Type: agent.EventToolStarted,
-			Tool: &agent.ToolCall{CallID: e.ToolID, Name: e.ToolName, Arguments: e.Parameters},
-		})
-	case "tool_result":
-		tc := &agent.ToolCall{CallID: e.ToolID, OK: e.Status == "success", Output: e.OutputText()}
-		if e.Error != nil {
-			tc.ErrMessage = e.Error.Message
-		}
-		cb(agent.Event{Type: agent.EventToolCompleted, Tool: tc})
-	case "error":
-		slog.Info(fmt.Sprintf("[antigravity] error event severity=%s message=%s", e.Severity, e.Message))
-	case "result":
-		cb(agent.Event{Type: agent.EventDone, SessionID: sessionID})
-	}
-}
-
-// mapSkipPermissions 對應 agy --dangerously-skip-permissions（無互動式 allow_once）。
-func mapSkipPermissions(extra map[string]string) bool {
-	if extra == nil {
-		return false
-	}
-	switch strings.TrimSpace(extra[agent.ArgPermissionMode]) {
-	case "yolo", "bypassPermissions":
-		return true
-	default:
-		return false
-	}
-}
-
 type runnerError struct {
 	stderr  string
 	waitErr error
@@ -272,17 +358,4 @@ func (e *runnerError) Error() string {
 		return "antigravity failed: " + strings.TrimSpace(e.stderr)
 	}
 	return "antigravity failed: " + e.waitErr.Error()
-}
-
-type headlessError struct {
-	stderr string
-	hint   string
-}
-
-func (e *headlessError) Error() string {
-	msg := e.hint
-	if e.stderr != "" {
-		msg += " | stderr: " + strings.TrimSpace(e.stderr)
-	}
-	return msg
 }

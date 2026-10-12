@@ -10,7 +10,7 @@
 
 1. **解壓整個資料夾**：執行檔必須與 `internal/static/`（前端）放在一起，不能只搬 exe。
 2. 把 `config.example.yaml` 複製為 `config.yaml`，填入 `bot_token` 與 `whitelist_tg_ids`。只在本機使用、不對外開放時，可改設 `no_auth: true` 跳過驗證。
-3. 先在同一台機器裝好你要用的 CLI（`claude`、`codex`、`kiro-cli`、`cursor agent`）。
+3. 先在同一台機器裝好你要用的 CLI（`claude`、`codex`、`kiro-cli`、`cursor agent`、`agy`）。
 4. 啟動後開 <http://localhost:8080>（桌面版會自動開視窗）。
 
 > **Windows 注意**
@@ -22,4 +22,3 @@
 ---
 
 ## 更新內容
-

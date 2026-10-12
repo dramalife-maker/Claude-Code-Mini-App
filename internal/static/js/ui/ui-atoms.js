@@ -117,7 +117,7 @@ function readInputModeForSession(sessionId) {
 /**
  * 依 agent_type 回傳可用的 permission_mode 下拉選項。
  * - Claude / Cursor: default / acceptEdits / bypassPermissions
- * - Antigravity: default / auto_edit / plan / yolo（對應 CLI --approval-mode）
+ * - Antigravity: default / acceptEdits / plan / bypassPermissions（對應 --mode／--dangerously-skip-permissions）
  * - Codex: 暫不支援
  * 所有值共用 DB 欄位 `permission_mode`，後端各 runner 自行解釋。
  */
@@ -126,9 +126,9 @@ function permModeOptionsFor(agentType) {
   if (t === 'antigravity') {
     return [
       { value: 'default', label: '預設' },
-      { value: 'auto_edit', label: '自動編輯' },
+      { value: 'acceptEdits', label: '自動編輯' },
       { value: 'plan', label: '規劃模式' },
-      { value: 'yolo', label: 'YOLO（全自動）⚠️' },
+      { value: 'bypassPermissions', label: '跳過授權 ⚠️' },
     ];
   }
   if (t === 'kiroacp') {
@@ -1057,4 +1057,3 @@ function buildHandoffDraftMessage(handoff, historyMessages) {
 
   return `${head}\n${historyBlock}\n${tail}`;
 }
-

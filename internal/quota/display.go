@@ -3,6 +3,7 @@ package quota
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/usage"
@@ -21,6 +22,8 @@ func FormatDisplayAt(provider string, info *usage.QuotaInfo, now time.Time) stri
 	switch provider {
 	case "claude":
 		return formatClaudeDisplayAt(info, now)
+	case "antigravity":
+		return formatAntigravityDisplayAt(info, now)
 	case "cursor":
 		return formatCursorDisplay(info)
 	case "kiro":
@@ -30,6 +33,36 @@ func FormatDisplayAt(provider string, info *usage.QuotaInfo, now time.Time) stri
 	default:
 		return "—"
 	}
+}
+
+func formatAntigravityDisplayAt(info *usage.QuotaInfo, now time.Time) string {
+	var parts []string
+	for _, window := range []struct{ kind, label string }{
+		{"session", "Gemini 5h"},
+		{"weekly", "Gemini Week"},
+		{"session_claude", "Claude/GPT 5h"},
+		{"weekly_claude", "Claude/GPT Week"},
+	} {
+		for _, w := range info.Windows {
+			if w.Kind != window.kind || w.Percent == nil {
+				continue
+			}
+			part := fmt.Sprintf("%s %.0f%%", window.label, roundPct(*w.Percent))
+			if w.Kind == "session" || w.Kind == "session_claude" {
+				if until, ok := usage.ParseResetsAt(w.ResetsAt, now); ok {
+					if left := usage.FormatDurationUntil(until, now); left != "" {
+						part += " · " + left
+					}
+				}
+			}
+			parts = append(parts, part)
+			break
+		}
+	}
+	if len(parts) == 0 {
+		return "—"
+	}
+	return strings.Join(parts, " · ")
 }
 
 func formatClaudeDisplayAt(info *usage.QuotaInfo, now time.Time) string {
