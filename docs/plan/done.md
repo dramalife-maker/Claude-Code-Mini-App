@@ -34,10 +34,11 @@
 
 ### 🧩 Multi-Agent 整合
 - [x] **Runner 抽象化**：定義統一的 `agent.Runner` 介面。
-- [x] **Gemini 整合**：支援 `gemini` CLI 串流執行。
+- [x] **Antigravity 整合**：支援 `agy` 1.3.3 CLI（`--output-format stream-json` NDJSON 串流、`--conversation` 跨輪延續、雙群組 Quota 配額顯示、手機高用量警示）。
+- [x] **Gemini 整合**：支援 `gemini` CLI 串流執行（已由 Antigravity 接管相容）。
 - [x] **Cursor 整合**：支援 `cursor-agent` CLI 串流執行。
 - [x] **Codex 整合**：支援 `codex exec --json` headless 執行。
-- [x] **Kiro 整合**：支援 `kiro-cli` headless 執行。
+- [x] **Kiro 整合**：支援 `kiro-cli` headless 執行與 Kiro ACP。
 - [x] **動態工廠**：依 Session 設定自動建立對應工具實例。
 
 ### 🐚 Shell 執行模式

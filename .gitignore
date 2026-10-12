@@ -66,3 +66,11 @@ poc/kiro-cli/samples_kiro_msg*
 # Spectra app data
 .spectra/
 docs/spectra/.vector-search.db*
+
+# Agent & IDE 設定與 skills
+.agents/
+.claude/
+.cursor/
+.cursorrules
+**/skills/
+

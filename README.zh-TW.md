@@ -22,7 +22,7 @@
 
 ## 🚀 快速開始
 
-**需求：** 機器上已安裝並登入要用的 CLI（`claude`、`cursor agent`、`codex`、`kiro-cli` 等），以及 Telegram Bot Token（[@BotFather](https://t.me/BotFather)）——僅限本機使用時可改設 `no_auth: true`。
+**需求：** 機器上已安裝並登入要用的 CLI（`claude`、`cursor agent`、`codex`、`kiro-cli`、`agy` 等），以及 Telegram Bot Token（[@BotFather](https://t.me/BotFather)）——僅限本機使用時可改設 `no_auth: true`。
 
 **下載（建議）：** 到 [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest) 下載 zip／tar.gz，整個資料夾解壓（執行檔旁必須有 `internal/static/`），把 `config.example.yaml` 複製成 `config.yaml`，再執行 `claude-miniapp-desktop.exe`（Windows 桌面版）或 `claude-miniapp`（純 server）。
 
@@ -42,7 +42,7 @@ Windows 也可建置桌面視窗：`go build -ldflags "-H windowsgui" -o claude-
 
 ## ✨ 功能
 
-- **多代理** — Claude Code、Cursor Agent、Codex、Kiro ACP，依 Session 選擇。工具授權前會顯示完整指令或檔案內容
+- **多代理** — Claude Code、Cursor Agent、Codex、Kiro ACP、Antigravity，依 Session 選擇。工具授權前會顯示完整指令或檔案內容
 - **即時對話** — WebSocket 串流、Markdown、語法高亮程式碼與一鍵複製；多分頁同步
 - **Session 管理** — 各自綁定 `work_dir` 與權限模式，即時的未讀與待授權標記、Ctrl/Cmd+P 快速跳轉，header 顯示帳戶用量
 - **訊息佇列** — 執行中送出的訊息會排隊、重啟不遺失，失敗或中斷時暫停
@@ -57,7 +57,7 @@ Windows 也可建置桌面視窗：`go build -ldflags "-H windowsgui" -o claude-
 
 | | SSH + tmux | 一般 Telegram Bot | **本專案** |
 |---|---|---|---|
-| 多代理同一畫面 | 一個終端機一個 | 一 bot 一工具 | Claude / Cursor / Codex / Kiro ACP 並列 |
+| 多代理同一畫面 | 一個終端機一個 | 一 bot 一工具 | Claude / Cursor / Codex / Kiro ACP / Antigravity 並列 |
 | Session 狀態 | 手動 | 通常沒有 | 可持久，附未讀與待授權標記 |
 | 協作 | 共用終端機 | 無 | 臨時 PIN 連結，viewer / editor |
 | 代理互相呼叫 | 自己接 | 無 | 內建 MCP server（`ask_session`） |
@@ -74,7 +74,7 @@ Windows 也可建置桌面視窗：`go build -ldflags "-H windowsgui" -o claude-
 │  QuotaService（快取擷取）         │
 └────────────────┬────────────────┘
                  ↓
-  claude · cursor agent · codex · kiro-cli (ACP)
+  claude · cursor agent · codex · kiro-cli (ACP) · agy
 ```
 
 每則使用者訊息 spawn 一個子進程。詳細規格：[`docs/spec/plan.md`](docs/spec/plan.md)、[`docs/spec/headless.md`](docs/spec/headless.md)。

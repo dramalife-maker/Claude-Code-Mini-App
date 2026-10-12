@@ -22,7 +22,7 @@ All three talk to the same server and see the same sessions in real time.
 
 ## 🚀 Quick Start
 
-**Requires:** the CLI(s) you use (`claude`, `cursor agent`, `codex`, `kiro-cli`) installed and logged in on the machine, plus a Telegram bot token ([@BotFather](https://t.me/BotFather)) — or `no_auth: true` for local-only use.
+**Requires:** the CLI(s) you use (`claude`, `cursor agent`, `codex`, `kiro-cli`, `agy`) installed and logged in on the machine, plus a Telegram bot token ([@BotFather](https://t.me/BotFather)) — or `no_auth: true` for local-only use.
 
 **Download (recommended):** grab the zip / tar.gz from [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest), extract the whole folder (the executable needs `internal/static/` beside it), copy `config.example.yaml` to `config.yaml`, then run `claude-miniapp-desktop.exe` (Windows desktop) or `claude-miniapp` (server only).
 
@@ -42,7 +42,7 @@ On Windows you can also build the desktop window: `go build -ldflags "-H windows
 
 ## ✨ Features
 
-- **Multi-agent** — Claude Code, Cursor Agent, Codex and Kiro ACP, chosen per session. Tool approvals show the full command or file content before you allow them
+- **Multi-agent** — Claude Code, Cursor Agent, Codex, Kiro ACP and Antigravity, chosen per session. Tool approvals show the full command or file content before you allow them
 - **Live chat** — WebSocket streaming with Markdown, syntax-highlighted code and one-click copy; multiple tabs stay in sync
 - **Sessions** — each bound to a `work_dir` and permission mode, with real-time unread and needs-approval badges, a Ctrl/Cmd+P quick switcher, and an account-quota badge in the header
 - **Message queue** — messages sent while a task runs are queued, survive restarts, and pause on failure or interrupt
@@ -57,7 +57,7 @@ Every feature in detail: [docs/features.md](docs/features.md).
 
 | | SSH + tmux | Generic Telegram bot | **This app** |
 |---|---|---|---|
-| Multiple agents, one view | One terminal each | One bot, one tool | Claude / Cursor / Codex / Kiro ACP side by side |
+| Multiple agents, one view | One terminal each | One bot, one tool | Claude / Cursor / Codex / Kiro ACP / Antigravity side by side |
 | Session state | Manual | Usually none | Persisted, with unread and approval badges |
 | Collaboration | Share a terminal | None | Temporary PIN link, viewer / editor |
 | Agent-to-agent | You wire it | None | Built-in MCP server (`ask_session`) |
@@ -74,7 +74,7 @@ Desktop window · Browser · Telegram Mini App · Share guests
 │   QuotaService (cached fetch)   │
 └────────────────┬────────────────┘
                  ↓
-  claude · cursor agent · codex · kiro-cli (ACP)
+  claude · cursor agent · codex · kiro-cli (ACP) · agy
 ```
 
 Each user message spawns a short-lived subprocess. Details: [`docs/spec/plan.md`](docs/spec/plan.md), [`docs/spec/headless.md`](docs/spec/headless.md).
