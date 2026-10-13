@@ -14,13 +14,17 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/gitinfo"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/ws"
 )
 
 type deps struct {
-	db      *db.DB
-	quota   *quota.Service
-	reg     *Registry
-	maxHops int
+	db       *db.DB
+	quota    *quota.Service
+	reg      *Registry
+	maxHops  int
+	botToken string
+	notifier func(botToken string, chatID int64, text string) error
 }
 
 const (
@@ -512,6 +516,74 @@ func (d *deps) getQuota(_ context.Context, _ *gomcp.CallToolRequest, in getQuota
 	return nil, getQuotaOut{Quota: out}, nil
 }
 
+// --- post_message ---
+
+type postMessageIn struct {
+	SessionID string `json:"session_id" jsonschema:"目標 miniapp session_id"`
+	Text      string `json:"text" jsonschema:"要寫入的 Markdown 訊息內容"`
+	Role      string `json:"role,omitempty" jsonschema:"訊息角色：assistant 或 system，預設 assistant"`
+	Author    string `json:"author,omitempty" jsonschema:"訊息署名（選填，如 'PR Worker'、'Reviewer'，會顯示於氣泡上方）"`
+	Notify    bool   `json:"notify,omitempty" jsonschema:"是否同時透過 Telegram Bot 發送推播通知給使用者"`
+}
+
+type postMessageOut struct {
+	OK        bool   `json:"ok"`
+	MessageID int64  `json:"message_id"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (d *deps) postMessage(_ context.Context, _ *gomcp.CallToolRequest, in postMessageIn) (*gomcp.CallToolResult, postMessageOut, error) {
+	sessionID := strings.TrimSpace(in.SessionID)
+	if sessionID == "" {
+		return nil, postMessageOut{}, fmt.Errorf("session_id 不可為空")
+	}
+	text := strings.TrimSpace(in.Text)
+	if text == "" {
+		return nil, postMessageOut{}, fmt.Errorf("text 不可為空")
+	}
+	_, err := d.db.GetSession(sessionID)
+	if err != nil {
+		return nil, postMessageOut{}, fmt.Errorf("session_id 不存在: %w", err)
+	}
+
+	role := strings.ToLower(strings.TrimSpace(in.Role))
+	if role == "" || role == "assistant" {
+		role = "claude"
+	}
+
+	author := strings.TrimSpace(in.Author)
+	msgID, createdAt, err := d.db.AddMessageWithID(sessionID, role, text, author)
+	if err != nil {
+		return nil, postMessageOut{}, fmt.Errorf("寫入訊息失敗: %w", err)
+	}
+
+	_ = d.db.TouchSessionLastActive(sessionID)
+
+	// 廣播至該 session 的 WebSocket 連線，讓前端即時長出訊息
+	ws.BroadcastSessionMessage(sessionID, "message", text, role, author, msgID, createdAt)
+	// 通知側欄 session 列表更新
+	ws.NotifySessionsChanged()
+
+	if in.Notify && d.botToken != "" {
+		notifyFn := d.notifier
+		if notifyFn == nil {
+			notifyFn = tg.Notify
+		}
+		users, err := d.db.ListUsers()
+		if err == nil {
+			for _, uid := range users {
+				_ = notifyFn(d.botToken, uid, text)
+			}
+		}
+	}
+
+	return nil, postMessageOut{
+		OK:        true,
+		MessageID: msgID,
+		CreatedAt: createdAt,
+	}, nil
+}
+
 func registerTools(s *gomcp.Server, d *deps) {
 	gomcp.AddTool(s, &gomcp.Tool{Name: "list_sessions", Description: "列出所有 session。互問／討論時用 id 當 send_message 的 session_id；自己的 id 見使用者 prompt 的 [miniapp] self，或上次諮詢信封的「你是 session_id」"}, d.listSessions)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "create_session", Description: "建立新 session"}, d.createSession)
@@ -519,6 +591,7 @@ func registerTools(s *gomcp.Server, d *deps) {
 	gomcp.AddTool(s, &gomcp.Tool{Name: "get_messages", Description: "讀取 session 歷史訊息；建議帶 since/until/limit，避免整包歷史"}, d.getMessages)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "list_activity", Description: "依時間列出跨 session 活動（日報／秘書用）。since 建議帶時區。預設只回 user 訊息。操控 session 仍用 create_session / send_message"}, d.listActivity)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "send_message", Description: "非阻塞送出給目標 session（對方忙碌時排入佇列）。session 互問／討論時必填 from_session_id（你自己的 miniapp session_id），伺服器會蓋上自介與回覆署名；立刻回傳，用 get_status 輪詢結果。要直接拿回答請用 ask_session"}, d.sendMessage)
+	gomcp.AddTool(s, &gomcp.Tool{Name: "post_message", Description: "主動將回覆、通知或執行結果寫入指定 session，立刻呈現在聊天畫面中，不觸發目標 session 的 Agent 執行（不消耗額外 token、不啟動 CLI）。目標 session 正在執行其他任務時亦可寫入"}, d.postMessage)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "ask_session", Description: "阻塞式詢問：送出後等目標 session 這一輪回答完才回傳（含回答全文）。目標須閒置；互問時帶 from_session_id。可設 timeout_sec，逾時回部分回覆。等待期間若同一 session 被其他操作（send_message、set_model 等）介入，會回傳 error 說明結果可能不完整"}, d.askSession)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "get_status", Description: "查詢 session 目前狀態與累積回覆內容"}, d.getStatus)
 	gomcp.AddTool(s, &gomcp.Tool{Name: "respond_permission", Description: "回覆待授權的工具請求（allow_once/deny_once）"}, d.respondPermission)

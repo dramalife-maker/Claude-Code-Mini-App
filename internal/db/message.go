@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 )
 
 const (
@@ -33,6 +34,20 @@ func (db *DB) AddMessage(sessionID, role, content, author string) error {
 		sessionID, role, content, MessageStatusDone, author,
 	)
 	return err
+}
+
+// AddMessageWithID 寫入一則已完成的訊息並回傳其產生的 ID 與建立時間（UTC SQLite 格式）。
+func (db *DB) AddMessageWithID(sessionID, role, content, author string) (int64, string, error) {
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	res, err := db.Exec(
+		`INSERT INTO messages (session_id, role, content, status, author, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		sessionID, role, content, MessageStatusDone, author, now,
+	)
+	if err != nil {
+		return 0, "", err
+	}
+	id, err := res.LastInsertId()
+	return id, now, err
 }
 
 // LatestUserMessage 回傳 session 最近一則 user 訊息內容；沒有時回空字串。

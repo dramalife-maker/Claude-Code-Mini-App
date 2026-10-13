@@ -101,6 +101,7 @@ type serverMsg struct {
 	CreatedAt    string             `json:"created_at,omitempty"`
 	Attachments  []db.Attachment    `json:"attachments,omitempty"`
 	Type         string             `json:"type"`
+	Role         string             `json:"role,omitempty"`
 	Value        string             `json:"value,omitempty"`
 	Content      string             `json:"content,omitempty"`
 	ID           int64              `json:"id,omitempty"`

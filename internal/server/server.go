@@ -374,7 +374,7 @@ func Start(ctx context.Context) (*Server, error) {
 		reg := mymcp.NewRegistry(func(sessionID string) string {
 			return fmt.Sprintf("ws://127.0.0.1:%d/sessions/%s/ws", cfg.Server.Port, sessionID)
 		}, header)
-		mcpHandler := mymcp.NewHTTPHandler(database, quotaSvc, reg, cfg.McpMaxHops)
+		mcpHandler := mymcp.NewHTTPHandler(database, quotaSvc, reg, cfg.McpMaxHops, cfg.BotToken)
 		app.Post("/mcp", authMiddleware, adaptor.HTTPHandler(mcpHandler))
 		// agent session 失效時的自動交接要靠 MCP 讀舊會話，所以跟著 mcp_token 一起啟用。
 		ws.SetHandoffStarter(reg.SendMessage)

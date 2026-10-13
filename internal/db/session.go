@@ -45,6 +45,8 @@ type Session struct {
 	Effort string `json:"effort"`
 	// LastReadAt 為使用者最後一次「正在看」此 session 的時間；配合 LastActive 判斷未讀（見前端 isUnread）。
 	LastReadAt string `json:"last_read_at"`
+	// UnreadCount 為在 last_read_at 之後接收到的非 user 訊息數量。
+	UnreadCount int `json:"unread_count"`
 }
 
 func (db *DB) CreateSession(name, description, workDir, permissionMode, agentType string, cliExtraArgs []string, inputMode string) (*Session, error) {
@@ -85,14 +87,18 @@ func (db *DB) CreateSession(name, description, workDir, permissionMode, agentTyp
 
 func (db *DB) GetSession(id string) (*Session, error) {
 	row := db.QueryRow(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort, last_read_at FROM sessions WHERE id = ?`, id,
+		`SELECT s.id, s.agent_type, s.agent_session_id, s.name, s.description, s.work_dir, s.permission_mode, s.allowed_tools, s.pending_denials, s.last_active, s.status, s.cli_extra_args, s.input_mode, s.shell_pending, s.active_model, s.active_model_source, s.active_model_at, s.model, s.effort, s.last_read_at,
+		       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.created_at > s.last_read_at AND m.role != 'user') AS unread_count
+		 FROM sessions s WHERE s.id = ?`, id,
 	)
 	return scanSession(row)
 }
 
 func (db *DB) ListSessions() ([]*Session, error) {
 	rows, err := db.Query(
-		`SELECT id, agent_type, agent_session_id, name, description, work_dir, permission_mode, allowed_tools, pending_denials, last_active, status, cli_extra_args, input_mode, shell_pending, active_model, active_model_source, active_model_at, model, effort, last_read_at FROM sessions ORDER BY last_active DESC`,
+		`SELECT s.id, s.agent_type, s.agent_session_id, s.name, s.description, s.work_dir, s.permission_mode, s.allowed_tools, s.pending_denials, s.last_active, s.status, s.cli_extra_args, s.input_mode, s.shell_pending, s.active_model, s.active_model_source, s.active_model_at, s.model, s.effort, s.last_read_at,
+		       (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id AND m.created_at > s.last_read_at AND m.role != 'user') AS unread_count
+		 FROM sessions s ORDER BY s.last_active DESC`,
 	)
 	if err != nil {
 		return nil, err
@@ -299,6 +305,7 @@ func scanSession(s scanner) (*Session, error) {
 		&sess.ID, &sess.AgentType, &sess.AgentSessionID, &sess.Name, &sess.Description,
 		&sess.WorkDir, &sess.PermissionMode, &allowedTools, &sess.PendingDenials, &sess.LastActive, &sess.Status, &extraJSON, &sess.InputMode, &sess.ShellPending,
 		&sess.ActiveModel, &sess.ActiveModelSource, &sess.ActiveModelAt, &sess.Model, &sess.Effort, &sess.LastReadAt,
+		&sess.UnreadCount,
 	)
 	if err != nil {
 		return nil, err
@@ -325,3 +332,10 @@ func scanSession(s scanner) (*Session, error) {
 	}
 	return &sess, nil
 }
+
+// TouchSessionLastActive 更新 session 的 last_active 時間為當前時間。
+func (db *DB) TouchSessionLastActive(id string) error {
+	_, err := db.Exec(`UPDATE sessions SET last_active = datetime('now') WHERE id = ?`, id)
+	return err
+}
+

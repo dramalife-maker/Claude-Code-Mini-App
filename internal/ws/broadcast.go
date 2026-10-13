@@ -60,6 +60,18 @@ func NotifySessionsChanged() {
 	hub.Broadcast(eventsKey, serverMsg{Type: "sessions_changed"})
 }
 
+// BroadcastSessionMessage 向指定 session 的所有 WS 訂閱者推播一則新訊息。
+func BroadcastSessionMessage(sessionID, msgType, content, role, author string, msgID int64, createdAt string) {
+	hub.Broadcast(sessionID, serverMsg{
+		Type:      msgType,
+		Role:      role,
+		Content:   content,
+		ID:        msgID,
+		Author:    author,
+		CreatedAt: createdAt,
+	})
+}
+
 // NewEventsHandler：只推不收的全域事件 WS；讀迴圈僅用來偵測斷線。
 func NewEventsHandler() func(*fiberws.Conn) {
 	return func(c *fiberws.Conn) {

@@ -270,9 +270,10 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     onCreateNew?.({ workDir: dir, name: workDirBasename(dirKey) });
   };
 
-  // 未讀判斷：last_active 比 last_read_at 新即為未讀。任一值缺失時視為已讀（避免誤判）。
-  // 兩者皆為 SQLite datetime('now') 字串，解析方式須與 sessionLastActiveMs 一致（同樣忽略時區，本地時間比較）。
+  // 未讀判斷：若後端有精確 unread_count 則以其為準；否則 last_active 比 last_read_at 新即為未讀。
   const isUnread = (s) => {
+    if (typeof s.unread_count === 'number' && s.unread_count > 0) return true;
+    if (typeof s.unread_count === 'number' && s.unread_count === 0) return false;
     const active = sessionLastActiveMs(s);
     if (!active) return false;
     const read = s.last_read_at ? Date.parse(String(s.last_read_at).trim().replace(' ', 'T')) : 0;
@@ -294,7 +295,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
   const handleReadAll = () => {
     // Optimistic：點了就消掉；背景打 API，不等回應、失敗不回滾，下次 5 秒 poll 覆蓋掉也沒差。
     const nowStr = formatSqliteNow();
-    setSessions((prev) => prev.map((s) => ({ ...s, last_read_at: nowStr })));
+    setSessions((prev) => prev.map((s) => ({ ...s, last_read_at: nowStr, unread_count: 0 })));
     apiFetch('/sessions/read-all', { method: 'POST' }).catch((err) => {
       console.warn('[sessions] read-all error', err);
     });
@@ -305,7 +306,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
   const handleEnter = (s, targetPane = null) => {
     if (isUnread(s)) {
       const nowStr = formatSqliteNow();
-      setSessions((prev) => prev.map((row) => (row.id === s.id ? { ...row, last_read_at: nowStr } : row)));
+      setSessions((prev) => prev.map((row) => (row.id === s.id ? { ...row, last_read_at: nowStr, unread_count: 0 } : row)));
     }
     onEnter(s, targetPane);
   };
@@ -315,12 +316,9 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     const extraArgN = Array.isArray(s.cli_extra_args) ? s.cli_extra_args.length : 0;
     const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
     const unread = !active && isUnread(s);
+    const unreadCountNum = typeof s.unread_count === 'number' ? s.unread_count : 1;
+    const unreadBadgeText = unreadCountNum > 99 ? '99+' : String(unreadCountNum > 0 ? unreadCountNum : 1);
     const statusClass = sessionStatusDotClass(s);
-    const rowDot = statusClass
-      ? { className: statusClass, title: sessionStatusLabel(s) }
-      : unread
-        ? { className: 'ra-status-dot unread', title: '未讀' }
-        : null;
     const rowTitle = [agentLabel, s.git_branch, extraArgN > 0 ? `+${extraArgN} CLI 引數` : '']
       .filter(Boolean)
       .join(' · ');
@@ -397,12 +395,21 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                   </svg>
                 </button>
               </div>
-              {rowDot ? (
+              {statusClass ? (
                 <span
-                  className={rowDot.className + ' sm:group-hover/card:opacity-0 transition-opacity'}
-                  title={rowDot.title}
-                  aria-label={rowDot.title}
+                  className={statusClass + ' sm:group-hover/card:opacity-0 transition-opacity'}
+                  title={sessionStatusLabel(s)}
+                  aria-label={sessionStatusLabel(s)}
                 />
+              ) : null}
+              {unread ? (
+                <span
+                  className="ra-unread-badge sm:group-hover/card:opacity-0 transition-opacity"
+                  title={`未讀訊息 ${unreadBadgeText} 則`}
+                  aria-label={`未讀訊息 ${unreadBadgeText} 則`}
+                >
+                  {unreadBadgeText}
+                </span>
               ) : null}
             </div>
         )}
@@ -622,6 +629,8 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                 const active = activeSessionId != null && s.id === activeSessionId;
                 const unread = !active && isUnread(s);
                 const agentLabel = AGENT_LABEL[s.agent_type] || s.agent_type || 'claude';
+                const unreadCountNum = typeof s.unread_count === 'number' ? s.unread_count : 1;
+                const unreadBadgeText = unreadCountNum > 99 ? '99+' : String(unreadCountNum > 0 ? unreadCountNum : 1);
                 return (
                   <button
                     key={s.id}
@@ -637,7 +646,12 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                   >
                     <AgentBadgeIcon agentType={s.agent_type} />
                     {unread && (
-                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-violet-400" aria-hidden />
+                      <span
+                        className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-violet-600 text-white text-[10px] font-bold flex items-center justify-center leading-none pointer-events-none ring-2 ring-[oklch(0.15_0.02_264)]"
+                        aria-label={`未讀訊息 ${unreadBadgeText} 則`}
+                      >
+                        {unreadBadgeText}
+                      </span>
                     )}
                   </button>
                 );

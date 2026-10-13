@@ -56,3 +56,52 @@ func TestCreateSessionEffort(t *testing.T) {
 		})
 	}
 }
+
+func TestSessionListReturnsUnreadCount(t *testing.T) {
+	database := testDB(t)
+	sess, err := database.CreateSession("unread_test", "", "", "default", "claude", nil, "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 模擬稍微過去的 last_read_at 並寫入 2 則訊息
+	if _, err := database.Exec(`UPDATE sessions SET last_read_at = '2020-01-01 00:00:00' WHERE id = ?`, sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := database.AddMessageWithID(sess.ID, "claude", "msg 1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := database.AddMessageWithID(sess.ID, "claude", "msg 2", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	app := fiber.New()
+	app.Get("/sessions", NewSessionHandler(database).List)
+
+	req := httptest.NewRequest("GET", "/sessions", nil)
+	res, err := app.Test(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		t.Fatalf("expected HTTP 200, got %d", res.StatusCode)
+	}
+
+	var list []struct {
+		ID          string `json:"id"`
+		UnreadCount int    `json:"unread_count"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&list); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(list) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(list))
+	}
+	if list[0].UnreadCount != 2 {
+		t.Fatalf("expected unread_count=2, got %d", list[0].UnreadCount)
+	}
+}
+
