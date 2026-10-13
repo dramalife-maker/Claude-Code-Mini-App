@@ -51,6 +51,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   }, [wantOfflineBar]);
 
   const [input, setInput]         = useState('');
+  const [quoteSelection, setQuoteSelection] = useState(null);
   const [lightboxSrc, setLightboxSrc] = useState(null);
   const [forwardModal, setForwardModal] = useState(null);
   const [forwardHints, setForwardHints] = useState({});
@@ -95,6 +96,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const { collapsed: headerCollapsed, toggle: toggleHeader, setCollapsed: setHeaderCollapsed } = useChatHeaderCollapsed();
 
   const syncChatNearBottom = useCallback(() => {
+    setQuoteSelection(null);
     const el = chatScrollRef.current;
     if (!el) return;
     const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -121,6 +123,73 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       });
     });
   }, []);
+
+  /** 將游標放回輸入框並移動至文字末尾（引言插入後專用） */
+  const focusChatInputToEnd = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = chatInputRef.current;
+        if (!el || el.disabled) return;
+        try {
+          el.focus({ preventScroll: true });
+          const len = typeof el.value === 'string' ? el.value.length : 0;
+          el.setSelectionRange(len, len);
+        } catch (_) {
+          el.focus();
+        }
+      });
+    });
+  }, []);
+
+  /** 處理選取文字引言回覆：格式化為 Markdown 引用、注入輸入框、聚焦並清除瀏覽器選取 */
+  const handleQuoteReply = useCallback(() => {
+    if (!quoteSelection || !quoteSelection.text) return;
+    const textToQuote = quoteSelection.text;
+    setInput((prev) => injectMarkdownQuote(prev, textToQuote));
+    setQuoteSelection(null);
+    try {
+      const sel = window.getSelection();
+      if (sel) sel.removeAllRanges();
+    } catch (_) {}
+    focusChatInputToEnd();
+  }, [quoteSelection, focusChatInputToEnd]);
+
+  /** 監聽訊息捲動容器中的文字框選事件 */
+  useEffect(() => {
+    const checkSelection = () => {
+      const sel = window.getSelection();
+      const detected = typeof detectMessageSelection === 'function'
+        ? detectMessageSelection(sel, chatScrollRef.current)
+        : null;
+      setQuoteSelection(detected);
+    };
+
+    const handleMouseUp = () => {
+      requestAnimationFrame(checkSelection);
+    };
+
+    const handleSelectionChange = () => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed) {
+        setQuoteSelection(null);
+      }
+    };
+
+    const container = chatScrollRef.current;
+    if (container) {
+      container.addEventListener('mouseup', handleMouseUp);
+      container.addEventListener('keyup', handleMouseUp);
+    }
+    document.addEventListener('selectionchange', handleSelectionChange);
+
+    return () => {
+      if (container) {
+        container.removeEventListener('mouseup', handleMouseUp);
+        container.removeEventListener('keyup', handleMouseUp);
+      }
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [session.id]);
 
   // 捲到底
   useEffect(() => {
@@ -685,18 +754,50 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [composerMenuOpen, mentionOpen]);
 
-  /** 聊天輸入框：依內容動態增高；未達上限不出現卷軸 */
+  /** 聊天輸入框：依內容動態增高；未達上限不出現卷軸，超出上限平滑啟用卷軸 */
   useLayoutEffect(() => {
     const el = chatInputRef.current;
-    if (!el || state === 'THINKING' || state === 'STREAMING' || state === 'SHELL_RUNNING' || state === 'SHELL_EXEC' || state === 'AWAITING_SHELL_CONFIRM') return;
+    if (!el) return;
     el.style.height = 'auto';
-    const maxStr = getComputedStyle(el).maxHeight;
-    const maxPx = parseFloat(maxStr);
-    const cap = Number.isFinite(maxPx) && maxPx > 0 ? maxPx : 12 * 16;
+    let cap = 240;
+    try {
+      const maxStr = getComputedStyle(el).maxHeight;
+      const maxPx = parseFloat(maxStr);
+      if (Number.isFinite(maxPx) && maxPx > 0) cap = maxPx;
+    } catch (_) {}
     const needed = el.scrollHeight;
-    el.style.height = `${Math.min(needed, cap)}px`;
-    el.style.overflowY = needed > cap + 1 ? 'auto' : 'hidden';
-  }, [input, state]);
+    if (needed > cap) {
+      el.style.height = `${cap}px`;
+      el.style.overflowY = 'auto';
+    } else {
+      el.style.height = `${needed}px`;
+      el.style.overflowY = 'hidden';
+    }
+  }, [input]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const el = chatInputRef.current;
+      if (!el) return;
+      el.style.height = 'auto';
+      let cap = 240;
+      try {
+        const maxStr = getComputedStyle(el).maxHeight;
+        const maxPx = parseFloat(maxStr);
+        if (Number.isFinite(maxPx) && maxPx > 0) cap = maxPx;
+      } catch (_) {}
+      const needed = el.scrollHeight;
+      if (needed > cap) {
+        el.style.height = `${cap}px`;
+        el.style.overflowY = 'auto';
+      } else {
+        el.style.height = `${needed}px`;
+        el.style.overflowY = 'hidden';
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <div
@@ -1101,6 +1202,24 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                     } catch (_) {}
                     syncComposerMenus(value, e.target.selectionStart, inputMode);
                   }}
+                  onInput={(e) => {
+                    const el = e.target;
+                    el.style.height = 'auto';
+                    let cap = 240;
+                    try {
+                      const maxStr = getComputedStyle(el).maxHeight;
+                      const maxPx = parseFloat(maxStr);
+                      if (Number.isFinite(maxPx) && maxPx > 0) cap = maxPx;
+                    } catch (_) {}
+                    const needed = el.scrollHeight;
+                    if (needed > cap) {
+                      el.style.height = `${cap}px`;
+                      el.style.overflowY = 'auto';
+                    } else {
+                      el.style.height = `${needed}px`;
+                      el.style.overflowY = 'hidden';
+                    }
+                  }}
                   onSelect={(e) => syncComposerMenus(e.target.value, e.target.selectionStart, inputMode)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
@@ -1108,7 +1227,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                   placeholder={inputMode === 'shell' ? `輸入 ${shellType || 'Shell'} 指令…` : canQueue ? '執行中…送出會排入佇列' : attachments.length ? '想請我如何處理這些附件？（可直接送出）' : '輸入指令… @ 標記 session'}
                   rows={1}
                   className={[
-                    'flex-1 min-w-0 w-full resize-none overflow-hidden border-0 bg-transparent px-1 py-1.5 text-[13.5px] leading-relaxed placeholder-[oklch(0.5_0.01_264)] focus:outline-none disabled:opacity-40 min-h-[2rem] max-h-[min(40vh,12rem)] box-border',
+                    'w-full min-w-0 resize-none border-0 bg-transparent px-1 py-1.5 text-[13.5px] leading-relaxed placeholder-[oklch(0.5_0.01_264)] focus:outline-none disabled:opacity-40 min-h-[2rem] max-h-[240px] box-border app-scroll',
                     inputMode === 'shell' ? 'text-amber-50 font-mono placeholder-amber-900/60' : 'text-[oklch(0.9_0.01_264)]',
                   ].join(' ')}
                 />
@@ -1159,6 +1278,12 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       <MessageActionsHost
         openRef={openMsgSheetRef}
         onForward={handleSheetForward}
+      />
+
+      <SelectionQuotePopover
+        targetRect={quoteSelection ? quoteSelection.targetRect : null}
+        onQuote={handleQuoteReply}
+        onClose={() => setQuoteSelection(null)}
       />
 
       {lightboxSrc && (

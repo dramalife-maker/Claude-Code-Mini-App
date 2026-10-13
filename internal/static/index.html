@@ -45,7 +45,10 @@
     body .prose, body .bubble-user, body .bubble-shell { font-size: var(--ra-chat-fs, 14px); }
     body .bubble-shell pre { font-size: calc(var(--ra-chat-fs, 14px) * 0.857143); }
     body .ra-msg-time { font-size: calc(var(--ra-chat-fs, 14px) * 0.714286); }
-    body textarea[data-chat-input] { font-size: calc(var(--ra-chat-fs, 14px) * 0.964286); }
+    body textarea[data-chat-input] {
+      font-size: calc(var(--ra-chat-fs, 14px) * 0.964286);
+      max-height: min(40vh, 240px);
+    }
     .ra-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
     .ra-display { font-family: 'Manrope', sans-serif; font-weight: 800; letter-spacing: -0.02em; }
     .h-app { height: var(--tg-viewport-height, 100svh); }
@@ -252,6 +255,7 @@
 <script type="text/babel" data-presets="react-classic" src="./js/chat/MentionMenu.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/chat/MessageActions.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/chat/AttachmentCards.js"></script>
+<script type="text/babel" data-presets="react-classic" src="./js/chat/SelectionQuotePopover.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/chat/ChatView.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/app.js"></script>
 

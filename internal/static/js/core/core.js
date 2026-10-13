@@ -622,3 +622,30 @@ function sessionStateChipClass(state) {
   if (state === 'AWAITING_SHELL_CONFIRM' || state === 'SHELL_AWAITING_APPROVAL' || state === 'AWAITING_CONFIRM') return 'bg-orange-500/20 text-orange-200';
   return 'bg-amber-500/20 text-amber-200';
 }
+
+/**
+ * 將選取的純文字格式化為 Markdown 引用區塊（> ...\n\n）。
+ * 空白文字回傳空字串；多行文字每一行前綴 `> `（空行則為 `>`）。
+ */
+function formatMarkdownQuote(text) {
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  const lines = trimmed.split(/\r?\n/);
+  const quoted = lines.map((line) => (line.length > 0 ? `> ${line}` : '>')).join('\n');
+  return `${quoted}\n\n`;
+}
+
+/**
+ * 將格式化好的引言文字注入現有草稿：
+ * 若現有草稿為空，直接回傳引言；若已有草稿，以換行連接後附加引言。
+ */
+function injectMarkdownQuote(existingDraft, quoteText) {
+  const q = formatMarkdownQuote(quoteText);
+  if (!q) return existingDraft || '';
+  const draft = typeof existingDraft === 'string' ? existingDraft : '';
+  if (!draft.trim()) return q;
+  const separator = draft.endsWith('\n\n') ? '' : draft.endsWith('\n') ? '\n' : '\n\n';
+  return `${draft}${separator}${q}`;
+}
+
