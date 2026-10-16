@@ -275,6 +275,7 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [buildInfo, setBuildInfo] = useState(null);
 
   // 開啟時重新從 localStorage 載入，避免上次關閉未存的草稿殘留。
   useEffect(() => {
@@ -282,6 +283,7 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
       setDraft(readStoredAppearance());
       setSaveError('');
       setSavedFlash(false);
+      fetchServerConfig().then(setBuildInfo);
     }
   }, [open]);
 
@@ -355,6 +357,10 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
                 {s.label}
               </button>
             ))}
+          </div>
+          <div className="shrink-0 px-4 py-3 text-xs leading-5 font-mono text-[oklch(0.65_0.01_264)] select-text">
+            <div>v{buildInfo?.version || '—'}</div>
+            <div title={buildInfo?.sha || 'unknown'}>SHA {buildInfo?.sha?.slice(0, 7) || '—'}</div>
           </div>
         </div>
 

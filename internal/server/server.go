@@ -313,7 +313,7 @@ func Start(ctx context.Context) (*Server, error) {
 	app.Put("/settings/general", authMiddleware, sth.PutGeneral)
 
 	app.Get("/config", authMiddleware, func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{"shell_enabled": cfg.Shell.Enabled})
+		return c.JSON(fiber.Map{"shell_enabled": cfg.Shell.Enabled, "version": version.Version, "sha": version.Revision()})
 	})
 
 	oh := api.NewOpenHandler(database, cfg.Shell.Enabled)
