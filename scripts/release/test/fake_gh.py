@@ -190,6 +190,11 @@ def cmd_release(args):
 def main(argv):
     if not argv:
         die(99, "no arguments")
+    # 真的 gh 會拒絕含控制字元（例如 Windows 上殘留的 CR）的 URL 或參數；假的也必須拒絕，
+    # 否則本機 harness 抓不到「輸出帶 CR」這類只在真實 CI 才爆的錯誤（v0.13.0 首次發佈就發生過）。
+    for x in argv:
+        if any(ord(c) < 0x20 or ord(c) == 0x7F for c in x):
+            die(1, "invalid control character in URL or argument: %r" % x)
     if argv[0] == "seed":
         return cmd_seed(argv[1:])
     if argv[0] == "api":

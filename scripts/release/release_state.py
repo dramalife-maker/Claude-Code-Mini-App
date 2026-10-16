@@ -12,6 +12,10 @@ import json
 import os
 import sys
 
+# Windows 上 print 預設輸出 CRLF，bash 的 read 會把 CR 留在欄位尾端
+# （asset id 變成 "123" 加 CR，gh 以 invalid control character 拒絕），所以 stdout 固定用 LF。
+sys.stdout.reconfigure(newline="\n")
+
 
 def fail(msg):
     print("release_state: " + msg, file=sys.stderr)

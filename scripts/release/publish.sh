@@ -45,7 +45,8 @@ cat "$work/header.md" "$work/changes.md" > "$work/notes.md"
 
 # 1. 查詢同 tag 的 Release（列表包含草稿）
 gh api "repos/$repo/releases?per_page=100" > "$work/releases.json"
-state="$(python "$here/release_state.py" find "$tag" < "$work/releases.json")"
+# 解析輸出一律去掉 CR（第二道防線；release_state.py 已固定輸出 LF）：asset id 帶 CR 會讓 gh 以 invalid control character 拒絕。
+state="$(python "$here/release_state.py" find "$tag" < "$work/releases.json" | tr -d '\r')"
 case "$state" in
   none)
     echo "建立草稿 $tag"
@@ -62,7 +63,7 @@ case "$state" in
         echo "移除草稿中的舊資產 $name"
         gh release delete-asset "$tag" "$name" -R "$repo" --yes
       fi
-    done < <(python "$here/release_state.py" assets "$tag" < "$work/releases.json")
+    done < <(python "$here/release_state.py" assets "$tag" < "$work/releases.json" | tr -d '\r')
     ;;
   *)
     fail "無法解析 Release 狀態：$state"
@@ -76,8 +77,9 @@ gh release upload "$tag" -R "$repo" --clobber "${paths[@]}"
 
 # 3. 從草稿下載並比對：名稱集合、大小、位元組與 checksums.txt
 gh api "repos/$repo/releases?per_page=100" > "$work/releases2.json"
-python "$here/release_state.py" verify "$tag" "$dist" "${expected[@]}" < "$work/releases2.json" > "$work/ids.txt" \
+python "$here/release_state.py" verify "$tag" "$dist" "${expected[@]}" < "$work/releases2.json" > "$work/ids.raw" \
   || fail "遠端資產驗證失敗（停在草稿）"
+tr -d '\r' < "$work/ids.raw" > "$work/ids.txt"
 mkdir "$work/remote"
 while read -r name aid; do
   gh api -H "Accept: application/octet-stream" "repos/$repo/releases/assets/$aid" > "$work/remote/$name" \
