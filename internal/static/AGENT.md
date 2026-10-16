@@ -9,7 +9,7 @@
 3. `js/app.js` **必須排最後**——它含 `ReactDOM.createRoot(...).render(<App/>)`，且依賴前面所有檔案定義好的元件。
 4. 任何 `<script>` **都不能加 `async`**，否則載入順序不保證，會打破上面的共用作用域假設。
 5. 沒有模組系統：**不要寫 `import`/`export`**，新增的東西直接宣告在全域即可被其他檔案用。
-6. 新增 `.js` 檔不用改 Go 也不用重編譯後端——Go 用 `app.Static` 直接從磁碟提供整個目錄。
+6. 開發模式（未加 `-tags production` 的建置，例如 `go run ./cmd/desktop`、`go run ./cmd/server`）直接從磁碟提供 `internal/static/`，改完 `.js` 重新整理即可。**production 建置（`-tags production`，即發佈的桌面 EXE）會把 `index.html`、`favicon.ico`、`js/` 嵌入執行檔**，改前端後必須重新建置才會生效（見下方「資源來源」）。
 
 ## 檔案地圖
 
@@ -29,11 +29,16 @@
 | 8 | `js/chat/MentionMenu.js` | `@mention` 選單、上方 chips、送出時 `[miniapp]` 展開（詢問／討論，不是 Forward）。 |
 | 9 | `js/chat/MessageActions.js` | 訊息長按：`useLongPress`、浮動小選單 `MessageContextMenu`（複製／轉發，樣式參考 Claude iOS）、容器 `MessageActionsHost`。觸控裝置上 `.msg-lp` 會關閉原生選字，由此接手。 |
 | 10 | `js/chat/ChatView.js` | `ChatView`（聊天主畫面，render + 操作 handler；WS 邏輯已移至 `useChatSocket`）。 |
+| 2c | `js/ui/desktop-update.js` | 桌面更新的純函式（狀態文字、錯誤代碼對應文字、`busyReason` 說明）與 `window.__desktopUpdater` 橋接；非桌面環境不掛載。測試：`scripts/desktop-update.test.cjs`。 |
+| 2d | `js/ui/DesktopUpdateSection.js` | 設定與系統匣共用的「桌面更新」區塊：版本／SHA、可用版本、純文字更新內容（不執行 HTML）、進度、下載、稍後、重新啟動並更新、重試。 |
+| 2e | `js/hooks/useDesktopUpdate.js` | 訂閱 `desktop-update-state` 事件的 hook，回傳最新快照與 `request(action)`；只送出 check／download／restart／status。 |
+
+（以上三列為桌面更新新增，依 `index.html` 實際順序登記於表中對應位置附近；它們只在 JSX render 時使用，但必須在 `js/app.js` 之前載入。）
 | 11 | `js/app.js` | `PasswordView`、`DebugBanner`、`App`，以及 `ReactDOM.createRoot(document.getElementById('root')).render(<App />)`。**必須最後載入**。 |
 
-後端：`internal/server/server.go` 的 `app.Static("/", "./internal/static")`（Fiber）直接把整個目錄當靜態檔案伺服，**沒有 `go:embed`**。這代表：
+後端：`internal/server/server.go` 透過 `static.Assets`（見下方「資源來源」）提供前端。非 production 建置讀磁碟，因此：
 - 新增/修改 `js/*.js` 立刻生效，不用重啟、不用重編譯 Go binary。
-- 只有改 Go 程式碼本身（路由、中介層等）才需要重編譯。
+- production 建置的前端是編譯時嵌入的，改 `js/*.js` 後要重新 `go build -tags production`。
 
 ## 跨檔共用作用域的原理
 
@@ -67,6 +72,14 @@
 
 - **一般開發**：改完直接重新整理瀏覽器，no-build，不需要任何編譯指令。
 - **語法檢查（可選，建議大改/切檔後執行）**：因為沒有編譯期把關，`@babel/standalone` 的轉譯錯誤只會在瀏覽器 console 裡以 runtime 錯誤出現。若要在改動後快速確認每個檔案語法正確，可寫一個小 Node 腳本，用 `@babel/standalone`（或 `@babel/core` + `@babel/preset-react`）對 `js/*.js` 逐一跑 `Babel.transform(source, { presets: ['react'] })`，任何拋出的 SyntaxError 即代表該檔案有問題。這不是專案既有的自動化流程，只是建議的手動排查手段。
+
+## 資源來源：production 嵌入與開發磁碟
+
+- `assets_production.go`（`//go:build production`）以 `go:embed index.html favicon.ico js` 嵌入；`assets_dev.go`（非 production）以 `os.DirFS("internal/static")` 讀磁碟。兩者都提供 `Assets fs.FS`，伺服器首頁、`ShareHandler.Page`（分享頁）與桌面 favicon 都從這同一個來源讀取。
+- **production**（`go build -tags production`，即發佈的桌面 EXE）只包含 `index.html`、`favicon.ico` 與 `js/`。不包含 `AGENT.md`、Go 原始碼、`uploads/` 或文件；磁碟上殘留的舊 `internal/static/` 不會遮蔽嵌入資源。
+- **開發**（未加 tag）直接讀磁碟，改完 JS 重新整理即可。`go run ./cmd/desktop` 屬於此模式。
+- **`/uploads/<檔名>`** 永遠由 `static.Uploads`（磁碟 `internal/static/uploads/`）提供。這是使用者資料（例如聊天截圖），不被嵌入，桌面更新也不會動它。
+- 測試：`go test ./internal/static`（開發模式）與 `go test -tags production ./internal/static`；桌面更新的純函式測試為 `node --test scripts/desktop-update.test.cjs`。
 
 ## 備份與還原
 

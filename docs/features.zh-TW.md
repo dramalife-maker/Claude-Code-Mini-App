@@ -35,9 +35,9 @@
 Win11 已內建 WebView2。`go build ./cmd/server` 維持純 Go、不需 CGO。桌面版用 Wails v3（系統匣是框架內建的）：
 
 ```bash
-go build -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
+go build -tags production -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
 ```
 
-exe 要跟 `config.yaml`、`internal/static/` 放在一起（與伺服器版相同）。在專案根目錄開發時，`go run ./cmd/desktop` 會用目前工作目錄的設定。加 `-tags production` 會關掉 Wails 的 debug log。
+exe 要跟 `config.yaml`、`internal/static/` 放在一起（與伺服器版相同）。在專案根目錄開發時，`go run ./cmd/desktop` 會用目前工作目錄的設定。`-tags production` 會把前端嵌入執行檔，並關掉 Wails 的 debug log。桌面程式內更新需要此標籤，發佈版一律使用。`go run ./cmd/desktop` 維持開發模式，讀取磁碟上的 `internal/static/`。
 
 前端檔案是直接從磁碟讀取，改 `internal/static/` 只需重新載入（F5），不必重新編譯。若改了仍沒生效，到 設定 → 一般 →「清除快取並重新載入」。

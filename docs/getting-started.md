@@ -224,7 +224,7 @@ go build -o claude-miniapp.exe ./cmd/server
 For the Windows desktop build instead:
 
 ```powershell
-go build -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
+go build -tags production -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
 .\claude-miniapp-desktop.exe
 ```
 

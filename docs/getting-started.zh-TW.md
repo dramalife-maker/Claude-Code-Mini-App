@@ -222,7 +222,7 @@ go build -o claude-miniapp.exe ./cmd/server
 Windows 桌面版改用：
 
 ```powershell
-go build -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
+go build -tags production -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
 .\claude-miniapp-desktop.exe
 ```
 

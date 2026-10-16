@@ -35,9 +35,9 @@ Same process, plus a window that loads the existing UI. The browser and Telegram
 Win11 already includes the WebView2 runtime. `go build ./cmd/server` stays pure Go. The desktop build uses Wails v3 (the tray is built in):
 
 ```bash
-go build -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
+go build -tags production -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop
 ```
 
-Put the exe next to `config.yaml` and `internal/static/` (same layout as the server binary). From a repo checkout, `go run ./cmd/desktop` uses the working directory's config. Add `-tags production` to turn off Wails debug logging.
+Put the exe next to `config.yaml` and `internal/static/` (same layout as the server binary). From a repo checkout, `go run ./cmd/desktop` uses the working directory's config. `-tags production` embeds the frontend in the exe and turns off Wails debug logging. The in-app updater needs it, so release builds always use it. `go run ./cmd/desktop` stays in development mode and reads `internal/static/` from disk.
 
 Frontend files are served from disk, so editing `internal/static/` only needs a reload (F5), not a rebuild. If a change still doesn't show up, use Settings → General → "Clear cache & reload".

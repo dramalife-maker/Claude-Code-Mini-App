@@ -37,6 +37,29 @@ All three talk to the same server and see the same sessions in real time.
 
 [Troubleshooting](docs/getting-started.md#troubleshooting) · [Build from source (Go 1.25+)](docs/getting-started.md#building-from-source) · [Desktop window and shortcuts](docs/features.md#desktop-window-windows)
 
+## 🔄 Desktop auto-update (Windows)
+
+The Windows desktop app can check GitHub Releases and update **itself**. Only `claude-miniapp-desktop.exe` is replaced.
+
+- **Upgrade once by hand first.** Versions before the updater cannot update themselves. Download the new `claude-miniapp-v<X.Y.Z>-windows-amd64.zip` and replace `claude-miniapp-desktop.exe` in your existing folder, keeping `config.yaml` and your data. After that, updates happen inside the app.
+- **Check:** tray → Check for updates, or Settings → Desktop update. The app also checks at startup and every 6 hours, and only shows the result. It never downloads or restarts on its own.
+- **Download and restart are separate clicks.** Download starts only when you click it. Restart and update also needs a click, and the app refuses it while work is busy.
+- **Busy refusal:** a restart is refused (`update_busy`) while any session has a running task, a shell command, a pending approval, or **any queued message, even if the queue is paused**. Finish the work or clear the queue, then try again. The downloaded update is kept.
+- **Writable folder required:** the folder containing the exe must be writable by your user. The updater does not ask for administrator rights.
+- **Kept as-is:** `config.yaml`, `claude-miniapp.db`, `workspace/` (attachments), `logs/`, and `internal/static/` are not changed. Only `claude-miniapp-desktop.exe` is replaced.
+- **Not auto-updated:** the Windows server (`claude-miniapp.exe`) and Linux builds. Update those by hand.
+- **Manual restore:** before upgrading, keep a backup copy of the current exe. To go back, close the app and copy the backup over the exe:
+
+```powershell
+Copy-Item .\claude-miniapp-desktop.exe .\claude-miniapp-desktop.previous.exe
+# To roll back: close the app, then
+Copy-Item .\claude-miniapp-desktop.previous.exe .\claude-miniapp-desktop.exe -Force
+```
+
+  Only the exe files are touched. Data is not downgraded automatically.
+- **Integrity:** downloads are checked against the SHA256 in `checksums.txt`. That proves the file matches the release. It does **not** prove who published it, because there is no signature check yet.
+- **Network:** checking and downloading need access to GitHub. An update does not make the app work offline.
+
 ## ✨ Features
 
 - **Multi-agent** — Claude Code, Cursor Agent, Codex, Kiro ACP and Antigravity, chosen per session. Tool approvals show the full command or file content before you allow them

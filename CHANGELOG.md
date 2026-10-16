@@ -4,6 +4,18 @@
 
 發版流程：更新 `VERSION`、`internal/version/version.go`、README 版本徽章與本檔 → commit → 打 `vX.Y.Z` tag 並 push，GitHub Actions 會自動建置並發佈 Release（說明文字取自本檔對應段落）。
 
+## [Unreleased]
+
+### 新增
+- Windows 桌面版自我更新：系統匣與設定的「檢查更新」，固定查詢 GitHub 正式版；下載與「重新啟動並更新」都需手動確認，只替換 `claude-miniapp-desktop.exe`，保留設定、資料庫、附件與日誌
+- 桌面更新的忙碌保護：有進行中的任務、shell、待授權或佇列項目（含暫停中）時拒絕重啟（`update_busy`），更新不會強停工作
+- 發佈資產新增 `claude-miniapp-desktop-v<X.Y.Z>-windows-amd64.exe`（與 ZIP 內的桌面 EXE 位元組相同），`checksums.txt` 涵蓋 ZIP、tar.gz 與桌面 EXE
+
+### 變更
+- 桌面版 `build.bat` 改用 `-tags production`，前端嵌入執行檔；`go run ./cmd/desktop` 仍為開發模式（讀取磁碟前端）
+- 發佈流程改為草稿優先：先建立草稿、上傳並比對所有資產，全部通過才公開為 latest；已公開的版本不會被覆寫
+- 發佈前檢查 tag、`VERSION`、`internal/version/version.go` 的 Version 一致，且 tag 指向觸發建置的 commit
+
 ## [0.12.0] - 2026-10-16
 
 ### 新增

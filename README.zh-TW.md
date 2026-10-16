@@ -37,6 +37,29 @@
 
 [問題排解](docs/getting-started.zh-TW.md#問題排解) · [從原始碼建置（Go 1.25+）](docs/getting-started.zh-TW.md#從原始碼建置) · [桌面視窗與快捷鍵](docs/features.zh-TW.md#桌面視窗windows)
 
+## 🔄 桌面版自動更新（Windows）
+
+Windows 桌面版可以查詢 GitHub Release 並**自行更新**，只會替換 `claude-miniapp-desktop.exe`。
+
+- **先手動升級一次。** 沒有更新功能的舊版無法自我更新。請下載新版 `claude-miniapp-v<X.Y.Z>-windows-amd64.zip`，把現有資料夾中的 `claude-miniapp-desktop.exe` 換成新檔，保留 `config.yaml` 與資料。之後的版本可在程式內更新。
+- **檢查：** 系統匣 →「檢查更新」，或 設定 → 桌面更新。程式會在啟動時與之後每 6 小時檢查一次，只顯示結果，不會自行下載或重啟。
+- **下載與重啟分開確認。** 按「下載」才會開始下載；「重新啟動並更新」同樣需要點擊，工作忙碌時程式會拒絕。
+- **忙碌時拒絕重啟：** 只要有任一 session 正在執行任務、執行 shell 指令、有待授權項目，或**佇列有項目（即使暫停）**，重啟會被拒絕（`update_busy`）。請先完成工作或清空佇列再試；已下載的更新會保留。
+- **需要可寫入的安裝目錄：** `claude-miniapp-desktop.exe` 所在資料夾必須對目前使用者可寫入；更新程式不會要求系統管理員權限。
+- **保留不動的內容：** `config.yaml`、`claude-miniapp.db`、`workspace/`（附件）、`logs/`、`internal/static/` 都不會被更新動作改動，只替換 `claude-miniapp-desktop.exe`。
+- **不會自動更新：** Windows server（`claude-miniapp.exe`）與 Linux 版本，請手動更新。
+- **手動恢復舊版：** 升級前請先保留一份目前 EXE 的備份。要回退時，關閉程式後把備份覆寫回去：
+
+```powershell
+Copy-Item .\claude-miniapp-desktop.exe .\claude-miniapp-desktop.previous.exe
+# 要回退時：先關閉程式，再執行
+Copy-Item .\claude-miniapp-desktop.previous.exe .\claude-miniapp-desktop.exe -Force
+```
+
+  只會動到 EXE 檔，資料不會自動降版。
+- **完整性：** 下載檔會以 `checksums.txt` 中的 SHA256 比對，確認檔案與本次發佈一致。這**不能**證明發佈者身分，因為目前沒有簽章驗證。
+- **網路：** 檢查與下載需要連到 GitHub；更新不代表程式可以離線使用。
+
 ## ✨ 功能
 
 - **多代理** — Claude Code、Cursor Agent、Codex、Kiro ACP、Antigravity，依 Session 選擇。工具授權前會顯示完整指令或檔案內容
