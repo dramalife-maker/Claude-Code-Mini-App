@@ -38,6 +38,13 @@ func (fakeRunner) Run(ctx context.Context, opts agent.RunOptions, cb agent.Event
 	}
 	cb(agent.Event{Type: agent.EventDelta, Text: "ok:" + opts.Prompt})
 	cb(agent.Event{Type: agent.EventDone})
+	// "linger" 開頭：result 後程序不退出（模擬等 ScheduleWakeup），直到 gate 放行。
+	if strings.HasPrefix(opts.Prompt, "linger") {
+		select {
+		case <-fakeGate:
+		case <-ctx.Done():
+		}
+	}
 	return nil
 }
 
@@ -286,4 +293,56 @@ func TestQueue_IdleInputDoesNotJumpPausedQueue(t *testing.T) {
 	if got := strings.Join(u[len(u)-2:], ","); got != "old,new" {
 		t.Fatalf("順序錯誤: %s", got)
 	}
+}
+
+// result 後程序仍活著：status 已 IDLE，但要通知前端 lingering on（顯示中斷鈕）；程序退出後 lingering off。
+func TestLingering_NotifiedWhileProcessOutlivesResult(t *testing.T) {
+	old := lingerNoticeDelay
+	lingerNoticeDelay = 50 * time.Millisecond
+	t.Cleanup(func() { lingerNoticeDelay = old })
+
+	database, wsURL := startTestServer(t)
+	s, err := database.CreateSession("l", "", t.TempDir(), "default", "fakeq", nil, "agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(s.ID), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	events := make(chan string, 64)
+	go func() {
+		for {
+			var m struct{ Type, Value string }
+			if err := conn.ReadJSON(&m); err != nil {
+				return
+			}
+			if m.Type == "lingering" || (m.Type == "status" && m.Value == StateIdle) {
+				events <- m.Type + ":" + m.Value
+			}
+		}
+	}()
+	expect := func(want string) {
+		t.Helper()
+		select {
+		case got := <-events:
+			if got != want {
+				t.Fatalf("事件順序錯誤: got %s want %s", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("timeout waiting for %s", want)
+		}
+	}
+
+	if err := conn.WriteJSON(map[string]string{"type": "input", "data": "linger-1"}); err != nil {
+		t.Fatal(err)
+	}
+	expect("status:IDLE")
+	expect("lingering:on")
+	if !taskIsActive(s.ID) {
+		t.Fatal("程序未退出時任務應仍登記為執行中")
+	}
+	fakeGate <- nil
+	expect("lingering:off")
 }

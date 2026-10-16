@@ -22,7 +22,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     quota, quotaRefreshing,
     sessionModel,
     activityHint,
-    queue, queuePaused,
+    queue, queuePaused, lingering,
     send,
     submitInput,
     flushPendingModes,
@@ -719,9 +719,9 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   };
 
   const agentRunning = state === 'THINKING' || state === 'STREAMING';
-  const taskRunning = agentRunning || state === 'SHELL_RUNNING' || state === 'SHELL_EXEC';
+  const taskRunning = agentRunning || lingering || state === 'SHELL_RUNNING' || state === 'SHELL_EXEC';
   // Agent 執行中／等授權時仍可送出：後端排入佇列，前一輪成功後依序執行。
-  const canQueue = inputMode !== 'shell' && (agentRunning || state === 'AWAITING_CONFIRM');
+  const canQueue = inputMode !== 'shell' && (agentRunning || lingering || state === 'AWAITING_CONFIRM');
   const isDisabled = !canQueue && (state === 'THINKING' || state === 'STREAMING' || state === 'AWAITING_CONFIRM' || state === 'SHELL_RUNNING' || state === 'SHELL_AWAITING_APPROVAL' || state === 'SHELL_EXEC' || state === 'AWAITING_SHELL_CONFIRM');
   const modeSwitchDisabled = ['THINKING', 'STREAMING', 'AWAITING_CONFIRM', 'SHELL_RUNNING', 'SHELL_AWAITING_APPROVAL', 'SHELL_EXEC', 'AWAITING_SHELL_CONFIRM'].includes(state);
   const coarsePointer = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
@@ -1251,7 +1251,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
               </div>
               {/* 把中斷／送出推到按鈕列右側 */}
               <div className="flex-1" aria-hidden="true" />
-              {agentRunning && (
+              {(agentRunning || lingering) && (
                 <button type="button" onClick={handleInterrupt}
                   aria-label={interrupting ? '再按一次強制停止' : '中斷'}
                   title={interrupting ? '再按一次強制停止' : '中斷'}

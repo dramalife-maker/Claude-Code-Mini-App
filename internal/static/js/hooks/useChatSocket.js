@@ -32,6 +32,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
   /** 執行中先送出、等待前一輪完成的訊息（後端持久化，sync / queue_update 同步） */
   const [queue, setQueue] = useState([]);
   const [queuePaused, setQueuePaused] = useState(false);
+  /** status 已 IDLE 但後端任務程序仍活著（等喚醒中）：後端視為忙碌，需顯示中斷鈕 */
+  const [lingering, setLingering] = useState(false);
   const onHandoffChangeRef = useRef(onHandoffChange);
   onHandoffChangeRef.current = onHandoffChange;
 
@@ -70,6 +72,7 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
     setShellRequest(null);
     setQueue([]);
     setQueuePaused(false);
+    setLingering(false);
     const im =
       session.input_mode === 'shell' || session.input_mode === 'agent'
         ? session.input_mode
@@ -217,6 +220,12 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
           if (msg.model) setSessionModel(msg.model);
           setQueue(msg.queue || []);
           setQueuePaused(!!msg.queue_paused);
+          setLingering(!!msg.lingering);
+          return;
+        }
+
+        if (msg.type === 'lingering') {
+          setLingering(msg.value === 'on');
           return;
         }
 
@@ -613,7 +622,7 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
     quota, quotaRefreshing,
     sessionModel,
     activityHint,
-    queue, queuePaused,
+    queue, queuePaused, lingering,
     send,
     submitInput,
     flushPendingModes,

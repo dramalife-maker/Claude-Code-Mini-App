@@ -84,6 +84,9 @@ const (
 	StateShellExec            = "SHELL_EXEC"
 )
 
+// lingerNoticeDelay：result 後程序超過這段時間仍未退出，才通知前端「等待喚醒中」。
+var lingerNoticeDelay = 3 * time.Second // var：測試縮短用
+
 type clientMsg struct {
 	RequestID     string   `json:"request_id,omitempty"`
 	AttachmentIDs []string `json:"attachment_ids,omitempty"`
@@ -121,9 +124,10 @@ type serverMsg struct {
 	Model        *model.Payload     `json:"model,omitempty"`
 	Queue        []db.QueuedMessage `json:"queue,omitempty"`
 	QueuePaused  bool               `json:"queue_paused,omitempty"`
-	Author       string             `json:"author,omitempty"`  // 說話者暱稱；空字串＝擁有者。presence 事件中為事件主角
-	Online       []string           `json:"online,omitempty"`  // presence：目前在線名單
-	Handoff      *manualHandoffInfo `json:"handoff,omitempty"` // type=handoff_available：自動交接未成功時的手動接手資訊
+	Lingering    bool               `json:"lingering,omitempty"` // type=sync：status 已 IDLE 但任務程序仍活著（等喚醒中）
+	Author       string             `json:"author,omitempty"`    // 說話者暱稱；空字串＝擁有者。presence 事件中為事件主角
+	Online       []string           `json:"online,omitempty"`    // presence：目前在線名單
+	Handoff      *manualHandoffInfo `json:"handoff,omitempty"`   // type=handoff_available：自動交接未成功時的手動接手資訊
 }
 
 type shellPendingPayload struct {
@@ -266,6 +270,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 		syncMsg.Model = sessionModelPayload(sess)
 		syncMsg.Queue, syncMsg.QueuePaused = loadQueueState(database, sessionID)
+		syncMsg.Lingering = syncData.UIState == StateIdle && taskIsActive(sessionID)
 		send(syncMsg)
 		announcePresence(sessionID, "join", entry.displayName(), isGuest)
 
@@ -601,6 +606,11 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				errText := ""
 				var cancelled bool
 
+				// result 後程序可能仍活著（例如等 ScheduleWakeup 喚醒），此時後端仍視為忙碌、新訊息會排隊，
+				// 但 status 已是 IDLE（MCP 的 ask_session 靠它判斷回合結束，不能改）。另發 lingering 讓前端顯示中斷鈕。
+				var lingerMu sync.Mutex
+				runEnded := false
+
 				// appendNotice：把說明寫進本則回覆（落 DB＋即時廣播）。尚未開始串流時先補 streaming 狀態，
 				// 前端的 delta 只會接在最後一則訊息上。
 				streamed := false
@@ -762,6 +772,14 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 								slog.Info(fmt.Sprintf("[ws] MarkSessionRead: %v", err))
 							}
 							broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
+							// 延遲一下再通知：一般情況程序毫秒內就退出，不需閃一下中斷鈕。
+							time.AfterFunc(lingerNoticeDelay, func() {
+								lingerMu.Lock()
+								defer lingerMu.Unlock()
+								if !runEnded {
+									broadcast(serverMsg{Type: "lingering", Value: "on"})
+								}
+							})
 							notifyTaskAsync(botToken, tgUserID, notifyCfg, tg.TaskAlert{
 								SessionName: sess.Name,
 								Outcome:     tg.OutcomeSuccess,
@@ -786,6 +804,11 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						}
 					}
 				})
+
+				lingerMu.Lock()
+				runEnded = true
+				broadcast(serverMsg{Type: "lingering", Value: "off"})
+				lingerMu.Unlock()
 
 				if errors.Is(ctx.Err(), context.Canceled) {
 					cancelled = true
