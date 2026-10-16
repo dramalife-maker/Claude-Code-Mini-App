@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -49,7 +50,7 @@ func newGuestEnv(t *testing.T) *guestEnv {
 		}
 		return c.Next() // 擁有者
 	}
-	shareH := api.NewShareHandler(database, api.ShareHooks{Kick: ws.KickShare, Online: ws.ShareOnline}, "../static")
+	shareH := api.NewShareHandler(database, api.ShareHooks{Kick: ws.KickShare, Online: ws.ShareOnline}, os.DirFS("../static"))
 	sh := api.NewSessionHandler(database)
 	uh := api.NewUploadHandler(database)
 	app.Get("/sessions/:id/messages", auth, sh.Messages)

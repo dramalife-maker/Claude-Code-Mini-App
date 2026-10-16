@@ -31,6 +31,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/kiro"
 	mymcp "github.com/jerry12122/Claude-Code-Mini-App/internal/mcp"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/static"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/version"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/ws"
@@ -132,7 +133,11 @@ func Start(ctx context.Context) (*Server, error) {
 		c.Set("Cache-Control", "no-cache")
 		return c.Next()
 	})
-	app.Static("/", "./internal/static")
+	// 首頁、JS、favicon 與分享頁都來自同一個前端資源來源（static.Assets）。
+	assets := static.Assets
+	app.Use(static.Handler(assets))
+	// 聊天截圖（media.SaveBase64Image 寫入 internal/static/uploads）仍由磁碟提供，與嵌入的前端資源分開。
+	app.Use("/uploads", static.UploadsHandler(static.Uploads))
 
 	app.Post("/auth/login", func(c *fiber.Ctx) error {
 		if cfg.NoAuth {
@@ -280,7 +285,7 @@ func Start(ctx context.Context) (*Server, error) {
 		return c.Next()
 	}
 
-	shareH := api.NewShareHandler(database, api.ShareHooks{Kick: ws.KickShare, Online: ws.ShareOnline}, "./internal/static")
+	shareH := api.NewShareHandler(database, api.ShareHooks{Kick: ws.KickShare, Online: ws.ShareOnline}, assets)
 	sh := api.NewSessionHandler(database)
 	sh.OnSharesRevoked = shareH.KickAll
 	app.Get("/sessions", authMiddleware, sh.List)

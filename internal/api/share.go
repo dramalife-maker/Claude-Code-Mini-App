@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,13 +36,14 @@ type ShareHooks struct {
 
 // ShareHandler 處理分享相關 API。
 type ShareHandler struct {
-	db        *db.DB
-	hooks     ShareHooks
-	staticDir string
+	db     *db.DB
+	hooks  ShareHooks
+	assets fs.FS // 前端公開資源（與首頁、JS、favicon 同一來源）
 }
 
-func NewShareHandler(database *db.DB, hooks ShareHooks, staticDir string) *ShareHandler {
-	return &ShareHandler{db: database, hooks: hooks, staticDir: staticDir}
+// NewShareHandler 的 assets 須含 index.html；分享頁由它讀取。
+func NewShareHandler(database *db.DB, hooks ShareHooks, assets fs.FS) *ShareHandler {
+	return &ShareHandler{db: database, hooks: hooks, assets: assets}
 }
 
 // shareTTL 同時接受秒數（數字）與 Go duration 字串（例如 "1h"、"30m"）。
@@ -230,7 +231,7 @@ func (h *ShareHandler) KickAll(ids []int64) {
 // Page GET /share/:token：回傳 SPA（index.html），由前端 app.js 依路徑進入訪客模式。
 // 頁面以相對路徑載入資源，故注入 <base>，讓 /share/<token> 下仍能正確取得 js／favicon。
 func (h *ShareHandler) Page(c *fiber.Ctx) error {
-	raw, err := os.ReadFile(h.staticDir + "/index.html")
+	raw, err := fs.ReadFile(h.assets, "index.html")
 	if err != nil {
 		return jsonErr(c, 500, "無法載入頁面")
 	}
