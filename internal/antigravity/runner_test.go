@@ -17,6 +17,11 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv("FAKE_AGY_PRINT"); mode != "" {
 		fmt.Fprint(os.Stderr, "fake diagnostic")
 		switch mode {
+		case "models":
+			if len(os.Args) != 2 || os.Args[1] != "models" {
+				os.Exit(2)
+			}
+			fmt.Fprint(os.Stdout, os.Getenv("FAKE_AGY_MODELS"))
 		case "text":
 			fmt.Fprint(os.Stdout, "hello\n")
 		case "whitespace":

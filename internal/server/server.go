@@ -20,6 +20,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/antigravity"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/api"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/auth"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/claude"
@@ -472,6 +473,13 @@ func syncModelOptions(database *db.DB) (failed []string) {
 	}
 	apply(agent.TypeKiro, kiroOpts, err)
 	apply(agent.TypeKiroACP, kiroOpts, err)
+
+	agyEntries, err := antigravity.FetchModelOptions(ctx)
+	agyOpts := make([]db.ModelOption, 0, len(agyEntries))
+	for _, e := range agyEntries {
+		agyOpts = append(agyOpts, db.ModelOption{ModelID: e.ModelID, Label: e.Label})
+	}
+	apply(agent.TypeAntigravity, agyOpts, err)
 	return failed
 }
 

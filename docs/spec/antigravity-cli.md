@@ -78,6 +78,7 @@ agy --output-format stream-json \
 
 ## 模型與用量顯示
 
+- 啟動及設定頁「重新抓取」會透過 `agy models` 同步模型選單（30 秒逾時，支援 `CC_AGY_BIN`）；抓取失敗、格式錯誤或空清單時保留既有選項並回報失敗。重新開啟對話即可載入更新的選單。
 - 模型選擇優先序：會話 `model` → `cli_extra_args` 的 `--model` → 標籤 fallback `gemini-3.8-flash-high`。fallback 是應用推論值；沒有指定 `--model` 時，CLI 仍使用自己的預設設定。
 - 切換模型時立即發送 `model_update`，執行前更新持久化資訊；重新連線與清除選擇後重新解析，避免沿用過期標籤。
 - 配額是帳戶級快取，將 CLI 回報的剩餘比例換算為已使用比例（限制在 0–100%），以 Gemini／Claude/GPT 標籤區分兩組窗口；5 小時窗口附重置倒數。
