@@ -4,7 +4,7 @@
 
 發版流程：更新 `VERSION`、`internal/version/version.go`、README 版本徽章與本檔 → commit → 打 `vX.Y.Z` tag 並 push，GitHub Actions 會自動建置並發佈 Release（說明文字取自本檔對應段落）。
 
-## [Unreleased]
+## [0.13.0] - 2026-10-16
 
 ### 新增
 - Windows 桌面版自我更新：系統匣與設定的「檢查更新」，固定查詢 GitHub 正式版；下載與「重新啟動並更新」都需手動確認，只替換 `claude-miniapp-desktop.exe`，保留設定、資料庫、附件與日誌
