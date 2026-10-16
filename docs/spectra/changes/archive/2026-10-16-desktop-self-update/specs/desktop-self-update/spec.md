@@ -1,0 +1,164 @@
+## Purpose
+
+Provides Windows desktop users with checks for stable GitHub Releases, explicit download and restart actions, and verified executable replacement through the existing Wails updater. It preserves running work and user data and exposes no remote installation or restart API.
+
+## ADDED Requirements
+
+### Requirement: Desktop update entry points
+
+The desktop SHALL provide Check for Updates in the system tray and beside the existing version and SHA display in settings. Both SHALL open the same update section showing current identity, available version, plain-text release notes, progress, and applicable download, later, retry, and restart actions. Browser, Telegram, guest, and standalone server contexts SHALL NOT expose desktop update controls.
+
+#### Scenario: Open updates from either entry point
+
+- **WHEN** the desktop user invokes Check for Updates from the tray or settings
+- **THEN** the main window shows the same update section and starts a manual check without starting a second concurrent operation
+
+#### Scenario: Read untrusted release notes
+
+- **WHEN** release notes contain HTML or script markup
+- **THEN** the update section displays it as text without executing it
+
+#### Scenario: Open settings outside desktop
+
+- **WHEN** settings are opened in a browser, Telegram, or guest context
+- **THEN** desktop update controls are absent while permitted existing settings retain their behavior
+
+### Requirement: Restricted native update commands
+
+Native update commands SHALL accept only check, download, restart, and status from the trusted desktop main frame at the configured local owner-page origin. Native handlers MUST validate the sending window, main-frame identity, Origin, and TopOrigin. They MUST reject unknown commands and untrusted navigation, MUST NOT accept caller-selected repositories, download URLs, paths, or executable commands, and SHALL expose no installation or restart HTTP endpoint.
+
+#### Scenario: Reject an untrusted native command
+
+- **WHEN** a command comes from another window, a child frame, an empty or foreign origin, a guest page, or uses an unknown action
+- **THEN** no update operation starts and no executable is downloaded or replaced
+
+#### Scenario: Navigate to an external or share URL
+
+- **WHEN** the desktop main window is asked to open an external page or guest share link
+- **THEN** that link opens in the external browser without receiving the desktop update bridge
+
+### Requirement: Stable release checks
+
+The desktop SHALL check the fixed public repository jerry12122/Claude-Code-Mini-App after initialization and once every six hours while running, and SHALL support manual checks. Six hours is the configured product schedule. It SHALL offer only a strictly newer stable semantic version with the exact desktop executable for the running supported platform. It MUST NOT select a draft, prerelease, same or older version, server executable, or installation ZIP. The shipped application SHALL contain no GitHub personal access token.
+
+#### Scenario: Check at startup and on schedule
+
+- **WHEN** initialization completes and the configured interval subsequently elapses
+- **THEN** the desktop checks once at each trigger, updates its status silently, and does not automatically download or restart
+
+#### Scenario: Select a newer desktop release
+
+- **WHEN** version 1.0.0 checks a stable v1.0.1 release containing the legacy Windows ZIP and the exact desktop EXE
+- **THEN** only the desktop EXE is offered with version 1.0.1 and its release notes
+
+#### Scenario: Exclude unsupported release candidates
+
+- **WHEN** candidates are a draft, a prerelease, v1.0.0, or v0.9.9 for current version 1.0.0
+- **THEN** none is offered as an update
+
+#### Scenario: Required desktop asset is missing
+
+- **WHEN** the latest stable release is newer but has no exact matching desktop asset
+- **THEN** the desktop reports asset_missing and retains the installed version
+
+### Requirement: Explicit serialized download and verification
+
+The desktop MUST require the user's download action before downloading an update. It MUST require a valid SHA256 checksum for the exact executable in checksums.txt and MUST refuse missing, malformed, or mismatching checksum data. It SHALL use Wails staging and verification, report progress, and enter ready only after successful verification. Repeated or scheduled operations SHALL NOT create concurrent downloads or helpers or invalidate a ready update.
+
+#### Scenario: Download after confirmation
+
+- **WHEN** the user chooses Download for an available release with valid checksum data
+- **THEN** the desktop downloads the executable, reports progress, verifies its bytes, and offers restart while the current application continues running
+
+#### Scenario: Refuse checksum failures
+
+- **WHEN** checksums.txt is missing, the matching filename entry is absent, its hash is malformed, or downloaded bytes fail the hash check
+- **THEN** the desktop reports checksum_missing or checksum_mismatch, does not enter ready, and leaves the installed executable unchanged
+
+#### Scenario: Repeat commands during an operation
+
+- **WHEN** a download is active or a verified update is ready and a timer or duplicate user command arrives
+- **THEN** no additional download or helper starts and the active operation or ready update remains intact
+
+### Requirement: Helper startup precedes application side effects
+
+A helper-mode process MUST handle the Wails update protocol before changing working directory, reading configuration, initializing logs, opening the database, binding the HTTP port, or entering single-instance handling. A normal process SHALL retain the established application startup behavior.
+
+#### Scenario: Start a helper while the application owns its port
+
+- **WHEN** the updater spawns its helper while the current application is running
+- **THEN** the helper acknowledges readiness without initializing application data or trying to bind the occupied port
+
+### Requirement: Idle-only update restart
+
+The desktop MUST require the user's restart confirmation and atomically acquire an update maintenance gate before spawning a replacement helper. Running agent or shell work, unfinished cancellation cleanup, pending approvals or shell confirmation, and queued work across all sessions MUST block the update restart without stopping or deleting that work. The gate SHALL serialize with all work admission paths, including WebSocket, MCP loopback, and queue dispatch. It SHALL block new work before execution side effects or queue consumption until shutdown, and SHALL be released if helper startup fails.
+
+#### Scenario: Work prevents update restart
+
+- **WHEN** the user requests restart while any running, cleaning-up, awaiting-confirmation, or queued work exists
+- **THEN** the application reports update_busy, stays on the current version with the update ready, and does not spawn a helper or force-stop work
+
+#### Scenario: Report the busy reason
+
+- **WHEN** a restart is refused as busy
+- **THEN** the status carries busyReason naming the blocking category: running_task, shell_task, pending_confirm, queued, or maintenance
+
+#### Scenario: Queued work blocks restart even when paused
+
+- **WHEN** any session's message queue has items while that queue is paused
+- **THEN** the restart is refused with update_busy and busyReason queued, and the queued messages are kept
+
+#### Scenario: Restart in progress
+
+- **WHEN** the maintenance gate is acquired and the application calls Restart
+- **THEN** the state is restarting, the desktop UI shows it as busy with the check, download, and restart actions unavailable, and no second helper starts
+
+#### Scenario: Gate cannot determine work state
+
+- **WHEN** the gate cannot read the work state, for example because a database query fails
+- **THEN** the restart is cancelled with update_check_failed, no helper starts, and the verified update remains ready
+
+#### Scenario: Race new work against restart
+
+- **WHEN** new work admission races an otherwise idle update restart
+- **THEN** exactly one wins: admitted work prevents restart, or the acquired maintenance gate rejects work with update_in_progress before execution side effects and without deleting queued messages
+
+#### Scenario: Start confirmed idle update
+
+- **WHEN** the user confirms restart, all work is idle, and the maintenance gate is acquired
+- **THEN** the helper starts, the application shuts down its HTTP service and database, the desktop EXE is replaced at its original path, and the new application starts with its matching embedded frontend
+
+#### Scenario: Helper startup fails
+
+- **WHEN** the helper cannot start or acknowledge readiness
+- **THEN** the maintenance gate is released, helper_failed is displayed, and the current process and ready update remain usable
+
+### Requirement: Data preservation and bounded failure recovery
+
+Updates SHALL replace only the currently running desktop executable and MUST NOT relocate or overwrite configuration, databases, attachments, logs, or standalone server files. Check, network, checksum, write-permission, or helper-start failures SHALL preserve the running version. Replacement or process-creation failure SHALL use Wails helper backup recovery. The application SHALL NOT promise automatic rollback after the replacement process has started successfully but later encounters an application-level failure.
+
+#### Scenario: Preserve data across an update
+
+- **WHEN** a confirmed idle update completes from fixture version 1.0.0 to 1.0.1
+- **THEN** the process identity and displayed version and SHA change, the original port becomes available to the new process, user configuration and database records and attachment contents remain intact, existing log content is retained, and standalone server files remain unchanged
+
+#### Scenario: Report connectivity and writable-directory failures
+
+- **WHEN** checking or downloading fails due to connectivity or rate limiting, or the installation directory is not writable
+- **THEN** the application retains its installed executable, records a diagnosable error, offers manual retry or manual-update instructions, and does not elevate privileges or report the application as up to date
+
+#### Scenario: Recover a failed executable replacement
+
+- **WHEN** the helper cannot replace the executable or create the replacement process, and restoring the backup succeeds
+- **THEN** the helper restores the original executable from `<exe>.bak` and relaunches it, without modifying user data
+
+#### Scenario: Double failure when replacement and restore are both blocked
+
+- **WHEN** the installed executable stays locked for the whole swap (all swap attempts are exhausted) and restoring the backup also fails because the same lock blocks removing the target
+- **THEN** the helper does not relaunch automatically; the original executable remains unchanged on disk (same SHA256), `<exe>.bak` remains, user data is untouched, and the user recovers manually (close the process holding the file, then start the application or restore `<exe>.bak` to the executable name, as documented in the README)
+
+#### Scenario: No published release yet
+
+- **WHEN** the release endpoint returns 404 because no public release exists yet
+- **THEN** the application reports the installed version as up to date with no error code; this is not a failure and does not conflict with the rule above, which covers connectivity, rate-limit, and download failures that must not be reported as up to date
+
