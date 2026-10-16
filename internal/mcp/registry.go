@@ -21,6 +21,7 @@ const (
 	StateIdle               = "idle"
 	StateRunning            = "running"
 	StateAwaitingPermission = "awaiting_permission"
+	StateAwaitingInput      = "awaiting_input"
 	StateShellPending       = "shell_pending"
 )
 
@@ -36,6 +37,7 @@ type sessionState struct {
 	state             string
 	latestText        string
 	pendingPermission json.RawMessage
+	pendingQuestion   json.RawMessage
 	pendingShellCmd   *pendingShell
 	lastErr           string
 	// turnDone 由 send 建立，本輪離開 running（idle／等授權／等 shell 確認）或連線中斷時關閉，供 ask_session 等待。
@@ -58,24 +60,27 @@ func (s *sessionState) endTurnLocked() {
 	}
 }
 
-func (s *sessionState) snapshot() (state, text string, perm json.RawMessage, shell *pendingShell, lastErr string) {
+func (s *sessionState) snapshot() (state, text string, perm json.RawMessage, shell *pendingShell, lastErr string, question json.RawMessage) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.state, s.latestText, s.pendingPermission, s.pendingShellCmd, s.lastErr
+	return s.state, s.latestText, s.pendingPermission, s.pendingShellCmd, s.lastErr, s.pendingQuestion
 }
 
 // serverEvent 只解析我們關心的欄位，其餘忽略（鏡射 internal/ws.serverMsg）。
 type serverEvent struct {
-	Type    string          `json:"type"`
-	Value   string          `json:"value"`
-	Content string          `json:"content"`
-	Tools   json.RawMessage `json:"tools"`
-	Command string          `json:"command"`
-	WorkDir string          `json:"work_dir"`
+	Question json.RawMessage `json:"question"`
+	Type     string          `json:"type"`
+	Value    string          `json:"value"`
+	Content  string          `json:"content"`
+	Tools    json.RawMessage `json:"tools"`
+	Command  string          `json:"command"`
+	WorkDir  string          `json:"work_dir"`
 }
 
 func normalizeState(v string) string {
 	switch v {
+	case "AWAITING_INPUT":
+		return StateAwaitingInput
 	case "AWAITING_CONFIRM":
 		return StateAwaitingPermission
 	case "AWAITING_SHELL_CONFIRM", "SHELL_AWAITING_APPROVAL":
@@ -160,13 +165,19 @@ func (r *Registry) readLoop(sessionID string, st *sessionState) {
 		}
 		st.mu.Lock()
 		switch ev.Type {
-		case "status":
+		case "status", "sync":
 			st.state = normalizeState(ev.Value)
 		case "delta", "thinking":
 			st.latestText += ev.Content
 		case "message_result_text":
 			st.latestText = ev.Content
 			st.state = StateIdle
+		case "question_request":
+			st.pendingPermission = nil
+			st.pendingQuestion = ev.Question
+			st.state = StateAwaitingInput
+		case "question_resolved":
+			st.pendingQuestion = nil
 		case "permission_request":
 			st.pendingPermission = ev.Tools
 			st.state = StateAwaitingPermission
@@ -185,6 +196,7 @@ func (r *Registry) readLoop(sessionID string, st *sessionState) {
 		switch {
 		case ev.Type == "status" && st.state == StateIdle,
 			ev.Type == "permission_request",
+			ev.Type == "question_request",
 			ev.Type == "shell_command_request",
 			ev.Type == "shell_approval_request":
 			st.endTurnLocked()
@@ -209,6 +221,7 @@ func (r *Registry) begin(sessionID string, payload any) (<-chan struct{}, *sessi
 	st.latestText = ""
 	st.lastErr = ""
 	st.pendingPermission = nil
+	st.pendingQuestion = nil
 	st.state = StateRunning
 	st.endTurnLocked() // 上一輪若還有人在等，視為結束（被新操作取代）
 	done := make(chan struct{})
@@ -222,6 +235,7 @@ type AskResult struct {
 	State             string
 	Text              string
 	PendingPermission json.RawMessage
+	PendingQuestion   json.RawMessage
 	Error             string
 	TimedOut          bool
 }
@@ -248,12 +262,12 @@ func (r *Registry) Ask(ctx context.Context, sessionID, text string, timeout time
 	case <-ctx.Done():
 		return AskResult{}, ctx.Err()
 	}
-	state, latest, perm, _, lastErr := st.snapshot()
+	state, latest, perm, _, lastErr, question := st.snapshot()
 	// 沒逾時卻還是 running：本輪被同 session 的其他操作（set_model 等 send）取代，結果不完整。
 	if !timedOut && state == StateRunning && lastErr == "" {
 		lastErr = "本輪等待被同一 session 的其他操作中斷，回覆可能不完整；請用 get_status 查看"
 	}
-	return AskResult{State: state, Text: latest, PendingPermission: perm, Error: lastErr, TimedOut: timedOut}, nil
+	return AskResult{State: state, Text: latest, PendingPermission: perm, PendingQuestion: question, Error: lastErr, TimedOut: timedOut}, nil
 }
 
 func (r *Registry) askLock(sessionID string) *sync.Mutex {
@@ -262,15 +276,15 @@ func (r *Registry) askLock(sessionID string) *sync.Mutex {
 }
 
 // Status 回傳目前狀態快取，供 get_status tool 使用。
-func (r *Registry) Status(sessionID string) (state, text string, perm json.RawMessage, shell *pendingShell, lastErr string, connected bool) {
+func (r *Registry) Status(sessionID string) (state, text string, perm json.RawMessage, shell *pendingShell, lastErr string, connected bool, question json.RawMessage) {
 	r.mu.Lock()
 	st, ok := r.sessions[sessionID]
 	r.mu.Unlock()
 	if !ok {
-		return StateIdle, "", nil, nil, "", false
+		return StateIdle, "", nil, nil, "", false, nil
 	}
-	state, text, perm, shell, lastErr = st.snapshot()
-	return state, text, perm, shell, lastErr, true
+	state, text, perm, shell, lastErr, question = st.snapshot()
+	return state, text, perm, shell, lastErr, true, question
 }
 
 func (r *Registry) SendMessage(sessionID, text string) error {

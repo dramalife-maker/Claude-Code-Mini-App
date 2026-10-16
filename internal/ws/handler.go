@@ -80,6 +80,7 @@ const (
 	StateThinking             = "THINKING"
 	StateStreaming            = "STREAMING"
 	StateAwaitingConfirm      = "AWAITING_CONFIRM"
+	StateAwaitingInput        = "AWAITING_INPUT"
 	StateAwaitingShellConfirm = "AWAITING_SHELL_CONFIRM"
 	StateShellExec            = "SHELL_EXEC"
 )
@@ -88,18 +89,20 @@ const (
 var lingerNoticeDelay = 3 * time.Second // var：測試縮短用
 
 type clientMsg struct {
-	RequestID     string   `json:"request_id,omitempty"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
-	Type          string   `json:"type"`
-	Data          string   `json:"data,omitempty"`
-	Tools         []string `json:"tools,omitempty"`
-	Mode          string   `json:"mode,omitempty"`
-	Model         string   `json:"model,omitempty"`
-	Effort        string   `json:"effort,omitempty"`
-	ID            int64    `json:"id,omitempty"` // queue_remove 的目標
+	Answers       []questionAnswer `json:"answers,omitempty"`
+	RequestID     string           `json:"request_id,omitempty"`
+	AttachmentIDs []string         `json:"attachment_ids,omitempty"`
+	Type          string           `json:"type"`
+	Data          string           `json:"data,omitempty"`
+	Tools         []string         `json:"tools,omitempty"`
+	Mode          string           `json:"mode,omitempty"`
+	Model         string           `json:"model,omitempty"`
+	Effort        string           `json:"effort,omitempty"`
+	ID            int64            `json:"id,omitempty"` // queue_remove 的目標
 }
 
 type serverMsg struct {
+	Question     *pendingQuestion   `json:"question,omitempty"`
 	RequestID    string             `json:"request_id,omitempty"`
 	CreatedAt    string             `json:"created_at,omitempty"`
 	Attachments  []db.Attachment    `json:"attachments,omitempty"`
@@ -301,6 +304,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 		if tools, ok := permPending(sessionID); ok {
 			send(serverMsg{Type: "permission_request", Tools: tools})
+		}
+		if q := questionPending(sessionID); q != nil {
+			send(serverMsg{Type: "question_request", Question: q})
 		}
 
 		if strings.TrimSpace(sess.ShellPending) != "" {
@@ -579,16 +585,47 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			slog.Info(fmt.Sprintf("[ws] start %s.Run agentSessionID=%q mode=%s msgID=%d", runner.Name(), opts.SessionID, pm, msgID))
 
-			// Claude + bypassPermissions：命中 settings 的 permissions.ask 時，claude 經 --permission-prompt-tool
-			// 問 miniapp（/mcp/perm），由 askUser 走既有授權面板。mcp_token 未設定時不啟用，行為與過去相同。
+			// All Claude modes use the prompt bridge for both permissions and AskUserQuestion.
 			var permAsker *claudeAsker
 			permCleanup := func() {}
-			if isClaude && pm == "bypassPermissions" {
+			if isClaude {
 				if _, _, ok := claudePermMCP(); ok {
 					if cfgPath, rmCfg, err := writePermMCPConfig(sessionID); err != nil {
 						slog.Info(fmt.Sprintf("[ws] perm mcp 設定檔建立失敗，略過權限詢問: %v", err))
 					} else {
-						a, unreg := registerClaudeAsker(sessionID, ctx, askUser)
+						askQuestion := func(rctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+							q, err := newQuestion(input)
+							if err != nil {
+								return nil, err
+							}
+							q.ctx = rctx
+							pendingQuestions.Lock()
+							pendingQuestions.m[sessionID] = q
+							pendingQuestions.Unlock()
+							defer func() {
+								pendingQuestions.Lock()
+								if pendingQuestions.m[sessionID] == q {
+									delete(pendingQuestions.m, sessionID)
+								}
+								pendingQuestions.Unlock()
+								broadcast(serverMsg{Type: "question_resolved", RequestID: q.RequestID})
+								if rctx.Err() == nil {
+									_ = database.UpdateSessionStatus(sessionID, db.SessionStatusRunning)
+									broadcast(serverMsg{Type: "status", Value: StateStreaming})
+								}
+							}()
+							_ = database.UpdateSessionStatus(sessionID, db.SessionStatusAwaitingInput)
+							broadcast(serverMsg{Type: "status", Value: StateAwaitingInput})
+							broadcast(serverMsg{Type: "question_request", Question: q})
+							notifyTaskAsync(botToken, confirmNotifyID(), notifyCfg, tg.TaskAlert{SessionName: sess.Name, Outcome: tg.OutcomeQuestion})
+							select {
+							case answer := <-q.ch:
+								return answer, rctx.Err()
+							case <-rctx.Done():
+								return nil, rctx.Err()
+							}
+						}
+						a, unreg := registerClaudeAsker(sessionID, ctx, askUser, askQuestion)
 						permAsker = a
 						extra[agent.ArgPermPromptConfig] = cfgPath
 						permCleanup = func() { unreg(); rmCfg() }
@@ -707,6 +744,15 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 						}
 						// 已由使用者在授權面板回答過的（prompt-tool 回 deny 後 result 仍會列出），不再重複詢問。
 						denials := permAsker.dropAnswered(e.Denials)
+						filtered := denials[:0:0]
+						for _, d := range denials {
+							if d.ToolName == "AskUserQuestion" {
+								appendNotice("\n\nClaude 的問題未能透過互動通道送達，請在聊天中補充答案或請它重新提問。\n" + string(d.ToolInput))
+							} else {
+								filtered = append(filtered, d)
+							}
+						}
+						denials = filtered
 						// 被 deny 規則擋下、或「允許」後重跑仍被拒的，按允許也不會過：改成說明原因，不進等授權。
 						pending, blocked := splitDenials(denials)
 						pending, still := splitStillDenied(allowedOnce, pending)
@@ -1345,6 +1391,11 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
 				}
 
+			case "question_answer":
+				if err := questionResolve(sessionID, msg.RequestID, msg.Answers); err != nil {
+					send(serverMsg{Type: "question_error", RequestID: msg.RequestID, Content: err.Error()})
+				}
+
 			case "allow_once":
 				// kiroacp 互動式授權：解析 pending 而非重跑。
 				if permResolve(sessionID, true) {
@@ -1498,7 +1549,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				// 收尾一律由 Run goroutine 的既有邏輯處理，避免前端提早變 IDLE 但進程還在跑。
 				// 使用者按停止＝不要自動接著跑：軟中斷時子進程可能仍正常結束（exit 0），不暫停會續跑佇列。
 				// kiroacp 等授權時子進程在等我們回覆，軟信號不會有反應，直接強制取消。
-				if _, waiting := permPending(sessionID); waiting {
+				if _, waiting := permPending(sessionID); waiting || questionPending(sessionID) != nil {
 					taskCancel(sessionID)
 					pauseQueue()
 					continue

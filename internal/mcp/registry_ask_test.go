@@ -35,6 +35,9 @@ func fakeSessionWS(t *testing.T) *httptest.Server {
 			emit(map[string]any{"type": "status", "value": "THINKING"})
 			emit(map[string]any{"type": "quota_update"}) // 無關事件不可提早結束本輪
 			switch {
+			case strings.Contains(in["data"], "question"):
+				emit(map[string]any{"type": "status", "value": "AWAITING_INPUT"})
+				emit(map[string]any{"type": "question_request", "question": map[string]any{"request_id": "q1", "questions": []any{}}})
 			case strings.Contains(in["data"], "slow"):
 				emit(map[string]any{"type": "delta", "content": "partial"})
 			case strings.Contains(in["data"], "perm"):
@@ -73,6 +76,10 @@ func TestRegistryAsk(t *testing.T) {
 		t.Fatalf("等授權應立即回傳: %+v", res)
 	}
 
+	res, err = reg.Ask(ctx, "s1", "question", 3*time.Second)
+	if err != nil || res.TimedOut || res.State != StateAwaitingInput || len(res.PendingQuestion) == 0 || len(res.PendingPermission) != 0 {
+		t.Fatalf("question must return promptly as awaiting_input: %+v %v", res, err)
+	}
 	start := time.Now()
 	res, err = reg.Ask(ctx, "s1", "slow", 200*time.Millisecond)
 	if err != nil {

@@ -19,6 +19,9 @@ type SyncPayload struct {
 }
 
 func computeWSState(sess *db.Session, msgs []*db.Message) string {
+	if sess.Status == db.SessionStatusAwaitingInput {
+		return StateAwaitingInput
+	}
 	if strings.TrimSpace(sess.ShellPending) != "" {
 		return StateAwaitingShellConfirm
 	}

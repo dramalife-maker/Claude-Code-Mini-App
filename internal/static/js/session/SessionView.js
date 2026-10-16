@@ -24,7 +24,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
       const st = String(s.status || '').toLowerCase();
       if (st === 'running') continue;
       const name = s.name || '未命名';
-      showToast(st === 'awaiting_confirm' ? `「${name}」待授權` : `「${name}」已完成`, { duration: 3000 });
+      showToast(st === 'awaiting_input' ? `「${name}」待回答` : st === 'awaiting_confirm' ? `「${name}」待授權` : `「${name}」已完成`, { duration: 3000 });
       return;
     }
   };

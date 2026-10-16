@@ -12,6 +12,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
   const shareEndedRef = useRef('');
   const [messages, setMessages]   = useState([]);
   const [state, setState]         = useState('IDLE');
+  const [question, setQuestion] = useState(null);
+  const [questionError, setQuestionError] = useState('');
   const [permTools, setPermTools] = useState([]);
   const [permRetryTools, setPermRetryTools] = useState(false);
   const [mode, setMode]           = useState(() => normalizePermMode(agentType, session.permission_mode || 'default'));
@@ -68,6 +70,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
     setState('IDLE');
     setOnline([]);
     setPermTools([]);
+    setQuestion(null);
+    setQuestionError('');
     setPermRetryTools(false);
     setShellRequest(null);
     setQueue([]);
@@ -192,6 +196,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
         }
 
         if (msg.type === 'sync') {
+          if (msg.value !== 'AWAITING_INPUT') setQuestion(null);
+          setQuestionError('');
           setState(msg.value);
           if (msg.input_mode) {
             setInputMode(msg.input_mode);
@@ -343,6 +349,18 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
           setMessages((prev) => prev.map((m, i) =>
             i === prev.length - 1 ? { ...m, content: streamBuf.current, html, thinking: false, streaming: true, status: 'pending' } : m
           ));
+        }
+
+        if (msg.type === 'question_request') {
+          setQuestion(msg.question);
+          setQuestionError('');
+          setMessages(prev => prev.map(m => m.streaming ? { ...m, streaming: false } : m));
+        }
+        if (msg.type === 'question_resolved') {
+          setQuestion(prev => prev?.request_id === msg.request_id ? null : prev);
+        }
+        if (msg.type === 'question_error') {
+          setQuestionError({ request_id: msg.request_id, message: msg.content });
         }
 
         if (msg.type === 'permission_request') {
@@ -610,6 +628,7 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
     messages,
     state,
     permTools, setPermTools, permRetryTools,
+    question, questionError,
     mode, setMode,
     modelSel, setModelSel,
     effortSel, setEffortSel,

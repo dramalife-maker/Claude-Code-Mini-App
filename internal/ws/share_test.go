@@ -201,6 +201,7 @@ func TestShareWS_ViewerCommandsDropped(t *testing.T) {
 	viewer.await(t, "viewer sync", isType("sync"))
 
 	attacks := []map[string]any{
+		{"type": "question_answer", "request_id": "q1", "answers": []map[string]any{{"text": "hijack"}}},
 		{"type": "input", "data": "hijack"},
 		{"type": "allow_once", "tools": []string{"Write"}},
 		{"type": "deny_once"},

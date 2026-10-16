@@ -493,6 +493,7 @@ const SESSION_STATE_LABEL = {
   THINKING: '思考中',
   STREAMING: '輸出中',
   AWAITING_CONFIRM: '待授權',
+  AWAITING_INPUT: '待回答',
   SHELL_IDLE: '待命',
   SHELL_AWAITING_APPROVAL: '等待確認',
   SHELL_RUNNING: '執行中',
@@ -582,7 +583,7 @@ function sessionStateChipClass(state) {
   if (state === 'THINKING') return 'bg-violet-500/20 text-violet-300';
   if (state === 'STREAMING') return 'bg-sky-500/20 text-sky-300';
   if (state === 'SHELL_EXEC' || state === 'SHELL_RUNNING') return 'bg-amber-500/20 text-amber-200';
-  if (state === 'AWAITING_SHELL_CONFIRM' || state === 'SHELL_AWAITING_APPROVAL' || state === 'AWAITING_CONFIRM') return 'bg-orange-500/20 text-orange-200';
+  if (state === 'AWAITING_SHELL_CONFIRM' || state === 'SHELL_AWAITING_APPROVAL' || state === 'AWAITING_CONFIRM' || state === 'AWAITING_INPUT') return 'bg-orange-500/20 text-orange-200';
   return 'bg-amber-500/20 text-amber-200';
 }
 

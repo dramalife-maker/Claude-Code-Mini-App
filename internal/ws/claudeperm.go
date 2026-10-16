@@ -12,15 +12,14 @@ import (
 
 // Claude 權限詢問（--permission-prompt-tool）。
 //
-// bypassPermissions 下，命中 settings `permissions.ask` 的工具呼叫由 claude 轉交給 MCP 工具決定；
-// 這裡把它接到既有的 permission_request／allow_once／deny_once 流程（與 kiroacp 中途授權共用 askUser）。
+// 各模式共用 MCP：工具授權走 permission_request，AskUserQuestion 走獨立的 question_request。
 
 var claudePermCfg struct {
 	mu         sync.Mutex
 	url, token string
 }
 
-// SetClaudePermMCP 由 server 在啟用 /mcp/perm 時設定（url 為 loopback 位址，token 為 mcp_token）。
+// SetClaudePermMCP 由 server 在啟用 /mcp/perm 時設定（url 為 loopback 位址，token 為每次啟動產生的內部密鑰）。
 // 未設定時 Claude 不帶 --permission-prompt-tool，行為與過去完全相同。
 func SetClaudePermMCP(url, token string) {
 	claudePermCfg.mu.Lock()
@@ -70,8 +69,10 @@ func writePermMCPConfig(sessionID string) (path string, cleanup func(), err erro
 
 // claudeAsker 是單一 Claude run 的授權通道。
 type claudeAsker struct {
-	askUser func(ctx context.Context, tools any) bool
-	sem     chan struct{} // 容量 1：同 session 一次只問一題（pendingPerms 每個 session 只有一格）
+	runCtx      context.Context
+	askQuestion func(context.Context, json.RawMessage) (json.RawMessage, error)
+	askUser     func(ctx context.Context, tools any) bool
+	sem         chan struct{} // 容量 1：同 session 一次只問一題（pendingPerms 每個 session 只有一格）
 
 	mu       sync.Mutex
 	answered map[string]bool // 已由使用者回答過的 tool_use_id
@@ -80,8 +81,10 @@ type claudeAsker struct {
 var claudeAskers sync.Map // sessionID → *claudeAsker
 
 // registerClaudeAsker 登記本 run 的授權通道；runCtx 取消（使用者中斷）時正在等待的詢問一併解除。
-func registerClaudeAsker(sessionID string, runCtx context.Context, askUser func(context.Context, any) bool) (a *claudeAsker, unregister func()) {
+func registerClaudeAsker(sessionID string, runCtx context.Context, askUser func(context.Context, any) bool, askQuestion func(context.Context, json.RawMessage) (json.RawMessage, error)) (a *claudeAsker, unregister func()) {
 	a = &claudeAsker{
+		runCtx:      runCtx,
+		askQuestion: askQuestion,
 		askUser: func(ctx context.Context, tools any) bool {
 			c, cancel := context.WithCancel(ctx)
 			defer cancel()

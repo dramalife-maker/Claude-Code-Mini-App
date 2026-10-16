@@ -12,6 +12,7 @@ const (
 	OutcomeSuccess   Outcome = "success"
 	OutcomeError     Outcome = "error"
 	OutcomeConfirm   Outcome = "confirm"
+	OutcomeQuestion  Outcome = "question"
 	OutcomeCancelled Outcome = "cancelled"
 )
 
@@ -64,6 +65,8 @@ func FormatTaskAlert(alert TaskAlert, cfg NotifyConfig) string {
 		fmt.Fprintf(&b, "✅ *%s* 任務完成", name)
 	case OutcomeConfirm:
 		fmt.Fprintf(&b, "⚠️ *%s* 需要授權確認，請開啟 App", name)
+	case OutcomeQuestion:
+		fmt.Fprintf(&b, "💬 *%s* 等待你的回答，請開啟 App", name)
 	case OutcomeCancelled:
 		fmt.Fprintf(&b, "⏹ *%s* 任務已中斷", name)
 	case OutcomeError:
@@ -93,7 +96,7 @@ func NotifyTask(botToken string, chatID int64, cfg NotifyConfig, alert TaskAlert
 		return nil
 	}
 	switch alert.Outcome {
-	case OutcomeSuccess, OutcomeConfirm:
+	case OutcomeSuccess, OutcomeConfirm, OutcomeQuestion:
 		// 永遠通知
 	case OutcomeError:
 		if alert.AgentType == "shell" {

@@ -139,6 +139,8 @@ The UI currently uses Traditional Chinese; the labels below match it.
 
 If an agent requests approval, inspect the operation before allowing it. You do not need to enable unrestricted permissions to complete this check. If no reply arrives, see [troubleshooting](#troubleshooting).
 
+When Claude shows **需要你的回答** (Your answer is needed), select one or more options as indicated, or enter **其他回答** (Other answer). Answer every question, then click **送出回答** (Submit answers). The session shows **待回答** (Awaiting answer), and Claude resumes the same task after submission. Pending questions return after reconnecting; click **中斷** (Interrupt) to stop instead. No `mcp_token` configuration is required. Restarting the server ends pending questions; ask Claude again afterward.
+
 Models load in the background. If the selector only shows **預設** (Default), let startup fetching finish, or refresh models under **設定 → 一般** (Settings → General), then reopen the conversation. Fetch failures for agents you have not installed do not prevent using your installed agent.
 
 ## 6. Optional: Open from Telegram

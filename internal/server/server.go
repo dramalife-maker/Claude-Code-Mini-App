@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"fmt"
 	"log/slog"
@@ -378,12 +379,14 @@ func Start(ctx context.Context) (*Server, error) {
 		app.Post("/mcp", authMiddleware, adaptor.HTTPHandler(mcpHandler))
 		// agent session 失效時的自動交接要靠 MCP 讀舊會話，所以跟著 mcp_token 一起啟用。
 		ws.SetHandoffStarter(reg.SendMessage)
-		// Claude 的 --permission-prompt-tool 專用端點（只有一個工具）。沿用 mcp_token 的 Bearer 認證，不另開 token。
-		ws.SetClaudePermMCP(fmt.Sprintf("http://127.0.0.1:%d/mcp/perm", cfg.Server.Port), cfg.McpToken)
-		app.Post("/mcp/perm", authMiddleware, adaptor.HTTPHandler(mymcp.NewPermHTTPHandler(ws.AskClaudePermission)))
 	} else {
 		slog.Info("[mcp] mcp_token 未設定，/mcp 停用")
 	}
+
+	// Private CLI bridge: independent of public MCP and no_auth; only loopback + per-process secret.
+	permToken := rand.Text()
+	ws.SetClaudePermMCP(fmt.Sprintf("http://127.0.0.1:%d/mcp/perm", cfg.Server.Port), permToken)
+	app.Post("/mcp/perm", claudePermAuth(permToken), adaptor.HTTPHandler(mymcp.NewPermHTTPHandler(ws.AskClaudePermission, ws.AskClaudeQuestion)))
 
 	if cfg.NoAuth {
 		slog.Info("⚠️  no_auth: true，已跳過 Telegram 驗證（僅限開發環境）")
@@ -480,4 +483,14 @@ func webSessionToken(c *fiber.Ctx) string {
 		return t
 	}
 	return c.Cookies("session_token")
+}
+
+// The CLI bridge never accepts browser login, public MCP tokens, or proxy-supplied IPs.
+func claudePermAuth(token string) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		if !c.Context().RemoteIP().IsLoopback() || subtle.ConstantTimeCompare([]byte(c.Get("Authorization")), []byte("Bearer "+token)) != 1 {
+			return fiber.ErrUnauthorized
+		}
+		return c.Next()
+	}
 }

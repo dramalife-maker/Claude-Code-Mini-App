@@ -352,7 +352,8 @@ type askSessionIn struct {
 }
 
 type askSessionOut struct {
-	State             string `json:"state" jsonschema:"本輪結果狀態：idle 已回答完；awaiting_permission 或 shell_pending 對方卡在授權；running 逾時仍在跑"`
+	PendingQuestion   any    `json:"pending_question,omitempty"`
+	State             string `json:"state" jsonschema:"本輪結果狀態：idle 已回答完；awaiting_input 等待使用者回答；awaiting_permission 或 shell_pending 對方卡在授權；running 逾時仍在跑"`
 	Text              string `json:"text,omitempty"`
 	PendingPermission any    `json:"pending_permission,omitempty"`
 	Error             string `json:"error,omitempty"`
@@ -378,7 +379,7 @@ func (d *deps) askSession(ctx context.Context, _ *gomcp.CallToolRequest, in askS
 		return nil, askSessionOut{}, err
 	}
 	return nil, askSessionOut{
-		State: res.State, Text: res.Text, PendingPermission: rawToAny(res.PendingPermission),
+		State: res.State, Text: res.Text, PendingPermission: rawToAny(res.PendingPermission), PendingQuestion: rawToAny(res.PendingQuestion),
 		Error: res.Error, TimedOut: res.TimedOut,
 	}, nil
 }
@@ -386,6 +387,7 @@ func (d *deps) askSession(ctx context.Context, _ *gomcp.CallToolRequest, in askS
 // --- get_status ---
 
 type getStatusOut struct {
+	PendingQuestion   any           `json:"pending_question,omitempty"`
 	State             string        `json:"state"` // idle | running | awaiting_permission | shell_pending
 	LatestText        string        `json:"latest_text,omitempty"`
 	PendingPermission any           `json:"pending_permission,omitempty"`
@@ -405,10 +407,10 @@ func rawToAny(raw json.RawMessage) any {
 }
 
 func (d *deps) getStatus(_ context.Context, _ *gomcp.CallToolRequest, in sessionIDIn) (*gomcp.CallToolResult, getStatusOut, error) {
-	state, text, perm, shell, lastErr, connected := d.reg.Status(in.SessionID)
+	state, text, perm, shell, lastErr, connected, question := d.reg.Status(in.SessionID)
 	return nil, getStatusOut{
 		State: state, LatestText: text, PendingPermission: rawToAny(perm),
-		PendingShell: shell, Error: lastErr, Connected: connected,
+		PendingQuestion: rawToAny(question), PendingShell: shell, Error: lastErr, Connected: connected,
 	}, nil
 }
 

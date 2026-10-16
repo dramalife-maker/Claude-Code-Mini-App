@@ -1,5 +1,57 @@
 const EMPTY_SUGGESTIONS = ['看一下目前 git 狀態與最近的變更', '概覽這個專案的結構', '跑測試並整理失敗原因'];
 
+function QuestionCard({ question, error, canAct, connected, send }) {
+  const [answers, setAnswers] = useState(() => question.questions.map(() => ({ selected: [], text: '' })));
+  const [submitting, setSubmitting] = useState(false);
+  const [localError, setLocalError] = useState('');
+  const remoteError = error?.request_id === question.request_id ? error.message : '';
+  useEffect(() => { setSubmitting(false); }, [error, connected, question]);
+  const update = (i, value) => setAnswers(prev => prev.map((answer, n) => n === i ? value : answer));
+  const complete = answers.every(a => a.selected.length > 0 || a.text.trim());
+  const disabled = !canAct || !connected || submitting;
+  const submit = (event) => {
+    event.preventDefault();
+    if (disabled || !complete) return;
+    setLocalError('');
+    if (send({ type: 'question_answer', request_id: question.request_id, answers })) setSubmitting(true);
+    else setLocalError('連線中斷，請重連後再送出');
+  };
+  return (
+    <form onSubmit={submit} className="rounded-xl border border-blue-700 bg-blue-950/30 px-4 py-3 text-sm">
+      <div className="text-blue-300 font-semibold mb-3">Claude 需要你的回答</div>
+      {question.questions.map((q, i) => (
+        <fieldset key={i} disabled={disabled} className="mb-4 min-w-0">
+          <legend className="font-medium text-gray-100 mb-2 whitespace-pre-wrap">{q.question} <span className="text-xs text-gray-400">（{q.multiSelect ? '可複選' : '單選'}）</span></legend>
+          {q.options.map((option, n) => (
+            <label key={n} className="flex items-start gap-2 p-2 rounded hover:bg-blue-900/30 cursor-pointer">
+              <input type={q.multiSelect ? 'checkbox' : 'radio'} name={`${question.request_id}-${i}`}
+                checked={answers[i].selected.includes(option.label)} className="mt-1"
+                onChange={event => update(i, { text: q.multiSelect ? answers[i].text : '', selected: q.multiSelect
+                  ? event.target.checked ? [...answers[i].selected, option.label] : answers[i].selected.filter(v => v !== option.label)
+                  : [option.label] })} />
+              <span className="min-w-0 break-words"><span className="text-gray-100">{option.label}</span>
+                {option.description && <span className="block text-xs text-gray-400 whitespace-pre-wrap">{option.description}</span>}
+                {option.preview && <pre className="mt-1 text-xs whitespace-pre-wrap break-words">{option.preview}</pre>}
+              </span>
+            </label>
+          ))}
+          <label className="block mt-2 text-xs text-gray-400">其他回答{q.multiSelect ? '（可補充）' : ''}
+            <textarea value={answers[i].text} maxLength={16000} rows={2}
+              onChange={event => update(i, { selected: q.multiSelect ? answers[i].selected : [], text: event.target.value })}
+              className="block mt-1 w-full rounded bg-gray-900 border border-gray-600 p-2 text-sm text-gray-100" />
+          </label>
+        </fieldset>
+      ))}
+      {(remoteError || localError) && <div role="alert" className="text-red-300 mb-2">{remoteError || localError}</div>}
+      {!canAct ? <p className="text-gray-400 text-xs">等待有權限的人回答…</p> : (
+        <button type="submit" disabled={disabled || !complete} className="px-3 py-2 bg-blue-700 hover:bg-blue-600 text-white rounded-lg disabled:opacity-40">
+          {submitting ? '送出中…' : '送出回答'}
+        </button>
+      )}
+    </form>
+  );
+}
+
 function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession, allSessions = [], guest = null, onOpenComposer, handoffInfo = null, onHandoffChange, isSplit = false, onToggleSplit = null, splitOrientation = 'horizontal', onToggleSplitOrientation = null, isSecondaryPane = false, onClosePane = null, isFocused = true }) {
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
@@ -10,6 +62,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     messages,
     state,
     permTools, setPermTools, permRetryTools,
+    question, questionError,
     mode, setMode,
     modelSel, setModelSel,
     effortSel, setEffortSel,
@@ -212,7 +265,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   // 待授權／Shell 確認區塊出現時捲到底（此狀態常不經 messages 更新而單獨出現）
   useEffect(() => {
     const showPermPanel =
-      (state === 'AWAITING_CONFIRM' && permTools.length > 0) ||
+      (state === 'AWAITING_CONFIRM' && permTools.length > 0) || !!question ||
       (state === 'SHELL_AWAITING_APPROVAL' && shellPendingCmd) ||
       (state === 'AWAITING_SHELL_CONFIRM' && shellRequest);
     if (!showPermPanel) return;
@@ -226,12 +279,12 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       cancelAnimationFrame(id1);
       if (id2 != null) cancelAnimationFrame(id2);
     };
-  }, [state, permTools.length, shellPendingCmd, shellRequest]);
+  }, [state, permTools.length, question, shellPendingCmd, shellRequest]);
 
   // 離開頁面確認（任務進行中或等待授權時）
   useEffect(() => {
     const handler = (e) => {
-      if (state === 'THINKING' || state === 'STREAMING' || state === 'AWAITING_CONFIRM' || state === 'SHELL_RUNNING' || state === 'SHELL_AWAITING_APPROVAL' || state === 'AWAITING_SHELL_CONFIRM' || state === 'SHELL_EXEC') {
+      if (state === 'THINKING' || state === 'STREAMING' || state === 'AWAITING_CONFIRM' || state === 'AWAITING_INPUT' || state === 'SHELL_RUNNING' || state === 'SHELL_AWAITING_APPROVAL' || state === 'AWAITING_SHELL_CONFIRM' || state === 'SHELL_EXEC') {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -680,7 +733,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
 
   const handleInputModeChange = (newMode) => {
     if (pendingSendRef.current) return;
-    const busy = ['THINKING', 'STREAMING', 'AWAITING_CONFIRM', 'SHELL_RUNNING', 'SHELL_AWAITING_APPROVAL', 'SHELL_EXEC', 'AWAITING_SHELL_CONFIRM'].includes(state);
+    const busy = ['THINKING', 'STREAMING', 'AWAITING_CONFIRM', 'AWAITING_INPUT', 'SHELL_RUNNING', 'SHELL_AWAITING_APPROVAL', 'SHELL_EXEC', 'AWAITING_SHELL_CONFIRM'].includes(state);
     if (busy) return;
     setInputMode(newMode);
     try {
@@ -719,11 +772,11 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   };
 
   const agentRunning = state === 'THINKING' || state === 'STREAMING';
-  const taskRunning = agentRunning || lingering || state === 'SHELL_RUNNING' || state === 'SHELL_EXEC';
+  const taskRunning = state === 'AWAITING_INPUT' || agentRunning || lingering || state === 'SHELL_RUNNING' || state === 'SHELL_EXEC';
   // Agent 執行中／等授權時仍可送出：後端排入佇列，前一輪成功後依序執行。
-  const canQueue = inputMode !== 'shell' && (agentRunning || lingering || state === 'AWAITING_CONFIRM');
-  const isDisabled = !canQueue && (state === 'THINKING' || state === 'STREAMING' || state === 'AWAITING_CONFIRM' || state === 'SHELL_RUNNING' || state === 'SHELL_AWAITING_APPROVAL' || state === 'SHELL_EXEC' || state === 'AWAITING_SHELL_CONFIRM');
-  const modeSwitchDisabled = ['THINKING', 'STREAMING', 'AWAITING_CONFIRM', 'SHELL_RUNNING', 'SHELL_AWAITING_APPROVAL', 'SHELL_EXEC', 'AWAITING_SHELL_CONFIRM'].includes(state);
+  const canQueue = inputMode !== 'shell' && (agentRunning || lingering || state === 'AWAITING_CONFIRM' || state === 'AWAITING_INPUT');
+  const isDisabled = !canQueue && (state === 'THINKING' || state === 'STREAMING' || state === 'AWAITING_CONFIRM' || state === 'AWAITING_INPUT' || state === 'SHELL_RUNNING' || state === 'SHELL_AWAITING_APPROVAL' || state === 'SHELL_EXEC' || state === 'AWAITING_SHELL_CONFIRM');
+  const modeSwitchDisabled = ['THINKING', 'STREAMING', 'AWAITING_CONFIRM', 'AWAITING_INPUT', 'SHELL_RUNNING', 'SHELL_AWAITING_APPROVAL', 'SHELL_EXEC', 'AWAITING_SHELL_CONFIRM'].includes(state);
   const coarsePointer = window.matchMedia('(hover: none) and (pointer: coarse)').matches;
   const slashMenuOpen = slashMenuItems.length > 0;
   const composerMenuOpen = slashMenuOpen || mentionOpen;
@@ -1009,6 +1062,11 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
               </button>
             </div>
           </div>
+        )}
+
+        {question && (
+          <QuestionCard key={question.request_id} question={question} error={questionError}
+            canAct={canAct} connected={connected} send={send} />
         )}
 
         {/* AI 授權確認 */}

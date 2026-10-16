@@ -20,7 +20,7 @@ func TestClaudeAsker_allowDenyAndDropAnswered(t *testing.T) {
 			t.Errorf("tools 應與 Claude denial 同形: %#v", tools)
 		}
 		return <-decision
-	})
+	}, nil)
 	defer unreg()
 
 	decision <- true
@@ -69,7 +69,7 @@ func TestClaudeAsker_serializesPrompts(t *testing.T) {
 		cur--
 		mu.Unlock()
 		return true
-	})
+	}, nil)
 	defer unreg()
 
 	var wg sync.WaitGroup
@@ -97,7 +97,7 @@ func TestClaudeAsker_runCancelUnblocks(t *testing.T) {
 	_, unreg := registerClaudeAsker("s-cancel", runCtx, func(ctx context.Context, tools any) bool {
 		<-ctx.Done()
 		return false
-	})
+	}, nil)
 	defer unreg()
 	done := make(chan bool, 1)
 	go func() {

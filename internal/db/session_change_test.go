@@ -22,7 +22,6 @@ func TestUpdateSessionStatus_FiresOnSessionChange(t *testing.T) {
 	}
 }
 
-
 // 啟動重設：running 與「沒有 pending_denials 的 awaiting_confirm」（kiroacp 中途授權，通道已隨重啟消失）改回 idle；
 // Claude 的 awaiting_confirm 有 pending_denials，重啟後仍可用「允許此操作」重跑，必須保留。
 func TestResetRunningSessions_ClearsStaleAwaitingConfirm(t *testing.T) {
@@ -41,13 +40,14 @@ func TestResetRunningSessions_ClearsStaleAwaitingConfirm(t *testing.T) {
 		return s.ID
 	}
 	running := mk(SessionStatusRunning, "")
+	question := mk(SessionStatusAwaitingInput, "")
 	stale := mk(SessionStatusAwaitingConfirm, "")
 	claude := mk(SessionStatusAwaitingConfirm, `[{"tool_name":"Write"}]`)
 
 	if err := database.ResetRunningSessions(); err != nil {
 		t.Fatal(err)
 	}
-	for id, want := range map[string]string{running: SessionStatusIdle, stale: SessionStatusIdle, claude: SessionStatusAwaitingConfirm} {
+	for id, want := range map[string]string{question: SessionStatusIdle, running: SessionStatusIdle, stale: SessionStatusIdle, claude: SessionStatusAwaitingConfirm} {
 		s, _ := database.GetSession(id)
 		if s.Status != want {
 			t.Fatalf("session %s status=%s, want %s", id, s.Status, want)

@@ -12,6 +12,7 @@ const (
 	SessionStatusIdle                 = "idle"
 	SessionStatusRunning              = "running"
 	SessionStatusAwaitingConfirm      = "awaiting_confirm"
+	SessionStatusAwaitingInput        = "awaiting_input"
 	SessionStatusAwaitingShellConfirm = "awaiting_shell_confirm"
 )
 
@@ -227,8 +228,8 @@ func (db *DB) TouchSession(id string) error {
 // its approval channel lived in memory and is gone after a restart.
 func (db *DB) ResetRunningSessions() error {
 	_, err := db.Exec(
-		`UPDATE sessions SET status = ? WHERE status = ? OR (status = ? AND pending_denials = '')`,
-		SessionStatusIdle, SessionStatusRunning, SessionStatusAwaitingConfirm,
+		`UPDATE sessions SET status = ? WHERE status IN (?, ?) OR (status = ? AND pending_denials = '')`,
+		SessionStatusIdle, SessionStatusRunning, SessionStatusAwaitingInput, SessionStatusAwaitingConfirm,
 	)
 	return err
 }
@@ -338,4 +339,3 @@ func (db *DB) TouchSessionLastActive(id string) error {
 	_, err := db.Exec(`UPDATE sessions SET last_active = datetime('now') WHERE id = ?`, id)
 	return err
 }
-

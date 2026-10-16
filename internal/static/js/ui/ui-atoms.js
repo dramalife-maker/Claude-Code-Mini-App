@@ -397,7 +397,7 @@ function EffortSelect({ value, onChange, disabled, id, className, compact }) {
 function sessionStatusDotClass(s) {
   const st = String(s && s.status || '').toLowerCase();
   if (st === 'running') return 'ra-status-dot running';
-  if (st === 'awaiting_confirm') return 'ra-status-dot awaiting';
+  if (st === 'awaiting_confirm' || st === 'awaiting_input') return 'ra-status-dot awaiting';
   return '';
 }
 
@@ -405,6 +405,7 @@ function sessionStatusLabel(s) {
   const st = String(s && s.status || '').toLowerCase();
   if (st === 'running') return '執行中';
   if (st === 'awaiting_confirm') return '待授權';
+  if (st === 'awaiting_input') return '待回答';
   return '';
 }
 

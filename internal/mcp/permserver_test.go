@@ -21,9 +21,13 @@ func (r headerRT) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(req)
 }
 
-func callPerm(t *testing.T, ask PermAsker, headers map[string]string, args map[string]any) map[string]any {
+func callPerm(t *testing.T, ask PermAsker, headers map[string]string, args map[string]any, question ...QuestionAsker) map[string]any {
 	t.Helper()
-	srv := httptest.NewServer(NewPermHTTPHandler(ask))
+	var askQuestion QuestionAsker
+	if len(question) > 0 {
+		askQuestion = question[0]
+	}
+	srv := httptest.NewServer(NewPermHTTPHandler(ask, askQuestion))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -53,6 +57,26 @@ func callPerm(t *testing.T, ask PermAsker, headers map[string]string, args map[s
 		t.Fatalf("回傳不是 JSON 決定: %v", err)
 	}
 	return out
+}
+
+func TestPermServerQuestionReturnsAnswersWithoutAuthorization(t *testing.T) {
+	args := map[string]any{"tool_name": "AskUserQuestion", "input": map[string]any{"questions": []any{}}, "tool_use_id": "q1"}
+	ask := func(context.Context, string, string, json.RawMessage, string) (bool, string) {
+		t.Error("question reached permission handler")
+		return true, ""
+	}
+	out := callPerm(t, ask, map[string]string{PermSessionHeader: "s"}, args, func(_ context.Context, sid string, in json.RawMessage, id string) (json.RawMessage, error) {
+		if sid != "s" || id != "q1" {
+			t.Errorf("lost request identity: %s %s", sid, id)
+		}
+		return json.RawMessage(`{"questions":[],"answers":{"Colors?":"Blue, Green"}}`), nil
+	})
+	if out["behavior"] != "allow" || out["updatedInput"].(map[string]any)["answers"].(map[string]any)["Colors?"] != "Blue, Green" {
+		t.Fatalf("out=%v", out)
+	}
+	if out := callPerm(t, ask, map[string]string{PermSessionHeader: "s"}, args); out["behavior"] != "deny" {
+		t.Fatal("missing question bridge must not allow empty answers")
+	}
 }
 
 func TestPermServer_allowEchoesInputAndCarriesSession(t *testing.T) {
@@ -89,7 +113,10 @@ func TestPermServer_denyCarriesMessage(t *testing.T) {
 func TestPermServer_missingSessionDeniesWithoutAsking(t *testing.T) {
 	t.Parallel()
 	asked := false
-	ask := func(context.Context, string, string, json.RawMessage, string) (bool, string) { asked = true; return true, "" }
+	ask := func(context.Context, string, string, json.RawMessage, string) (bool, string) {
+		asked = true
+		return true, ""
+	}
 	out := callPerm(t, ask, nil, map[string]any{"tool_name": "Bash", "input": map[string]any{}})
 	if out["behavior"] != "deny" || asked {
 		t.Fatalf("缺 session header 必須直接拒絕且不詢問: out=%v asked=%v", out, asked)

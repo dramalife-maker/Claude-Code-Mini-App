@@ -16,6 +16,8 @@ const PermSessionHeader = "X-Miniapp-Session"
 // allow=false 時 msg 是回給 claude 的拒絕原因。
 type PermAsker func(ctx context.Context, sessionID, toolName string, input json.RawMessage, toolUseID string) (allow bool, msg string)
 
+type QuestionAsker func(ctx context.Context, sessionID string, input json.RawMessage, toolUseID string) (json.RawMessage, error)
+
 type permArgs struct {
 	ToolName  string          `json:"tool_name"`
 	Input     json.RawMessage `json:"input"`
@@ -25,7 +27,7 @@ type permArgs struct {
 // NewPermHTTPHandler 建立掛在 /mcp/perm 的 Streamable HTTP handler，只有一個工具 claude_permission，
 // 給 `claude -p --permission-prompt-tool` 用。刻意不重用 /mcp 的完整 server：
 // 那會把 shell_exec、delete_session 等工具一併曝給被管理的 claude session。
-func NewPermHTTPHandler(ask PermAsker) http.Handler {
+func NewPermHTTPHandler(ask PermAsker, question QuestionAsker) http.Handler {
 	s := gomcp.NewServer(&gomcp.Implementation{Name: "claude-miniapp-perm", Version: "1.0.0"}, nil)
 	s.AddTool(&gomcp.Tool{
 		Name:        "claude_permission",
@@ -40,12 +42,12 @@ func NewPermHTTPHandler(ask PermAsker) http.Handler {
 			"required": []string{"tool_name", "input"},
 		},
 	}, func(ctx context.Context, req *gomcp.CallToolRequest) (*gomcp.CallToolResult, error) {
-		return permCall(ctx, req, ask)
+		return permCall(ctx, req, ask, question)
 	})
 	return gomcp.NewStreamableHTTPHandler(func(*http.Request) *gomcp.Server { return s }, nil)
 }
 
-func permCall(ctx context.Context, req *gomcp.CallToolRequest, ask PermAsker) (*gomcp.CallToolResult, error) {
+func permCall(ctx context.Context, req *gomcp.CallToolRequest, ask PermAsker, question QuestionAsker) (*gomcp.CallToolResult, error) {
 	var a permArgs
 	if err := json.Unmarshal(req.Params.Arguments, &a); err != nil || a.ToolName == "" {
 		return permDecision(map[string]any{"behavior": "deny", "message": "miniapp: 無法解析授權請求"}), nil
@@ -56,6 +58,16 @@ func permCall(ctx context.Context, req *gomcp.CallToolRequest, ask PermAsker) (*
 	}
 	if sid == "" {
 		return permDecision(map[string]any{"behavior": "deny", "message": "miniapp: 缺少 session 識別"}), nil
+	}
+	if a.ToolName == "AskUserQuestion" {
+		if question == nil {
+			return permDecision(map[string]any{"behavior": "deny", "message": "miniapp: 問答通道未啟用，請用文字詢問使用者"}), nil
+		}
+		in, err := question(ctx, sid, a.Input, a.ToolUseID)
+		if err != nil {
+			return permDecision(map[string]any{"behavior": "deny", "message": err.Error()}), nil
+		}
+		return permDecision(map[string]any{"behavior": "allow", "updatedInput": in}), nil
 	}
 	allow, msg := ask(ctx, sid, a.ToolName, a.Input, a.ToolUseID)
 	if !allow {
