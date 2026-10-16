@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/usage"
@@ -35,11 +34,7 @@ func (f *CursorFetcher) Fetch(ctx context.Context) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{Provider: agent.TypeCursor}, err
 	}
-	return Snapshot{
-		Provider:    agent.TypeCursor,
-		DisplayText: FormatDisplay(agent.TypeCursor, info),
-		UpdatedAt:   time.Now(),
-	}, nil
+	return snapshotFromInfo(agent.TypeCursor, info), nil
 }
 
 func cursorStateDBPath() string {

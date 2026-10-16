@@ -17,7 +17,7 @@
 
 | # | 檔案 | 內容 |
 |---|------|------|
-| 1 | `js/core/core.js` | 第一行 `const { useState, ... } = React;`（全域 hook 別名，所有元件都靠這行）。Telegram WebApp 初始化、localStorage 偏好、API base 推算（`resolveApiUrl`）、session 過期/401 處理、`wsURL`、`parseMarkdown`、基礎 hooks（`useMediaQuery`/`useChatHeaderCollapsed`）、label 工具。 |
+| 1 | `js/core/core.js` | 第一行 `const { useState, ... } = React;`（全域 hook 別名，所有元件都靠這行）。Telegram WebApp 初始化、localStorage 偏好、API base 推算（`resolveApiUrl`）、session 過期/401 處理、`wsURL`、`parseMarkdown`、基礎 hooks（`useMediaQuery`）、label 工具。 |
 | 2 | `js/ui/ui-atoms.js` | 小型展示元件與相鄰工具：`SessionStateChip`、各種 Badge/Chip、`PermMode`/`Model`/`Effort` Select、`QuotaBadge`、`ShellOutput`、`InputModeTab`、`ModeToggleBtn`、`MessageCopyButton`、複製與提示工具（`copyText`、`showToast`、`hapticTap`）、cli-arg 解析、input-mode 儲存等。 |
 | 3 | `js/hooks/useChatSocket.js` | `ChatView` 的 WebSocket 連線/重連、串流解析、訊息與設定狀態，抽出 `{ messages, state, send, flushPendingModes, ... }`。 |
 | 4 | `js/hooks/useNewSessionForm.js` | `SessionView` 建立表單與 `ForwardModal` 新建會話共用的表單狀態＋payload 組裝邏輯。 |

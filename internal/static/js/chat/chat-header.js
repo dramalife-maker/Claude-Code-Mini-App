@@ -123,20 +123,6 @@ function ChatSessionHeader({
   quota,
   quotaRefreshing,
   onQuotaRefresh,
-  headerCollapsed,
-  onToggleHeader,
-  onExpandHeader,
-  showPermModeSelect,
-  inputMode,
-  usePermModeDropdown,
-  mode,
-  modeSwitchDisabled,
-  onPermModeChange,
-  showEffortSelect,
-  modelSel,
-  effortSel,
-  onModelChange,
-  onEffortChange,
   guest = null,
   onShare = null,
   isSplit = false,
@@ -147,22 +133,15 @@ function ChatSessionHeader({
   onClosePane = null,
 }) {
   const isGuest = !!guest;
-  const expanded = !headerCollapsed && !isGuest;
-  const showPerm = !isGuest && showPermModeSelect && inputMode === 'agent';
   const { shellEnabled } = useServerConfig();
   const showOpenButtons = !isGuest && shellEnabled && !!(session.work_dir && String(session.work_dir).trim());
-  const permTitle =
-    agentType === 'antigravity'
-      ? 'Antigravity 權限模式'
-      : agentType === 'cursor'
-      ? '權限模式（bypass：Cursor 會加 --force）'
-      : '權限模式';
   const repoLabel = workDirGroupShortLabel(session.work_dir);
   const modelLabel = (sessionModel && typeof sessionModel === 'object')
     ? (sessionModel.display_text || '')
     : (sessionModel || '');
   const modelOk = modelLabel && modelLabel !== '—';
   const quotaText = !isGuest && quota && quota.display_text && quota.display_text !== '—' ? quota.display_text : '';
+  const quotaBars = !isGuest && !!resolveQuotaBars(quota, agentType);
   const subParts = [
     repoLabel !== '（未設定工作目錄）' ? repoLabel : null,
     modelOk ? modelLabel : null,
@@ -190,7 +169,6 @@ function ChatSessionHeader({
           <GitBranchBadge branch={session.git_branch} compact />
           {isGuest && <GuestRoleChip guest={guest} />}
           {!isGuest && onShare && <ShareButton onClick={onShare} />}
-          {!isGuest && <HeaderToggleButton expanded={expanded} onToggle={onToggleHeader} />}
         </div>
         <div className="flex items-center gap-1.5 mt-2.5 min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden flex-wrap">
           <span className={`inline-flex items-center gap-1 shrink-0 text-[11.5px] font-semibold px-2 py-1 rounded-md ${getAgentBadgeClass(agentType)}`}>
@@ -198,59 +176,7 @@ function ChatSessionHeader({
             {AGENT_LABEL[agentType] || agentType}
           </span>
           {!isGuest && <QuotaBadge quota={quota} compact agentType={agentType} onRefresh={onQuotaRefresh} refreshing={quotaRefreshing} />}
-          {showPerm ? (
-            <PermModeIconChip
-              agentType={agentType}
-              value={mode}
-              onClick={onExpandHeader}
-              disabled={modeSwitchDisabled}
-            />
-          ) : null}
         </div>
-        {expanded && showPerm ? (
-          <div className="mt-2.5">
-            {usePermModeDropdown ? (
-              <PermModeSelect
-                agentType={agentType}
-                value={mode}
-                onChange={onPermModeChange}
-                disabled={modeSwitchDisabled}
-                title={permTitle}
-                id="chat-perm-mode-mobile"
-                className="w-full py-2"
-              />
-            ) : (
-              <PermModeSwitch
-                agentType={agentType}
-                value={mode}
-                onChange={onPermModeChange}
-                disabled={modeSwitchDisabled}
-                title={permTitle}
-              />
-            )}
-          </div>
-        ) : null}
-        {expanded ? (
-          <div className="mt-2.5 flex gap-2">
-            <ModelSelect
-              agentType={agentType}
-              value={modelSel}
-              onChange={onModelChange}
-              disabled={modeSwitchDisabled}
-              id="chat-model-mobile"
-              className="flex-1 py-2"
-            />
-            {showEffortSelect ? (
-              <EffortSelect
-                value={effortSel}
-                onChange={onEffortChange}
-                disabled={modeSwitchDisabled}
-                id="chat-effort-mobile"
-                className="flex-1 py-2"
-              />
-            ) : null}
-          </div>
-        ) : null}
       </div>
 
       {/* 桌面：Row 1 標題＋分支（左）｜ 操作控制（右）。Row 2 只放細的 repo/model/quota 副標，不跟控制項搶版面。 */}
@@ -292,59 +218,24 @@ function ChatSessionHeader({
                 <OpenInHostButton sessionId={session.id} kind="folder" />
               </div>
             ) : null}
-            {!isGuest && (
-            <ModelSelect
-              agentType={agentType}
-              value={modelSel}
-              onChange={onModelChange}
-              disabled={modeSwitchDisabled}
-              id="chat-model"
-              className="w-[9rem]"
-            />
-            )}
-            {!isGuest && showEffortSelect ? (
-              <EffortSelect
-                value={effortSel}
-                onChange={onEffortChange}
-                disabled={modeSwitchDisabled}
-                id="chat-effort"
-                className="w-[7rem]"
-              />
-            ) : null}
-            {showPerm ? (
-              usePermModeDropdown ? (
-                <PermModeSelect
-                  agentType={agentType}
-                  value={mode}
-                  onChange={onPermModeChange}
-                  disabled={modeSwitchDisabled}
-                  title={permTitle}
-                  id="chat-perm-mode"
-                  className="w-[11rem]"
-                />
-              ) : (
-                <PermModeSwitch
-                  agentType={agentType}
-                  value={mode}
-                  onChange={onPermModeChange}
-                  disabled={modeSwitchDisabled}
-                  title={permTitle}
-                />
-              )
-            ) : null}
           </div>
         </div>
         <div className="flex items-center gap-2 mt-1.5 min-w-0 flex-wrap">
           {subLine ? (
             <span className="text-xs text-[oklch(0.55_0.01_264)] ra-mono truncate">{subLine}</span>
           ) : null}
-          {quotaText ? (
+          {quotaBars ? (
+            <span className="text-xs ra-mono shrink-0">
+              {subLine ? <span className="text-gray-500">· </span> : null}
+              <QuotaUsage quota={quota} agentType={agentType} />
+            </span>
+          ) : quotaText ? (
             <span className="text-xs ra-mono truncate">
               {subLine ? <span className="text-gray-500">· </span> : null}
               <QuotaSegments quota={quota} text={quotaText} />
             </span>
           ) : null}
-          {quotaText ? (
+          {quotaBars || quotaText ? (
             <button
               type="button"
               onClick={onQuotaRefresh}

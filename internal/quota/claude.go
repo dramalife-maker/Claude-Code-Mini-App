@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
@@ -31,11 +30,7 @@ func (f *ClaudeFetcher) Fetch(ctx context.Context) (Snapshot, error) {
 			info = oauthInfo
 		}
 	}
-	snap := Snapshot{
-		Provider:    agent.TypeClaude,
-		DisplayText: FormatDisplay(agent.TypeClaude, info),
-		UpdatedAt:   time.Now(),
-	}
+	snap := snapshotFromInfo(agent.TypeClaude, info)
 	if snap.DisplayText == "—" {
 		return snap, fmt.Errorf("claude quota: no session/week data")
 	}

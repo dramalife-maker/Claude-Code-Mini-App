@@ -17,22 +17,6 @@ function SessionStateChip({ state, activityHint, compact, className = '' }) {
   );
 }
 
-function HeaderToggleButton({ expanded, onToggle, className = '' }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-expanded={expanded}
-      aria-label={expanded ? '收合頂欄' : '展開頂欄'}
-      className={'sm:hidden shrink-0 p-1 rounded-md text-gray-500 hover:text-gray-300 hover:bg-gray-800/70 transition-colors ' + className}
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={'w-4 h-4 transition-transform duration-150 ' + (expanded ? 'rotate-180' : '')} aria-hidden>
-        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-      </svg>
-    </button>
-  );
-}
-
 function AgentIconChip({ agentType, className = '' }) {
   const t = String(agentType || 'claude').toLowerCase();
   return (
@@ -42,32 +26,6 @@ function AgentIconChip({ agentType, className = '' }) {
     >
       <AgentBadgeIcon agentType={agentType} />
     </span>
-  );
-}
-
-function PermModeIconChip({ agentType, value, onClick, disabled, className = '' }) {
-  const label = permModeLabelFor(agentType, value);
-  const danger = permModeIsDanger(value);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      title={'權限：' + label + '（點擊展開）'}
-      aria-label={'權限：' + label}
-      className={
-        'inline-flex items-center justify-center w-5 h-5 shrink-0 rounded-md border transition-colors ' +
-        (danger
-          ? 'border-amber-700/65 bg-amber-950/55 text-amber-300 hover:bg-amber-950/75'
-          : 'border-gray-700/55 bg-gray-800/70 text-gray-400 hover:text-gray-200 hover:bg-gray-800') +
-        (disabled ? ' opacity-45 pointer-events-none' : '') +
-        ' ' + className
-      }
-    >
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3" aria-hidden>
-        <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-      </svg>
-    </button>
   );
 }
 
@@ -315,13 +273,13 @@ function PermModeSwitch({ agentType, value, onChange, disabled, title }) {
 }
 
 /** 下拉選單右側的自訂 chevron（蓋掉瀏覽器原生箭頭，appearance-none 後手畫一個） */
-function SelectChevron({ danger }) {
+function SelectChevron({ danger, compact }) {
   return (
     <svg
       viewBox="0 0 20 20"
       fill="currentColor"
       aria-hidden
-      className={`pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 ${danger ? 'text-amber-400/80' : 'text-gray-500'}`}
+      className={`pointer-events-none absolute top-1/2 -translate-y-1/2 ${compact ? 'right-1.5 w-3 h-3' : 'right-2.5 w-3.5 h-3.5'} ${danger ? 'text-amber-400/80' : 'text-gray-500'}`}
     >
       <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
     </svg>
@@ -340,8 +298,22 @@ const selectBaseClass = (danger) => [
     : 'border border-gray-700 bg-gray-800 text-gray-200 hover:border-gray-600 hover:bg-gray-700/60 focus:border-violet-600 focus:ring-1 focus:ring-violet-600/30',
 ].join(' ').replace(/\s+/g, ' ').trim();
 
+/** 輸入列用的精簡 chip 樣式（compact prop）：無邊框、h-8、小字，仍是原生 <select> */
+const selectCompactClass = (danger) => [
+  'h-8 max-w-[9rem] appearance-none cursor-pointer rounded-md pl-2 pr-5 text-xs font-medium truncate',
+  'focus:outline-none focus-visible:ring-1 focus-visible:ring-violet-500/50 disabled:opacity-45 disabled:cursor-not-allowed',
+  'transition-colors duration-150',
+  danger
+    ? 'bg-amber-950/45 text-amber-300 hover:bg-amber-950/65'
+    : 'bg-gray-800/80 text-gray-300 hover:bg-gray-700/80 hover:text-gray-100',
+].join(' ').replace(/\s+/g, ' ').trim();
+
+/** compact 時的外層/select class；未傳 compact 維持既有輸出 */
+const selectWrapClass = (compact, className) => compact ? 'relative shrink-0 min-w-0' : `relative min-w-0 ${className || 'w-full'}`;
+const selectClass = (compact, danger, className) => compact ? selectCompactClass(danger) : `${selectBaseClass(danger)} ${className || ''}`;
+
 /** 權限模式：窄螢幕（app 版）用下拉選單，與 PermModeSwitch 選項一致。danger 值會套用琥珀邊框（與分段按鈕語意一致）。 */
-function PermModeSelect({ agentType, value, onChange, disabled, title, id, className }) {
+function PermModeSelect({ agentType, value, onChange, disabled, title, id, className, compact }) {
   const opts = permModeOptionsFor(agentType);
   const t = String(agentType || 'claude').toLowerCase();
   const ariaLabel =
@@ -349,26 +321,26 @@ function PermModeSelect({ agentType, value, onChange, disabled, title, id, class
   const selectId = id || `perm-mode-select-${t}`;
   const danger = value === 'bypassPermissions' || value === 'yolo';
   return (
-    <div className={`relative min-w-0 ${className || 'w-full'}`}>
+    <div className={selectWrapClass(compact, className)}>
       <select
         id={selectId}
         aria-label={ariaLabel}
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={`${selectBaseClass(danger)} ${className || ''}`}
+        className={selectClass(compact, danger, className)}
       >
         {opts.map((opt) => (
           <option key={opt.value} value={opt.value}>{opt.label}</option>
         ))}
       </select>
-      <SelectChevron danger={danger} />
+      <SelectChevron danger={danger} compact={compact} />
     </div>
   );
 }
 
 /** Model 下拉選單：選項打 GET /model-options/:agentType，固定含「預設（不指定）」。 */
-function ModelSelect({ agentType, value, onChange, disabled, id, className }) {
+function ModelSelect({ agentType, value, onChange, disabled, id, className, compact }) {
   const [opts, setOpts] = useState([]);
   useEffect(() => {
     let cancelled = false;
@@ -379,43 +351,43 @@ function ModelSelect({ agentType, value, onChange, disabled, id, className }) {
     return () => { cancelled = true; };
   }, [agentType]);
   return (
-    <div className={`relative min-w-0 ${className || 'w-full'}`}>
+    <div className={selectWrapClass(compact, className)}>
       <select
         id={id || `model-select-${agentType}`}
         aria-label="Model"
         value={value || ''}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={`${selectBaseClass(false)} ${className || ''}`}
+        className={selectClass(compact, false, className)}
       >
         <option value="">預設</option>
         {opts.map((opt) => (
           <option key={opt.model_id} value={opt.model_id}>{opt.label}</option>
         ))}
       </select>
-      <SelectChevron />
+      <SelectChevron compact={compact} />
     </div>
   );
 }
 
 /** Effort 下拉選單：固定 low/medium/high/xhigh/max，含「預設（不指定）」。Cursor 不支援，呼叫端不應渲染。 */
-function EffortSelect({ value, onChange, disabled, id, className }) {
+function EffortSelect({ value, onChange, disabled, id, className, compact }) {
   return (
-    <div className={`relative min-w-0 ${className || 'w-full'}`}>
+    <div className={selectWrapClass(compact, className)}>
       <select
         id={id || 'effort-select'}
         aria-label="Effort"
         value={value || ''}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={`${selectBaseClass(false)} ${className || ''}`}
+        className={selectClass(compact, false, className)}
       >
         <option value="">預設</option>
         {EFFORT_OPTIONS.map((v) => (
           <option key={v} value={v}>{v}</option>
         ))}
       </select>
-      <SelectChevron />
+      <SelectChevron compact={compact} />
     </div>
   );
 }
@@ -557,14 +529,160 @@ function QuotaSegments({ quota, text, className = '' }) {
   ));
 }
 
+/**
+ * 結構化用量（quota.windows）：各 runner 的版型設定表。bars 依 window key 對應，對不到的略過；
+ * tip 是 tooltip 要列的窗口（含不畫條的，例如 Cursor 的 Auto/API）；showPct 控制條旁是否帶標籤與百分比。
+ */
+const QUOTA_LAYOUTS = (() => {
+  const fiveWeek = { groups: [{ bars: [{ key: 'session', label: '5h' }, { key: 'weekly', label: 'Week' }] }], tip: [['session', '5h'], ['weekly', 'Week']], showPct: true };
+  const kiro = { groups: [{ bars: [{ key: 'credits', label: 'Credits' }] }], tip: [['credits', 'Credits']], showPct: true, showUsed: true };
+  return {
+    claude: fiveWeek,
+    codex: fiveWeek,
+    cursor: { groups: [{ bars: [{ key: 'billing_total', label: 'Total' }] }], tip: [['billing_total', 'Total'], ['billing_auto', 'Auto'], ['billing_api', 'API']], showPct: true },
+    kiro,
+    kiroacp: kiro,
+    antigravity: {
+      groups: [
+        { label: 'Gemini', bars: [{ key: 'session', label: '5h' }, { key: 'weekly', label: 'Week' }] },
+        { label: 'Claude/GPT', bars: [{ key: 'session_claude', label: '5h' }, { key: 'weekly_claude', label: 'Week' }] },
+      ],
+      tip: [['session', 'Gemini 5h'], ['weekly', 'Gemini Week'], ['session_claude', 'Claude/GPT 5h'], ['weekly_claude', 'Claude/GPT Week']],
+      showPct: false,
+    },
+  };
+})();
+
+function quotaLayoutFor(agentType) {
+  const t = String(agentType || '').toLowerCase();
+  return QUOTA_LAYOUTS[t === 'gemini' ? 'antigravity' : t] || null;
+}
+
+function quotaWinPercent(w) {
+  if (!w) return null;
+  if (typeof w.percent === 'number' && Number.isFinite(w.percent)) return w.percent;
+  if (typeof w.used === 'number' && typeof w.limit === 'number' && w.limit > 0) return (w.used / w.limit) * 100;
+  return null;
+}
+
+function quotaFmtNum(n) {
+  return Math.abs(n - Math.round(n)) < 0.05 ? String(Math.round(n)) : n.toFixed(1);
+}
+
+/** 對應 layout 的窗口；windows 缺失／空／全是未知 key 時回 null（呼叫端退回文字顯示） */
+function resolveQuotaBars(quota, agentType) {
+  const layout = quotaLayoutFor(agentType);
+  if (!layout || !quota || !Array.isArray(quota.windows)) return null;
+  const byKey = {};
+  quota.windows.forEach((w) => { if (w && w.key && !(w.key in byKey)) byKey[w.key] = w; });
+  const groups = layout.groups
+    .map((g) => ({
+      label: g.label,
+      bars: g.bars
+        .map((b) => ({ ...b, win: byKey[b.key], pct: quotaWinPercent(byKey[b.key]) }))
+        .filter((b) => b.pct !== null),
+    }))
+    .filter((g) => g.bars.length > 0);
+  return groups.length ? { layout, groups, byKey } : null;
+}
+
+/** 進度條顏色：error 琥珀 > ≥100 紅 > ≥80 橘 > stale 灰 > 預設（與文字版 quotaTextColorClass 同順序） */
+function quotaBarTone(quota, pct) {
+  if (quota.error) return { bg: 'bg-amber-400', text: 'text-amber-400' };
+  if (pct >= 100) return { bg: 'bg-red-400', text: 'text-red-400' };
+  if (pct >= 80) return { bg: 'bg-orange-400', text: 'text-orange-400' };
+  if (quota.stale) return { bg: 'bg-gray-500', text: 'text-gray-500' };
+  return { bg: 'bg-violet-400', text: 'text-gray-400' };
+}
+
+/** resets_at（ISO）→ "Resets in 3 hr 25 min"；解析失敗或已過期回空字串 */
+function quotaResetCountdown(iso) {
+  const t = Date.parse(iso || '');
+  if (!Number.isFinite(t)) return '';
+  const mins = Math.round((t - Date.now()) / 60000);
+  if (mins <= 0) return '';
+  if (mins < 60) return 'Resets in ' + mins + ' min';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return 'Resets in ' + h + ' hr' + (m ? ' ' + m + ' min' : '');
+}
+
+/** tooltip：各窗口名稱／百分比／倒數，最後附完整 display_text */
+function quotaTooltip(quota, agentType) {
+  const layout = quotaLayoutFor(agentType);
+  const lines = [];
+  if (layout && Array.isArray(quota.windows)) {
+    layout.tip.forEach(([key, name]) => {
+      const w = quota.windows.find((x) => x && x.key === key);
+      const pct = quotaWinPercent(w);
+      if (pct === null) return;
+      let line = name + ' ' + Math.round(pct * 10) / 10 + '%';
+      if (typeof w.used === 'number' && typeof w.limit === 'number') line += ' (' + quotaFmtNum(w.used) + '/' + quotaFmtNum(w.limit) + ')';
+      const left = quotaResetCountdown(w.resets_at);
+      if (left) line += ' · ' + left;
+      lines.push(line);
+    });
+  }
+  if (quota.plan) lines.push('方案 ' + quota.plan);
+  const age = formatQuotaAge(quota.updated_at);
+  if (age) lines.push(age);
+  if (quota.error) lines.push(quota.error);
+  if (quota.display_text && quota.display_text !== '—') lines.push(quota.display_text);
+  return lines.join('\n');
+}
+
+function QuotaBar({ quota, pct, bar, className = 'w-12' }) {
+  const tone = quotaBarTone(quota, pct);
+  return (
+    <span data-quota-bar={bar} data-pct={Math.round(pct)} className={'inline-block h-1 rounded-full bg-gray-700/70 overflow-hidden shrink-0 ' + className}>
+      <span className={'block h-full rounded-full ' + tone.bg} style={{ width: Math.max(0, Math.min(100, pct)) + '%' }} />
+    </span>
+  );
+}
+
+/** 依 runner 版型顯示的精簡用量條；resolveQuotaBars 為 null 時不渲染（呼叫端先判斷、退回文字） */
+function QuotaUsage({ quota, agentType }) {
+  const res = resolveQuotaBars(quota, agentType);
+  if (!res) return null;
+  const { layout, groups } = res;
+  return (
+    <span data-quota-usage className="inline-flex items-center gap-2 whitespace-nowrap shrink-0 text-[10px] ra-mono" title={quotaTooltip(quota, agentType)}>
+      {groups.map((g, gi) => (
+        <span key={gi} className="inline-flex items-center gap-1">
+          {g.label ? <span className="text-gray-500">{g.label}</span> : null}
+          {g.bars.map((b) => (
+            <span key={b.key} className="inline-flex items-center gap-1">
+              {layout.showPct ? <span className="text-gray-500">{b.label}</span> : null}
+              <QuotaBar quota={quota} pct={b.pct} bar={b.key} className={layout.showPct ? 'w-12' : 'w-7'} />
+              {layout.showPct ? <span className={quotaBarTone(quota, b.pct).text}>{Math.round(b.pct)}%</span> : null}
+              {layout.showUsed && b.win && typeof b.win.used === 'number' && typeof b.win.limit === 'number' ? (
+                <span className="text-gray-500">{quotaFmtNum(b.win.used)}/{quotaFmtNum(b.win.limit)}</span>
+              ) : null}
+            </span>
+          ))}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** 手機晶片用：版型內所有已知窗口中 percent 最高者；對不到回 null */
+function quotaPeakPercent(quota, agentType) {
+  const layout = quotaLayoutFor(agentType);
+  if (!layout || !quota || !Array.isArray(quota.windows)) return null;
+  const pcts = layout.tip.map(([key]) => quotaWinPercent(quota.windows.find((x) => x && x.key === key))).filter((p) => p !== null);
+  return pcts.length ? Math.max(...pcts) : null;
+}
+
 /** 帳戶 quota %（後端已組好 display_text） */
 function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = false, agentType = '' }) {
+  const peak = compact ? quotaPeakPercent(quota, agentType) : null;
   const text = quota && quota.display_text;
-  if (!text || text === '—') return null;
+  if (peak === null && (!text || text === '—')) return null;
   const shown = compact ? formatQuotaCompact(text, agentType) : text;
-  if (!shown) return null;
+  if (peak === null && !shown) return null;
   const age = formatQuotaAge(quota.updated_at);
-  const title = [text, age, quota.error].filter(Boolean).join(' · ');
+  const title = peak !== null ? quotaTooltip(quota, agentType) : [text, age, quota.error].filter(Boolean).join(' · ');
   const compactMaxW = ['kiro', 'kiroacp'].includes(String(agentType || '').toLowerCase()) ? 'max-w-[6.5rem]' : 'max-w-[4.5rem]';
   const chipCls = compact
     ? 'inline-flex items-center shrink-0 ' + compactMaxW + ' px-2 py-1 rounded-md bg-[oklch(0.24_0.02_264)] '
@@ -579,7 +697,14 @@ function QuotaBadge({ quota, onRefresh, refreshing, className = '', compact = fa
       title={tappable ? title + ' · 點擊刷新' : title}
     >
       <span className="text-[10px] font-mono truncate">
-        <QuotaSegments quota={quota} text={shown} />
+        {peak !== null ? (
+          <span className="inline-flex items-center gap-1">
+            <QuotaBar quota={quota} pct={peak} bar="peak" className="w-8" />
+            <span className={quotaBarTone(quota, peak).text}>{Math.round(peak)}%</span>
+          </span>
+        ) : (
+          <QuotaSegments quota={quota} text={shown} />
+        )}
       </span>
       {!compact && onRefresh ? (
         <button

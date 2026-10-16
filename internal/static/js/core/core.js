@@ -500,23 +500,6 @@ const SESSION_STATE_LABEL = {
   SHELL_EXEC: 'Shell 執行中',
 };
 
-const CHAT_HEADER_COLLAPSED_KEY = 'cc_chat_header_collapsed';
-
-function readChatHeaderCollapsedPref() {
-  try {
-    const v = localStorage.getItem(CHAT_HEADER_COLLAPSED_KEY);
-    if (v === '1') return true;
-    if (v === '0') return false;
-  } catch (_) {}
-  return null;
-}
-
-function writeChatHeaderCollapsedPref(collapsed) {
-  try {
-    localStorage.setItem(CHAT_HEADER_COLLAPSED_KEY, collapsed ? '1' : '0');
-  } catch (_) {}
-}
-
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia(query).matches : false
@@ -533,8 +516,8 @@ function useMediaQuery(query) {
 }
 
 /**
- * 伺服器全域設定（GET /config）：目前只有 shell_enabled，用來決定「開啟 VSCode／開啟目錄」
- * 等依賴伺服器端本機程序的功能是否顯示。模組層快取單一 promise，避免每個用到的元件各 fetch 一次。
+ * 伺服器全域設定（GET /config）：包含 shell_enabled 與建置版本、Git SHA。
+ * 模組層快取單一 promise，避免每個用到的元件各 fetch 一次。
  */
 let _serverConfigPromise = null;
 function fetchServerConfig() {
@@ -555,26 +538,6 @@ function useServerConfig() {
     fetchServerConfig().then((cfg) => setShellEnabled(!!(cfg && cfg.shell_enabled)));
   }, []);
   return { shellEnabled };
-}
-
-/** 手機預設收合；偏好寫入 localStorage */
-function useChatHeaderCollapsed() {
-  const isMobile = useMediaQuery('(max-width: 639px)');
-  const [collapsed, setCollapsedState] = useState(() => {
-    const saved = readChatHeaderCollapsedPref();
-    if (saved != null) return saved;
-    return typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches;
-  });
-  const setCollapsed = useCallback((v) => {
-    setCollapsedState(v);
-    writeChatHeaderCollapsedPref(v);
-  }, []);
-  return {
-    collapsed: isMobile && collapsed,
-    setCollapsed,
-    isMobile,
-    toggle: () => setCollapsed(!collapsed),
-  };
 }
 
 function formatKiroCreditUsed(displayText) {

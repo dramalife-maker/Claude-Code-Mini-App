@@ -28,11 +28,7 @@ func (f *AntigravityFetcher) Fetch(ctx context.Context) (Snapshot, error) {
 		}, err
 	}
 	info := usage.FromAgyUsageText(text)
-	snap := Snapshot{
-		Provider:    agent.TypeAntigravity,
-		DisplayText: FormatDisplay(agent.TypeAntigravity, info),
-		UpdatedAt:   time.Now(),
-	}
+	snap := snapshotFromInfo(agent.TypeAntigravity, info)
 	if snap.DisplayText == "—" {
 		return snap, fmt.Errorf("antigravity quota: no session/week data")
 	}

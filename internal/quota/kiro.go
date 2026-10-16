@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os/exec"
-	"time"
 
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/proc"
@@ -23,9 +22,5 @@ func (f *KiroFetcher) Fetch(ctx context.Context) (Snapshot, error) {
 	cmd.SysProcAttr = proc.SysProcAttr()
 	_ = cmd.Run()
 	info := usage.FromKiroUsageText(stdout.String())
-	return Snapshot{
-		Provider:    agent.TypeKiro,
-		DisplayText: FormatDisplay(agent.TypeKiro, info),
-		UpdatedAt:   time.Now(),
-	}, nil
+	return snapshotFromInfo(agent.TypeKiro, info), nil
 }

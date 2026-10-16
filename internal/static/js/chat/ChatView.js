@@ -93,7 +93,6 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const chatInputRef = useRef(null);
   const slashInputWrapRef = useRef(null);
   const composerWrapRef = useRef(null);
-  const { collapsed: headerCollapsed, toggle: toggleHeader, setCollapsed: setHeaderCollapsed } = useChatHeaderCollapsed();
 
   const syncChatNearBottom = useCallback(() => {
     setQuoteSelection(null);
@@ -818,20 +817,6 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
         quota={quota}
         quotaRefreshing={quotaRefreshing}
         onQuotaRefresh={handleQuotaRefresh}
-        headerCollapsed={headerCollapsed}
-        onToggleHeader={toggleHeader}
-        onExpandHeader={() => setHeaderCollapsed(false)}
-        showPermModeSelect={showPermModeSelect}
-        inputMode={inputMode}
-        usePermModeDropdown={usePermModeDropdown}
-        mode={mode}
-        modeSwitchDisabled={modeSwitchDisabled}
-        onPermModeChange={handlePermModeDraftChange}
-        showEffortSelect={showEffortSelect}
-        modelSel={modelSel}
-        effortSel={effortSel}
-        onModelChange={handleModelDraftChange}
-        onEffortChange={handleEffortDraftChange}
         guest={guest}
         onShare={isGuest ? null : () => setShareOpen(true)}
         isSplit={isSplit}
@@ -1179,6 +1164,38 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                       </svg>
                     )}
                   </button>
+                  {!isGuest && (
+                    <>
+                      {showPermModeSelect && (
+                        <PermModeSelect
+                          compact
+                          agentType={agentType}
+                          value={mode}
+                          onChange={handlePermModeDraftChange}
+                          disabled={modeSwitchDisabled}
+                          title={agentType === 'antigravity' ? 'Antigravity 權限模式' : agentType === 'cursor' ? '權限模式（bypass：Cursor 會加 --force）' : '權限模式'}
+                          id="chat-perm-mode"
+                        />
+                      )}
+                      <ModelSelect
+                        compact
+                        agentType={agentType}
+                        value={modelSel}
+                        onChange={handleModelDraftChange}
+                        disabled={modeSwitchDisabled}
+                        id="chat-model"
+                      />
+                      {showEffortSelect && (
+                        <EffortSelect
+                          compact
+                          value={effortSel}
+                          onChange={handleEffortDraftChange}
+                          disabled={modeSwitchDisabled}
+                          id="chat-effort"
+                        />
+                      )}
+                    </>
+                  )}
                 </>
               )}
               <div className="relative flex w-full min-w-0 order-first flex-col" ref={slashInputWrapRef}>

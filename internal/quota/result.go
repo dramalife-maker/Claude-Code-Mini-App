@@ -6,6 +6,8 @@ import "time"
 type Snapshot struct {
 	Provider    string    `json:"provider"`
 	DisplayText string    `json:"display_text"`
+	Windows     []Window  `json:"windows,omitempty"`
+	Plan        string    `json:"plan,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
 	Stale       bool      `json:"stale,omitempty"`
 	Fetching    bool      `json:"fetching,omitempty"`
@@ -14,16 +16,20 @@ type Snapshot struct {
 
 // Payload 是 WS / sync 用的精簡欄位。
 type Payload struct {
-	DisplayText string `json:"display_text,omitempty"`
-	UpdatedAt   string `json:"updated_at,omitempty"`
-	Stale       bool   `json:"stale,omitempty"`
-	Fetching    bool   `json:"fetching,omitempty"`
-	Error       string `json:"error,omitempty"`
+	DisplayText string   `json:"display_text,omitempty"`
+	Windows     []Window `json:"windows,omitempty"`
+	Plan        string   `json:"plan,omitempty"`
+	UpdatedAt   string   `json:"updated_at,omitempty"`
+	Stale       bool     `json:"stale,omitempty"`
+	Fetching    bool     `json:"fetching,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 func (s Snapshot) ToPayload() Payload {
 	p := Payload{
 		DisplayText: s.DisplayText,
+		Windows:     s.Windows,
+		Plan:        s.Plan,
 		Stale:       s.Stale,
 		Fetching:    s.Fetching,
 		Error:       s.Error,

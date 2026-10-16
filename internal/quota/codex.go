@@ -29,11 +29,7 @@ func codexSnapshot(info *usage.QuotaInfo) Snapshot {
 	if info == nil {
 		info = &usage.QuotaInfo{Provider: agent.TypeCodex, Source: "codex rollout"}
 	}
-	return Snapshot{
-		Provider:    agent.TypeCodex,
-		DisplayText: FormatDisplay(agent.TypeCodex, info),
-		UpdatedAt:   time.Now(),
-	}
+	return snapshotFromInfo(agent.TypeCodex, info)
 }
 
 func codexSessionsDir() string {
