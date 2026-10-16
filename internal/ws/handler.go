@@ -104,6 +104,7 @@ type clientMsg struct {
 type serverMsg struct {
 	Question     *pendingQuestion   `json:"question,omitempty"`
 	RequestID    string             `json:"request_id,omitempty"`
+	Code         string             `json:"code,omitempty"` // 機器可讀的拒絕原因，例如 update_in_progress
 	CreatedAt    string             `json:"created_at,omitempty"`
 	Attachments  []db.Attachment    `json:"attachments,omitempty"`
 	Type         string             `json:"type"`
@@ -149,6 +150,7 @@ type ShellOpts struct {
 
 func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *quota.Service, notifyCfg tg.NotifyConfig) func(*fiberws.Conn) {
 	notifyCfg = notifyConfigFrom(notifyCfg)
+	setGateDB(database)
 	return func(c *fiberws.Conn) {
 		sessionID := c.Params("id")
 		tgUserID, _ := c.Locals("tg_id").(int64)
@@ -320,6 +322,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 
 		beginShellRun := func(command string, workDir string) {
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(""))
+				return
+			}
+			defer release()
 			if taskIsActive(sessionID) {
 				broadcast(serverMsg{Type: "error", Content: "AI is running; cannot run shell"})
 				return
@@ -349,7 +357,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			broadcast(serverMsg{Type: "status", Value: StateShellRunning})
 
+			goRelease := holdWork()
 			go func(command string, msgID int64, wdir string) {
+				defer goRelease()
 				defer func() {
 					if r := recover(); r != nil {
 						slog.Info(fmt.Sprintf("[ws] shell goroutine panic: %v", r))
@@ -360,7 +370,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				var done atomic.Bool
 				var shellErrText string
 				var exitCode int
-				err := shell.Run(ctx, shell.RunOptions{Command: command, WorkDir: wdir, Timeout: shellTimeoutSec}, func(e shell.Event) {
+				err := runShellCommand(ctx, shell.RunOptions{Command: command, WorkDir: wdir, Timeout: shellTimeoutSec}, func(e shell.Event) {
 					cbMu.Lock()
 					defer cbMu.Unlock()
 					if ctx.Err() != nil {
@@ -427,6 +437,13 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		// runAgent：與 WS 解耦，任務在背景執行。
 		// allowedOnce：僅「允許此操作」該次 retry 帶入 --allowedTools，不可寫入 DB（否則變成永久 allowlist）。
 		runAgent := func(prompt string, allowedOnce []string) {
+			// 閘門必須在第一個 cancel 與任何寫入之前：維護中直接拒絕，不取消、不寫 running、不取出佇列。
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(""))
+				return
+			}
+			defer release()
 			shellTaskCancel(sessionID)
 			clearShellPending(database, sessionID)
 			clearInMemoryShellApproval(sessionID)
@@ -633,7 +650,10 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				}
 			}
 
+			// goroutine 接手自己的 token；它必須是第一個 defer，確保 taskEnd／drain 之後才放行。
+			goRelease := holdWork()
 			go func(opts agent.RunOptions, msgID int64, userPrompt string) {
+				defer goRelease()
 				defer permCleanup()
 				defer taskEnd(sessionID, msgID)
 
@@ -1011,6 +1031,13 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				reject(err)
 				return
 			}
+			// 閘門要在任何 EnqueueMessage／startInput（會取出佇列）之前；維護中原樣拒絕，不排隊、不刪佇列。
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(input.RequestID))
+				return
+			}
+			defer release()
 			dl := dispatchLock(sessionID)
 			dl.Lock()
 			defer dl.Unlock()
@@ -1048,6 +1075,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 		// drainIfIdle：session 真的閒置時才取出下一則（任務成功收尾、授權解除、手動繼續共用）。
 		drainIfIdle = func() {
+			// 維護中不取出佇列：項目原樣保留（TryBegin 也要求佇列為空，這裡是第二道防線）。
+			release, err := admitWork()
+			if err != nil {
+				return
+			}
+			defer release()
 			dl := dispatchLock(sessionID)
 			dl.Lock()
 			defer dl.Unlock()
@@ -1058,6 +1091,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 
 		resumeQueue := func() {
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(""))
+				return
+			}
+			defer release()
 			if err := database.SetQueuePaused(sessionID, false); err != nil {
 				slog.Info(fmt.Sprintf("[ws] SetQueuePaused: %v", err))
 				return
@@ -1066,6 +1105,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 
 		startShellGoroutine := func(line string, absDir string) {
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(""))
+				return
+			}
+			defer release()
 			msgID, err := database.CreatePendingMessageWithRole(sessionID, db.RoleShell)
 			if err != nil {
 				slog.Info(fmt.Sprintf("[ws] CreatePendingMessageWithRole shell: %v", err))
@@ -1081,7 +1126,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			broadcast(serverMsg{Type: "status", Value: StateShellExec})
 
+			goRelease := holdWork()
 			go func(line string, msgID int64, workDir string) {
+				defer goRelease()
 				defer func() {
 					if r := recover(); r != nil {
 						slog.Info(fmt.Sprintf("[ws] shell_exec goroutine panic: %v", r))
@@ -1092,7 +1139,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				var done atomic.Bool
 				var shellErrText string
 				var exitCode int
-				err := shell.Run(ctx, shell.RunOptions{Command: line, WorkDir: workDir, Timeout: shellTimeoutSec}, func(e shell.Event) {
+				err := runShellCommand(ctx, shell.RunOptions{Command: line, WorkDir: workDir, Timeout: shellTimeoutSec}, func(e shell.Event) {
 					cbMu.Lock()
 					defer cbMu.Unlock()
 					if ctx.Err() != nil {
@@ -1144,6 +1191,13 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 
 		runShell := func(line string) {
+			// 第一個寫入（FinalizePending、shell_pending、user 訊息）之前先過閘門。
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(""))
+				return
+			}
+			defer release()
 			taskCancel(sessionID)
 			if err := database.FinalizePendingMessagesForSession(sessionID); err != nil {
 				slog.Info(fmt.Sprintf("[ws] FinalizePendingMessagesForSession (shell): %v", err))
@@ -1228,6 +1282,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		}
 
 		handleShellAllowExecute := func(remember bool) {
+			release, err := admitWork()
+			if err != nil {
+				send(updateInProgressMsg(""))
+				return
+			}
+			defer release()
 			taskCancel(sessionID)
 			if err := database.FinalizePendingMessagesForSession(sessionID); err != nil {
 				slog.Info(fmt.Sprintf("[ws] FinalizePendingMessagesForSession (shell allow): %v", err))
@@ -1358,32 +1418,38 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				if sx.PermissionMode != "bypassPermissions" {
-					setShellPending(sessionID, &shellPendingInfo{
-						Command:   cmd,
-						WorkDir:   sx.WorkDir,
-						ShellType: shellTypeString(),
+					// 設為待確認（記憶體）也要過閘門：維護中不產生新的待確認狀態。
+					withWorkAdmission(send, "", func() {
+						setShellPending(sessionID, &shellPendingInfo{
+							Command:   cmd,
+							WorkDir:   sx.WorkDir,
+							ShellType: shellTypeString(),
+						})
+						broadcast(serverMsg{
+							Type:      "shell_approval_request",
+							Content:   cmd,
+							WorkDir:   sx.WorkDir,
+							ShellType: shellTypeString(),
+						})
+						broadcast(serverMsg{Type: "status", Value: StateShellAwaitingApproval})
 					})
-					broadcast(serverMsg{
-						Type:      "shell_approval_request",
-						Content:   cmd,
-						WorkDir:   sx.WorkDir,
-						ShellType: shellTypeString(),
-					})
-					broadcast(serverMsg{Type: "status", Value: StateShellAwaitingApproval})
 					continue
 				}
 				beginShellRun(cmd, sx.WorkDir)
 
 			case "shell_approve":
-				if taskIsActive(sessionID) || shellTaskActive(sessionID) {
-					broadcast(serverMsg{Type: "error", Content: "another task is running"})
-					continue
-				}
-				p := takeShellPending(sessionID)
-				if p == nil {
-					continue
-				}
-				beginShellRun(p.Command, p.WorkDir)
+				// 取走待確認指令之前先過閘門：維護中拒絕時待確認仍保留在記憶體中。
+				withWorkAdmission(send, "", func() {
+					if taskIsActive(sessionID) || shellTaskActive(sessionID) {
+						broadcast(serverMsg{Type: "error", Content: "another task is running"})
+						return
+					}
+					p := takeShellPending(sessionID)
+					if p == nil {
+						return
+					}
+					beginShellRun(p.Command, p.WorkDir)
+				})
 
 			case "shell_cancel":
 				if takeShellPending(sessionID) != nil {
@@ -1428,14 +1494,17 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				// 多人同時回應同一個授權時先到先贏：認領 pending_denials 成功者才繼續，其餘視為已處理。
-				if claimed, err := database.ClaimPendingDenials(sessionID); err != nil || !claimed {
-					slog.Info(fmt.Sprintf("[ws] allow_once 略過：授權已被處理或不存在 (err=%v)", err))
-					continue
-				}
-				if err := database.UpdateAllowedTools(sessionID, nil); err != nil {
-					slog.Info(fmt.Sprintf("[ws] UpdateAllowedTools: %v", err))
-				}
-				runAgent("please retry the previous operation", once)
+				// 認領（寫入）之前就要過閘門；維護中拒絕時 pending_denials 保持原樣。
+				withWorkAdmission(send, "", func() {
+					if claimed, err := database.ClaimPendingDenials(sessionID); err != nil || !claimed {
+						slog.Info(fmt.Sprintf("[ws] allow_once 略過：授權已被處理或不存在 (err=%v)", err))
+						return
+					}
+					if err := database.UpdateAllowedTools(sessionID, nil); err != nil {
+						slog.Info(fmt.Sprintf("[ws] UpdateAllowedTools: %v", err))
+					}
+					runAgent("please retry the previous operation", once)
+				})
 
 			case "deny_once":
 				// kiroacp 互動式授權：解析 pending 而非重跑。
@@ -1450,13 +1519,16 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					continue
 				}
 				// 先到先贏：同 allow_once，已被另一端處理就不再重跑。
-				if claimed, err := database.ClaimPendingDenials(sessionID); err != nil || !claimed {
-					slog.Info(fmt.Sprintf("[ws] deny_once 略過：授權已被處理或不存在 (err=%v)", err))
-					continue
-				}
-				// 使用者拒絕代表計畫被打斷，後面排隊的不自動接著跑。
-				pauseQueue()
-				runAgent("[Permission denied by user. Please acknowledge that you cannot perform the requested operation and stop.]", nil)
+				// 認領與 pauseQueue（寫入）之前就要過閘門；維護中拒絕時既不認領也不暫停佇列。
+				withWorkAdmission(send, "", func() {
+					if claimed, err := database.ClaimPendingDenials(sessionID); err != nil || !claimed {
+						slog.Info(fmt.Sprintf("[ws] deny_once 略過：授權已被處理或不存在 (err=%v)", err))
+						return
+					}
+					// 使用者拒絕代表計畫被打斷，後面排隊的不自動接著跑。
+					pauseQueue()
+					runAgent("[Permission denied by user. Please acknowledge that you cannot perform the requested operation and stop.]", nil)
+				})
 
 			case "set_mode":
 				if agentType != agent.TypeClaude && agentType != agent.TypeCursor && agentType != agent.TypeAntigravity && agentType != agent.TypeGemini && agentType != agent.TypeKiro && agentType != agent.TypeKiroACP {
@@ -1512,31 +1584,34 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				slog.Info(fmt.Sprintf("[ws] effort: %v", msg.Effort))
 
 			case "reset_context":
-				taskCancel(sessionID)
-				shellTaskCancel(sessionID)
-				clearInMemoryShellApproval(sessionID)
-				_ = database.FinalizePendingMessagesForSession(sessionID)
-				mu.Lock()
-				agentSessionID = ""
-				mu.Unlock()
-				if err := database.UpdateAgentSessionID(sessionID, ""); err != nil {
-					slog.Info(fmt.Sprintf("[ws] clear agent_session_id: %v", err))
-				}
-				if err := database.ClearMessages(sessionID); err != nil {
-					slog.Info(fmt.Sprintf("[ws] ClearMessages: %v", err))
-				}
-				clearPendingDenials(database, sessionID)
-				clearShellPending(database, sessionID)
-				if err := database.ClearQueuedMessages(sessionID); err != nil {
-					slog.Info(fmt.Sprintf("[ws] ClearQueuedMessages: %v", err))
-				}
-				broadcastQueue()
-				if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
-					slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle: %v", err))
-				}
-				broadcast(serverMsg{Type: "reset"})
-				broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
-				slog.Info(fmt.Sprintf("[ws] session %s reset", sessionID))
+				// 會清除訊息與佇列，屬於寫入；維護中整段拒絕，佇列與訊息保留。
+				withWorkAdmission(send, "", func() {
+					taskCancel(sessionID)
+					shellTaskCancel(sessionID)
+					clearInMemoryShellApproval(sessionID)
+					_ = database.FinalizePendingMessagesForSession(sessionID)
+					mu.Lock()
+					agentSessionID = ""
+					mu.Unlock()
+					if err := database.UpdateAgentSessionID(sessionID, ""); err != nil {
+						slog.Info(fmt.Sprintf("[ws] clear agent_session_id: %v", err))
+					}
+					if err := database.ClearMessages(sessionID); err != nil {
+						slog.Info(fmt.Sprintf("[ws] ClearMessages: %v", err))
+					}
+					clearPendingDenials(database, sessionID)
+					clearShellPending(database, sessionID)
+					if err := database.ClearQueuedMessages(sessionID); err != nil {
+						slog.Info(fmt.Sprintf("[ws] ClearQueuedMessages: %v", err))
+					}
+					broadcastQueue()
+					if err := database.UpdateSessionStatus(sessionID, db.SessionStatusIdle); err != nil {
+						slog.Info(fmt.Sprintf("[ws] UpdateSessionStatus idle: %v", err))
+					}
+					broadcast(serverMsg{Type: "reset"})
+					broadcast(serverMsg{Type: "status", Value: idleUIStatus(database, sessionID)})
+					slog.Info(fmt.Sprintf("[ws] session %s reset", sessionID))
+				})
 
 			case "interrupt":
 				if shellTaskActive(sessionID) {

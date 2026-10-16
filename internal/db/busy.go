@@ -1,0 +1,29 @@
+package db
+
+// WorkReport 是「全站」（所有 session）仍在進行或待處理的工作摘要，供桌面更新閘門判斷是否忙碌。
+// 只計 DB 可見的來源；記憶體中的執行緒、授權等待由 ws 套件自行檢查。
+type WorkReport struct {
+	QueuedMessages int // queued_messages 筆數（包含暫停中的佇列）
+	PendingDenials int // pending_denials 非空的 session 數
+	ShellPending   int // shell_pending 非空的 session 數
+	ActiveStatus   int // status 為 running / awaiting_input / awaiting_shell_confirm 的 session 數
+}
+
+// Busy 任一來源非零即為忙碌。
+func (r WorkReport) Busy() bool {
+	return r.QueuedMessages > 0 || r.PendingDenials > 0 || r.ShellPending > 0 || r.ActiveStatus > 0
+}
+
+// PendingWork 讀取全站工作摘要。任何錯誤都回傳給呼叫端，不以「空閒」掩蓋。
+func (db *DB) PendingWork() (WorkReport, error) {
+	var r WorkReport
+	err := db.QueryRow(
+		`SELECT
+			(SELECT COUNT(*) FROM queued_messages),
+			(SELECT COUNT(*) FROM sessions WHERE TRIM(pending_denials) != ''),
+			(SELECT COUNT(*) FROM sessions WHERE TRIM(shell_pending) != ''),
+			(SELECT COUNT(*) FROM sessions WHERE status IN (?, ?, ?))`,
+		SessionStatusRunning, SessionStatusAwaitingInput, SessionStatusAwaitingShellConfirm,
+	).Scan(&r.QueuedMessages, &r.PendingDenials, &r.ShellPending, &r.ActiveStatus)
+	return r, err
+}

@@ -26,6 +26,9 @@ var (
 	shellPending   = map[string]*shellPendingInfo{}
 )
 
+// runShellCommand 是 shell 子程序的啟動點；測試以它替換成假程序，驗證閘門攔截時確實沒有啟動子程序。
+var runShellCommand = shell.Run
+
 func setShellPending(sessionID string, p *shellPendingInfo) {
 	shellPendingMu.Lock()
 	shellPending[sessionID] = p
