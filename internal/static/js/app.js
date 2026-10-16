@@ -80,41 +80,51 @@ function DebugBanner() {
   );
 }
 
-// ── 分割視窗偏好持久化 ────────────────────────────────────────────────────────
+// ── 分割視窗偏好持久化（新鍵 miniapp_tab_groups_v1，支援舊鍵遷移）──────────────
 const SPLIT_STATE_STORAGE_KEY = 'miniapp_split_chat_state';
-
-function readStoredSplitState() {
-  const isPortrait = typeof window !== 'undefined' && window.innerHeight > window.innerWidth;
-  try {
-    const raw = localStorage.getItem(SPLIT_STATE_STORAGE_KEY);
-    if (!raw) return { enabled: false, secondarySessionId: null, ratio: 0.5, orientation: isPortrait ? 'vertical' : 'horizontal' };
-    const parsed = JSON.parse(raw);
-    return {
-      enabled: !!parsed.enabled,
-      secondarySessionId: parsed.secondarySessionId || null,
-      ratio: typeof parsed.ratio === 'number' && parsed.ratio >= 0.2 && parsed.ratio <= 0.8 ? parsed.ratio : 0.5,
-      orientation: parsed.orientation === 'vertical' ? 'vertical' : (parsed.orientation === 'horizontal' ? 'horizontal' : (isPortrait ? 'vertical' : 'horizontal')),
-    };
-  } catch (_) {
-    return { enabled: false, secondarySessionId: null, ratio: 0.5, orientation: isPortrait ? 'vertical' : 'horizontal' };
-  }
-}
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 function App() {
-  const [session, setSession] = useState(null);
-  const [secondarySession, setSecondarySession] = useState(null);
+  const [isWideScreen, setIsWideScreen] = useState(() =>
+    typeof window !== 'undefined' && window.matchMedia ? window.matchMedia('(min-width: 1024px)').matches : true
+  );
+  const [tabGroups, dispatchTabGroups] = React.useReducer(tabGroupsReducer, undefined, () => readStoredTabGroupsState());
+  const [knownSessionsMap, setKnownSessionsMap] = useState({});
   const [sidebarSortedSessions, setSidebarSortedSessions] = useState([]);
-  const storedSplit = useMemo(() => readStoredSplitState(), []);
-  const [isSplit, setIsSplit] = useState(storedSplit.enabled);
-  const [splitRatio, setSplitRatio] = useState(storedSplit.ratio);
-  const [splitOrientation, setSplitOrientation] = useState(storedSplit.orientation);
-  const [activePane, setActivePane] = useState('primary'); // 'primary' | 'secondary'
   const [mobileActivePane, setMobileActivePane] = useState('primary');
   const [creating, setCreating] = useState(false);
   const [composerPrefill, setComposerPrefill] = useState(null);
   const [authed, setAuthed]   = useState(isTelegram);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // 衍生值維持舊介面
+  const isSplit = tabGroups.groups.length > 1;
+  const splitRatio = tabGroups.ratio;
+  const splitOrientation = tabGroups.orientation;
+  const activePane = tabGroups.focused === 1 ? 'secondary' : 'primary';
+
+  const primarySessionId = tabGroups.groups[0]?.active || null;
+  const secondarySessionId = tabGroups.groups[1]?.active || null;
+
+  const session = useMemo(() => {
+    if (!primarySessionId) return null;
+    if (knownSessionsMap[primarySessionId]) return knownSessionsMap[primarySessionId];
+    if (Array.isArray(sidebarSortedSessions)) {
+      const match = sidebarSortedSessions.find((s) => s.id === primarySessionId);
+      if (match) return match;
+    }
+    return null;
+  }, [primarySessionId, knownSessionsMap, sidebarSortedSessions]);
+
+  const secondarySession = useMemo(() => {
+    if (!secondarySessionId) return null;
+    if (knownSessionsMap[secondarySessionId]) return knownSessionsMap[secondarySessionId];
+    if (Array.isArray(sidebarSortedSessions)) {
+      const match = sidebarSortedSessions.find((s) => s.id === secondarySessionId);
+      if (match) return match;
+    }
+    return null;
+  }, [secondarySessionId, knownSessionsMap, sidebarSortedSessions]);
 
   // 外觀設定：先套本機快取避免 FOUC；登入後再 GET 伺服器 hydrate（必要時種子遷移）。
   useEffect(() => {
@@ -125,103 +135,141 @@ function App() {
     hydrateAppearanceFromServer();
   }, [authed]);
 
-  // 持久化儲存分割狀態
+  // 持久化儲存分頁群組狀態（寫入新鍵 miniapp_tab_groups_v1，舊鍵不覆寫）
   useEffect(() => {
     try {
-      localStorage.setItem(SPLIT_STATE_STORAGE_KEY, JSON.stringify({
-        enabled: isSplit,
-        secondarySessionId: secondarySession?.id || null,
-        ratio: splitRatio,
-        orientation: splitOrientation,
-      }));
+      localStorage.setItem(TAB_GROUPS_STORAGE_KEY, serializeTabGroupsState(tabGroups));
     } catch (_) {}
-  }, [isSplit, secondarySession?.id, splitRatio, splitOrientation]);
+  }, [tabGroups]);
 
   const openComposer = useCallback((prefill) => {
     setComposerPrefill(prefill || {});
     setCreating(true);
   }, []);
   const closeComposer = useCallback(() => setCreating(false), []);
+
   const handleCreated = useCallback((s) => {
     setCreating(false);
-    if (isSplit && activePane === 'secondary') {
-      setSecondarySession(s);
-    } else {
-      setSession(s);
-    }
+    if (!s || !s.id) return;
+    setKnownSessionsMap((prev) => ({ ...prev, [s.id]: s }));
+    const targetGroup = isSplit && activePane === 'secondary' ? 1 : 0;
+    dispatchTabGroups({ type: 'open', sessionId: s.id, groupIndex: targetGroup });
   }, [isSplit, activePane]);
 
   const selectSession = useCallback((s, targetPane = null) => {
     setCreating(false);
-    const dest = targetPane || (isSplit && activePane === 'secondary' ? 'secondary' : 'primary');
-    if (dest === 'secondary') {
-      setSecondarySession(s);
-      setIsSplit(true);
-      setActivePane('secondary');
-      setMobileActivePane('secondary');
-      setSession((curr) => curr || s);
-    } else {
-      setSession(s);
-      setActivePane('primary');
-      setMobileActivePane('primary');
-    }
-  }, [isSplit, activePane]);
-
-  const toggleSplit = useCallback(() => {
-    setIsSplit((prev) => {
-      const next = !prev;
-      if (next) {
-        if (!secondarySession && Array.isArray(sidebarSortedSessions)) {
-          const other = sidebarSortedSessions.find((s) => s.id !== session?.id);
-          if (other) {
-            setSecondarySession(other);
-          }
-        }
-        if (
-          typeof window !== 'undefined' &&
-          (window.innerHeight > window.innerWidth || window.innerWidth < 900) &&
-          window.innerHeight >= 600 &&
-          splitOrientation === 'horizontal'
-        ) {
-          setSplitOrientation('vertical');
+    if (!s) {
+      if (!isWideScreen) {
+        dispatchTabGroups({ type: 'clear' });
+      } else {
+        const currActive = tabGroups.groups[0]?.active;
+        if (currActive) {
+          dispatchTabGroups({ type: 'close', sessionId: currActive, groupIndex: 0 });
         }
       }
-      return next;
-    });
-  }, [secondarySession, sidebarSortedSessions, session?.id, splitOrientation]);
+      return;
+    }
+
+    if (s.id) {
+      setKnownSessionsMap((prev) => ({ ...prev, [s.id]: s }));
+    }
+
+    if (targetPane === 'secondary') {
+      if (isSplit) {
+        dispatchTabGroups({ type: 'open', sessionId: s.id, groupIndex: 1 });
+      } else {
+        if (tabGroups.groups[0]?.tabs.length > 0 && !tabGroups.groups[0].tabs.includes(s.id)) {
+          dispatchTabGroups({ type: 'toggleSplit', secondSessionId: s.id });
+        } else {
+          dispatchTabGroups({ type: 'open', sessionId: s.id, groupIndex: 0 });
+        }
+      }
+      setMobileActivePane('secondary');
+    } else if (targetPane === 'primary') {
+      dispatchTabGroups({ type: 'open', sessionId: s.id, groupIndex: 0 });
+      setMobileActivePane('primary');
+    } else {
+      const targetGroup = tabGroups.focused === 1 && isSplit ? 1 : 0;
+      dispatchTabGroups({ type: 'open', sessionId: s.id, groupIndex: targetGroup });
+      setMobileActivePane(targetGroup === 1 ? 'secondary' : 'primary');
+    }
+  }, [isSplit, isWideScreen, tabGroups]);
+
+  const toggleSplit = useCallback(() => {
+    if (tabGroups.groups.length > 1) {
+      dispatchTabGroups({ type: 'toggleSplit' });
+    } else {
+      const group0 = tabGroups.groups[0];
+      if (group0 && group0.tabs.length >= 2) {
+        dispatchTabGroups({ type: 'toggleSplit' });
+      } else {
+        const currentId = group0?.active || group0?.tabs[0];
+        const other = Array.isArray(sidebarSortedSessions)
+          ? sidebarSortedSessions.find((s) => s.id !== currentId)
+          : null;
+        if (other) {
+          setKnownSessionsMap((prev) => ({ ...prev, [other.id]: other }));
+          dispatchTabGroups({ type: 'toggleSplit', secondSessionId: other.id });
+        }
+      }
+    }
+  }, [tabGroups.groups, sidebarSortedSessions]);
 
   const toggleSplitOrientation = useCallback(() => {
-    setSplitOrientation((prev) => (prev === 'vertical' ? 'horizontal' : 'vertical'));
-  }, []);
+    const next = tabGroups.orientation === 'vertical' ? 'horizontal' : 'vertical';
+    dispatchTabGroups({ type: 'setOrientation', orientation: next });
+  }, [tabGroups.orientation]);
 
   const closeSecondaryPane = useCallback(() => {
-    setIsSplit(false);
-    setActivePane('primary');
+    if (tabGroups.groups.length > 1) {
+      dispatchTabGroups({ type: 'toggleSplit' });
+    }
     setMobileActivePane('primary');
+  }, [tabGroups.groups.length]);
+
+  const setSplitRatio = useCallback((r) => {
+    dispatchTabGroups({ type: 'setRatio', ratio: r });
   }, []);
+
+  const setActivePane = useCallback((pane) => {
+    dispatchTabGroups({ type: 'focus', groupIndex: pane === 'secondary' ? 1 : 0 });
+  }, []);
+
+  // 放置邏輯在 tabGroups.js 的 resolveDropAction（純函式、有測試）；這裡只過濾未知會話
+  const handleDropOnTabBar = useCallback((sessionId, fromGroup, targetGroupIdx, insertIndex) => {
+    if (!sidebarSortedSessions.some((s) => s.id === sessionId)) return;
+    const action = resolveDropAction(tabGroups, sessionId, { kind: 'tabbar', group: targetGroupIdx, index: insertIndex });
+    if (action) dispatchTabGroups(action);
+  }, [sidebarSortedSessions, tabGroups]);
+
+  const handleDropOnContent = useCallback((sessionId, fromGroup, region, targetGroupIdx) => {
+    if (!sidebarSortedSessions.some((s) => s.id === sessionId)) return;
+    const action = resolveDropAction(tabGroups, sessionId, { kind: 'content', group: targetGroupIdx, region });
+    if (action) dispatchTabGroups(action);
+  }, [sidebarSortedSessions, tabGroups]);
 
   // 鍵盤快捷鍵：Ctrl+\ 切換分割；Ctrl+Alt+O 切換方向；Ctrl+Alt+Left/Right 切換焦點
   useEffect(() => {
     const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
+      if (e.isComposing || e.keyCode === 229) return;
+      const act = resolveTabShortcut(e);
+      if (act && act.type === 'toggleSplit') {
         e.preventDefault();
-        toggleSplit();
+        // 寬螢幕：單一分頁時不動作（spec）；窄螢幕沿用舊行為（可自動開另一個會話）
+        if (isWideScreen) dispatchTabGroups(act);
+        else toggleSplit();
+      } else if (act && act.type === 'focus') {
+        e.preventDefault();
+        dispatchTabGroups(act);
+        setMobileActivePane(act.groupIndex === 1 ? 'secondary' : 'primary');
       } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'o' || e.key === 'O' || e.code === 'KeyO')) {
         e.preventDefault();
-        setSplitOrientation((prev) => (prev === 'vertical' ? 'horizontal' : 'vertical'));
-      } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'ArrowLeft' || e.code === 'ArrowLeft')) {
-        e.preventDefault();
-        setActivePane('primary');
-        setMobileActivePane('primary');
-      } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'ArrowRight' || e.code === 'ArrowRight')) {
-        e.preventDefault();
-        setActivePane('secondary');
-        setMobileActivePane('secondary');
+        toggleSplitOrientation();
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleSplit]);
+  }, [isWideScreen, toggleSplit, toggleSplitOrientation]);
   // ponytail: 接手提示只存本頁記憶體；取消表單不丟失，新一輪清除。需要離線恢復時再持久化。
   const [handoffBySession, setHandoffBySession] = useState({});
   const handleHandoffChange = useCallback((sessionId, value) => {
@@ -235,7 +283,6 @@ function App() {
       return { ...prev, [sessionId]: value };
     });
   }, []);
-  const [isWideScreen, setIsWideScreen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   // 非 TMA 環境：mount 時試探 cookie 是否仍有效
   const [checking, setChecking] = useState(!isTelegram);
 
@@ -309,33 +356,29 @@ function App() {
     }
   }, []);
 
-  /** 側欄輪詢 /sessions 時同步目前聊天室 Session 的 git_branch、work_dir */
+  /** 側欄輪詢 /sessions 時同步目前聊天室 Session 的 git_branch、work_dir，並執行 prune */
   const mergeSessionMetaFromList = useCallback((list) => {
     if (!Array.isArray(list)) return;
-    setSession((prev) => {
-      if (!prev) return null;
-      const row = list.find((s) => s.id === prev.id);
-      if (!row) return prev;
-      if (row.git_branch === prev.git_branch && row.work_dir === prev.work_dir) return prev;
-      return { ...prev, git_branch: row.git_branch, work_dir: row.work_dir };
-    });
-    setSecondarySession((prev) => {
-      if (!prev) {
-        if (storedSplit.secondarySessionId) {
-          const match = list.find((s) => s.id === storedSplit.secondarySessionId);
-          if (match) return match;
-        }
-        return null;
+    setKnownSessionsMap((prev) => {
+      const next = { ...prev };
+      for (const s of list) {
+        next[s.id] = s;
       }
-      const row = list.find((s) => s.id === prev.id);
-      if (!row) {
-        setIsSplit(false);
-        return null;
-      }
-      if (row.git_branch === prev.git_branch && row.work_dir === prev.work_dir) return prev;
-      return { ...prev, git_branch: row.git_branch, work_dir: row.work_dir };
+      return next;
     });
-  }, [storedSplit.secondarySessionId]);
+
+    // 若從舊狀態遷移出雙欄但 group 0 無分頁，先補上第一個非 secondary 的 session
+    if (tabGroups.groups.length > 1 && tabGroups.groups[0]?.tabs.length === 0) {
+      const secId = tabGroups.groups[1]?.active;
+      const first = list.find((s) => s.id !== secId);
+      if (first) {
+        dispatchTabGroups({ type: 'open', sessionId: first.id, groupIndex: 0 });
+      }
+    }
+
+    const validIds = list.map((s) => s.id);
+    dispatchTabGroups({ type: 'prune', validSessionIds: validIds });
+  }, [tabGroups.groups]);
 
   useEffect(() => {
     if (isTelegram) return;
@@ -471,6 +514,7 @@ function App() {
           onOpenSettings={() => setSettingsOpen(true)}
           isSplit={isSplit}
           onToggleSplit={toggleSplit}
+          isWideScreen={false}
         />
       );
     }
@@ -492,6 +536,7 @@ function App() {
             collapsed={sidebarCollapsed}
             isSplit={isSplit}
             onToggleSplit={toggleSplit}
+            isWideScreen={isWideScreen}
           />
         </aside>
         {!sidebarCollapsed && (
@@ -530,73 +575,125 @@ function App() {
               secondarySessionName={secondarySession?.name || '副聊天室'}
               onCloseSecondary={closeSecondaryPane}
               primaryContent={
-                <ChatView
-                  session={session}
-                  onBack={() => selectSession(null)}
-                  showBack={false}
-                  fullHeight={false}
-                  onJumpToSession={selectSession}
-                  allSessions={sidebarSortedSessions}
-                  onOpenComposer={openComposer}
-                  handoffInfo={handoffBySession[session.id] || null}
-                  onHandoffChange={handleHandoffChange}
-                  isSplit={isSplit}
-                  onToggleSplit={toggleSplit}
-                  splitOrientation={splitOrientation}
-                  onToggleSplitOrientation={toggleSplitOrientation}
-                  isSecondaryPane={false}
+                <SessionGroupFrame
+                  groupIndex={0}
+                  group={tabGroups.groups[0]}
                   isFocused={activePane === 'primary'}
-                />
-              }
-              secondaryContent={
-                secondarySession ? (
+                  allSessions={sidebarSortedSessions}
+                  groupCount={tabGroups.groups.length}
+                  isWideScreen={isWideScreen}
+                  onSelectTab={(tabId) => dispatchTabGroups({ type: 'open', sessionId: tabId, groupIndex: 0 })}
+                  onCloseTab={(tabId) => dispatchTabGroups({ type: 'close', sessionId: tabId, groupIndex: 0 })}
+                  onFocusGroup={() => setActivePane('primary')}
+                  onDropOnTabBar={(sessionId, fromGroup, insertIndex) =>
+                    handleDropOnTabBar(sessionId, fromGroup, 0, insertIndex)
+                  }
+                  onDropOnContent={(sessionId, fromGroup, region) =>
+                    handleDropOnContent(sessionId, fromGroup, region, 0)
+                  }
+                >
                   <ChatView
-                    session={secondarySession}
-                    onBack={closeSecondaryPane}
+                    key={session.id}
+                    session={session}
+                    onBack={() => selectSession(null)}
                     showBack={false}
                     fullHeight={false}
-                    onJumpToSession={(s) => selectSession(s, 'secondary')}
+                    onJumpToSession={selectSession}
                     allSessions={sidebarSortedSessions}
                     onOpenComposer={openComposer}
-                    handoffInfo={handoffBySession[secondarySession.id] || null}
+                    handoffInfo={handoffBySession[session.id] || null}
                     onHandoffChange={handleHandoffChange}
                     isSplit={isSplit}
                     onToggleSplit={toggleSplit}
                     splitOrientation={splitOrientation}
                     onToggleSplitOrientation={toggleSplitOrientation}
-                    isSecondaryPane={true}
-                    onClosePane={closeSecondaryPane}
-                    isFocused={activePane === 'secondary'}
+                    isSecondaryPane={false}
+                    isFocused={activePane === 'primary'}
                   />
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)] p-6 text-center">
-                    <div className="text-sm text-gray-400">副聊天室尚未選取會話</div>
-                    <div className="text-xs text-gray-500 mb-2">點擊下方任一會話直接在副欄開啟：</div>
-                    <div className="flex flex-wrap gap-2 justify-center max-w-md">
-                      {sidebarSortedSessions.filter((s) => s.id !== session?.id).slice(0, 6).map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => selectSession(s, 'secondary')}
-                          className="px-3 py-1.5 rounded-lg bg-[oklch(0.2_0.02_264)] hover:bg-violet-600/30 text-xs text-gray-200 border border-[oklch(0.28_0.02_264)] truncate max-w-[180px]"
-                        >
-                          {s.name || '未命名'}
-                        </button>
-                      ))}
+                </SessionGroupFrame>
+              }
+              secondaryContent={
+                <SessionGroupFrame
+                  groupIndex={1}
+                  group={tabGroups.groups[1]}
+                  isFocused={activePane === 'secondary'}
+                  allSessions={sidebarSortedSessions}
+                  groupCount={tabGroups.groups.length}
+                  isWideScreen={isWideScreen}
+                  onSelectTab={(tabId) => dispatchTabGroups({ type: 'open', sessionId: tabId, groupIndex: 1 })}
+                  onCloseTab={(tabId) => dispatchTabGroups({ type: 'close', sessionId: tabId, groupIndex: 1 })}
+                  onFocusGroup={() => setActivePane('secondary')}
+                  onDropOnTabBar={(sessionId, fromGroup, insertIndex) =>
+                    handleDropOnTabBar(sessionId, fromGroup, 1, insertIndex)
+                  }
+                  onDropOnContent={(sessionId, fromGroup, region) =>
+                    handleDropOnContent(sessionId, fromGroup, region, 1)
+                  }
+                >
+                  {secondarySession ? (
+                    <ChatView
+                      key={secondarySession.id}
+                      session={secondarySession}
+                      onBack={closeSecondaryPane}
+                      showBack={false}
+                      fullHeight={false}
+                      onJumpToSession={(s) => selectSession(s, 'secondary')}
+                      allSessions={sidebarSortedSessions}
+                      onOpenComposer={openComposer}
+                      handoffInfo={handoffBySession[secondarySession.id] || null}
+                      onHandoffChange={handleHandoffChange}
+                      isSplit={isSplit}
+                      onToggleSplit={toggleSplit}
+                      splitOrientation={splitOrientation}
+                      onToggleSplitOrientation={toggleSplitOrientation}
+                      isSecondaryPane={true}
+                      onClosePane={closeSecondaryPane}
+                      isFocused={activePane === 'secondary'}
+                    />
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)] p-6 text-center">
+                      <div className="text-sm text-gray-400">副聊天室尚未選取會話</div>
+                      <div className="text-xs text-gray-500 mb-2">點擊下方任一會話直接在副欄開啟：</div>
+                      <div className="flex flex-wrap gap-2 justify-center max-w-md">
+                        {sidebarSortedSessions.filter((s) => s.id !== session?.id).slice(0, 6).map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => selectSession(s, 'secondary')}
+                            className="px-3 py-1.5 rounded-lg bg-[oklch(0.2_0.02_264)] hover:bg-violet-600/30 text-xs text-gray-200 border border-[oklch(0.28_0.02_264)] truncate max-w-[180px]"
+                          >
+                            {s.name || '未命名'}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={closeSecondaryPane}
+                        className="mt-4 px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 border border-gray-700 rounded-md"
+                      >
+                        關閉副視窗
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={closeSecondaryPane}
-                      className="mt-4 px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 border border-gray-700 rounded-md"
-                    >
-                      關閉副視窗
-                    </button>
-                  </div>
-                )
+                  )}
+                </SessionGroupFrame>
               }
             />
           ) : (
-            <div className="h-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)]">
+            <div
+              className="session-group-frame h-full w-full flex flex-col items-center justify-center gap-3 bg-[oklch(0.15_0.02_264)] relative"
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (typeof window !== 'undefined') window.__miniapp_drag_source = null;
+                const data = parseSessionDragData(e.dataTransfer);
+                if (!data || !data.sessionId) return;
+                if (!sidebarSortedSessions.some((s) => s.id === data.sessionId)) return;
+                dispatchTabGroups({ type: 'open', sessionId: data.sessionId, groupIndex: 0 });
+              }}
+            >
               <div className="w-10 h-10 rounded-[10px] bg-gradient-to-br from-[oklch(0.62_0.19_275)] to-[oklch(0.6_0.17_300)] flex items-center justify-center opacity-80" aria-hidden>
                 <div className="w-3.5 h-3.5 rounded-[3px] bg-white" />
               </div>

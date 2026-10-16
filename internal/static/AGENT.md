@@ -19,6 +19,8 @@
 |---|------|------|
 | 1 | `js/core/core.js` | 第一行 `const { useState, ... } = React;`（全域 hook 別名，所有元件都靠這行）。Telegram WebApp 初始化、localStorage 偏好、API base 推算（`resolveApiUrl`）、session 過期/401 處理、`wsURL`、`parseMarkdown`、基礎 hooks（`useMediaQuery`）、label 工具。 |
 | 2 | `js/ui/ui-atoms.js` | 小型展示元件與相鄰工具：`SessionStateChip`、各種 Badge/Chip、`PermMode`/`Model`/`Effort` Select、`QuotaBadge`、`ShellOutput`、`InputModeTab`、`ModeToggleBtn`、`MessageCopyButton`、複製與提示工具（`copyText`、`showToast`、`hapticTap`）、cli-arg 解析、input-mode 儲存等。 |
+| 2a | `js/ui/SessionTabs.js` | 桌面版（≥1024px）會話分頁：`SessionTabBar`（分頁列：名稱、agent 圖示、狀態點、關閉鈕、中鍵關閉、分頁拖曳與放置插入指示線）與 `SessionGroupFrame`（群組外框：分頁列 + 內容區，內容區拖放預覽覆蓋層）。依賴 `tabGroups.js` 的拖放純函式，載入於 `SplitLayout.js` 之後。 |
+| 2b | `js/hooks/tabGroups.js` | 分頁群組的純邏輯（無 React 依賴）：`tabGroupsReducer`（`open`/`close`/`move`/`splitDrop`/`focus`/`setRatio`/`setOrientation`/`toggleSplit`/`prune`/`clear`）、持久化與舊鍵 `miniapp_split_chat_state` 遷移（`miniapp_tab_groups_v1`）、拖放輔助（`calculateDropRegion`、`calculateTabInsertIndex`、`resolveDropAction`）與快捷鍵對應 `resolveTabShortcut`。測試：`scripts/tab-groups.test.cjs`（`node --test scripts/*.test.cjs`，以 `vm` 載入此檔）。 |
 | 3 | `js/hooks/useChatSocket.js` | `ChatView` 的 WebSocket 連線/重連、串流解析、訊息與設定狀態，抽出 `{ messages, state, send, flushPendingModes, ... }`。 |
 | 4 | `js/hooks/useNewSessionForm.js` | `SessionView` 建立表單與 `ForwardModal` 新建會話共用的表單狀態＋payload 組裝邏輯。 |
 | 5 | `js/chat/ForwardModal.js` | `ForwardModal` 元件。 |

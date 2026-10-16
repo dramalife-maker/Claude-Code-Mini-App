@@ -230,10 +230,12 @@ function SplitChatContainer({
         style={primaryStyle}
         onClickCapture={() => onFocusPane?.('primary')}
         className={`flex flex-col min-w-0 min-h-0 relative transition-all duration-75 ${
-          activePane === 'primary' ? 'ring-1 ring-inset ring-violet-500/40' : 'opacity-95'
+          activePane === 'primary' ? '' : 'opacity-95'
         }`}
       >
         {primaryContent}
+        {/* 外框用覆蓋層畫在內容之上，inset ring 會被子元素背景蓋住 */}
+        {activePane === 'primary' && <div aria-hidden="true" className="absolute inset-0 z-20 pointer-events-none ring-2 ring-inset ring-violet-400/70" />}
       </div>
 
       {/* 可拖曳分隔線 */}
@@ -250,10 +252,12 @@ function SplitChatContainer({
         style={secondaryStyle}
         onClickCapture={() => onFocusPane?.('secondary')}
         className={`flex flex-col min-w-0 min-h-0 relative transition-all duration-75 ${
-          activePane === 'secondary' ? 'ring-1 ring-inset ring-violet-500/40' : 'opacity-95'
+          activePane === 'secondary' ? '' : 'opacity-95'
         }`}
       >
         {secondaryContent}
+        {/* 外框用覆蓋層畫在內容之上，inset ring 會被子元素背景蓋住 */}
+        {activePane === 'secondary' && <div aria-hidden="true" className="absolute inset-0 z-20 pointer-events-none ring-2 ring-inset ring-violet-400/70" />}
       </div>
     </div>
   );

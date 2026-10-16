@@ -177,7 +177,8 @@
     }
     .ra-session-card.active {
       background: oklch(0.24 0.03 270);
-      border-color: oklch(0.34 0.04 272);
+      border-color: oklch(0.72 0.17 275 / 75%);
+      box-shadow: inset 0 0 0 1px oklch(0.72 0.17 275 / 75%);
     }
     .ra-session-card.unread {
       background: oklch(0.62 0.19 275 / 17%);
@@ -255,12 +256,14 @@
 <script type="text/babel" data-presets="react-classic" src="./js/core/core.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/ui/ui-atoms.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/ui/SplitLayout.js"></script>
+<script type="text/babel" data-presets="react-classic" src="./js/ui/SessionTabs.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/ui/LogsSection.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/share/ShareModal.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/share/SharesSection.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/share/JoinView.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/ui/SettingsModal.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/ui/QuickSwitcher.js"></script>
+<script type="text/babel" data-presets="react-classic" src="./js/hooks/tabGroups.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/hooks/useChatSocket.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/hooks/useNewSessionForm.js"></script>
 <script type="text/babel" data-presets="react-classic" src="./js/chat/ForwardModal.js"></script>

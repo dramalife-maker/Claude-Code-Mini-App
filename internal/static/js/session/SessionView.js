@@ -1,5 +1,5 @@
 // ── Session 列表畫面 ──────────────────────────────────────────────────────────
-function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false, isSplit = false, onToggleSplit = null }) {
+function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, activeSessionId = null, onCreateNew, onOpenSettings, onToggleSidebar, collapsed = false, isSplit = false, onToggleSplit = null, isWideScreen = true }) {
   const [sessions, setSessions]   = useState([]);
   const [sessionSearch, setSessionSearch] = useState('');
   const [sessionSort, setSessionSort]     = useState('last_active_desc');
@@ -325,6 +325,24 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     return (
       <div
         key={s.id}
+        draggable={isWideScreen && renamingId !== s.id ? true : undefined}
+        onDragStart={(e) => {
+          if (!isWideScreen) {
+            e.preventDefault();
+            return;
+          }
+          const payload = JSON.stringify({ sessionId: s.id, fromGroup: null });
+          e.dataTransfer.setData(typeof MINIAPP_SESSION_MIME !== 'undefined' ? MINIAPP_SESSION_MIME : 'application/x-miniapp-session', payload);
+          e.dataTransfer.effectAllowed = 'move';
+          if (typeof window !== 'undefined') {
+            window.__miniapp_drag_source = { sessionId: s.id, fromGroup: null };
+          }
+        }}
+        onDragEnd={() => {
+          if (typeof window !== 'undefined') {
+            window.__miniapp_drag_source = null;
+          }
+        }}
         onClick={() => renamingId !== s.id && handleEnter(s)}
         className={'ra-session-card group/card' + (active ? ' active' : '') + (unread ? ' unread' : '')}
       >
@@ -352,21 +370,6 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                 {s.name || '未命名'}
               </span>
               <div className="flex items-center gap-0.5 shrink-0 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleEnter(s, 'secondary');
-                  }}
-                  aria-label="在副視窗開啟"
-                  title="在副視窗開啟"
-                  className="text-[oklch(0.5_0.01_264)] hover:text-violet-400 p-1 rounded transition-colors"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5" aria-hidden="true">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <line x1="12" y1="3" x2="12" y2="21" />
-                  </svg>
-                </button>
                 <button
                   type="button"
                   onClick={(e) => startRename(s, e)}
@@ -635,6 +638,24 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
                   <button
                     key={s.id}
                     type="button"
+                    draggable={isWideScreen ? true : undefined}
+                    onDragStart={(e) => {
+                      if (!isWideScreen) {
+                        e.preventDefault();
+                        return;
+                      }
+                      const payload = JSON.stringify({ sessionId: s.id, fromGroup: null });
+                      e.dataTransfer.setData(typeof MINIAPP_SESSION_MIME !== 'undefined' ? MINIAPP_SESSION_MIME : 'application/x-miniapp-session', payload);
+                      e.dataTransfer.effectAllowed = 'move';
+                      if (typeof window !== 'undefined') {
+                        window.__miniapp_drag_source = { sessionId: s.id, fromGroup: null };
+                      }
+                    }}
+                    onDragEnd={() => {
+                      if (typeof window !== 'undefined') {
+                        window.__miniapp_drag_source = null;
+                      }
+                    }}
                     onClick={() => handleEnter(s)}
                     aria-label={s.name || agentLabel}
                     title={(s.name || '未命名') + ' · ' + agentLabel}
