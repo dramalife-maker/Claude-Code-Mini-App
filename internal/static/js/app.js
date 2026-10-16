@@ -96,6 +96,8 @@ function App() {
   const [composerPrefill, setComposerPrefill] = useState(null);
   const [authed, setAuthed]   = useState(isTelegram);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 桌面更新：bridge 不存在時（瀏覽器／Telegram／訪客）不會有任何更新控制；托盤「檢查更新」經由 desktop-update-open 開啟設定的更新區。
+  const desktopUpdate = useDesktopUpdate({ onOpen: () => setSettingsOpen(true) });
 
   // 衍生值維持舊介面
   const isSplit = tabGroups.groups.length > 1;
@@ -715,6 +717,7 @@ function App() {
       <SettingsModal
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        desktopUpdate={desktopUpdate}
         onJumpToSession={(sessionId) => {
           const hit = sidebarSortedSessions.find((x) => x.id === sessionId);
           if (!hit) {

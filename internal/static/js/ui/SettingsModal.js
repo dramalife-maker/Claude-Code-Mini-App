@@ -269,13 +269,21 @@ function AppearanceSection({ draft, setDraft }) {
   );
 }
 
-function SettingsModal({ open, onClose, onJumpToSession = null }) {
+function SettingsModal({ open, onClose, onJumpToSession = null, desktopUpdate = null }) {
   const [section, setSection] = useState('general');
+  // 桌面 bridge 存在時才顯示「更新」分類與版號旁的更新入口；瀏覽器、Telegram、訪客皆不顯示。
+  const updateBridge = !!(desktopUpdate && desktopUpdate.bridge);
+  const updateOpenNonce = desktopUpdate ? desktopUpdate.openNonce : 0;
   const [draft, setDraft] = useState(() => readStoredAppearance());
   const [savedFlash, setSavedFlash] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [saving, setSaving] = useState(false);
   const [buildInfo, setBuildInfo] = useState(null);
+
+  // 托盤「檢查更新」會要求開啟更新區（openNonce 每次遞增）。
+  useEffect(() => {
+    if (updateOpenNonce > 0) setSection('update');
+  }, [updateOpenNonce]);
 
   // 開啟時重新從 localStorage 載入，避免上次關閉未存的草稿殘留。
   useEffect(() => {
@@ -343,7 +351,7 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
             設定
           </div>
           <div className="flex-1 px-2 space-y-0.5">
-            {SETTINGS_SECTIONS.map((s) => (
+            {(updateBridge ? [...SETTINGS_SECTIONS, { id: 'update', label: '更新' }] : SETTINGS_SECTIONS).map((s) => (
               <button
                 key={s.id}
                 type="button"
@@ -361,6 +369,15 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
           <div className="shrink-0 px-4 py-3 text-xs leading-5 font-mono text-[oklch(0.65_0.01_264)] select-text">
             <div>v{buildInfo?.version || '—'}</div>
             <div title={buildInfo?.sha || 'unknown'}>SHA {buildInfo?.sha?.slice(0, 7) || '—'}</div>
+            {updateBridge ? (
+              <button
+                type="button"
+                onClick={() => setSection('update')}
+                className="mt-1 font-sans text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+              >
+                前往更新
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -372,10 +389,19 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
             {section === 'appearance' && <AppearanceSection draft={draft} setDraft={setDraft} />}
             {section === 'shares' && <SharesSection onJumpToSession={onJumpToSession} />}
             {section === 'logs' && <LogsSection />}
+            {section === 'update' && updateBridge && (
+              <DesktopUpdateSection
+                status={desktopUpdate.status}
+                laterVersion={desktopUpdate.laterVersion}
+                request={desktopUpdate.request}
+                later={desktopUpdate.later}
+                showOffer={desktopUpdate.showOffer}
+              />
+            )}
           </div>
           <div className="shrink-0 flex items-center justify-between gap-2 px-5 py-3 border-t border-[oklch(0.26_0.02_264)]">
             {/* 還原預設／儲存只對外觀有效，日誌頁不顯示 */}
-            {section !== 'logs' && section !== 'shares' && (
+            {section !== 'logs' && section !== 'shares' && section !== 'update' && (
               <button
                 type="button"
                 onClick={handleReset}
@@ -394,7 +420,7 @@ function SettingsModal({ open, onClose, onJumpToSession = null }) {
               >
                 關閉
               </button>
-              {section !== 'logs' && section !== 'shares' && (
+              {section !== 'logs' && section !== 'shares' && section !== 'update' && (
                 <button
                   type="button"
                   onClick={handleSave}
