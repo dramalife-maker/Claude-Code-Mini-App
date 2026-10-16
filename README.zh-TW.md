@@ -14,7 +14,7 @@
 
 | 入口 | 適用情境 | 驗證 |
 |---|---|---|
-| 🖥️ **桌面視窗**（Windows） | 在電腦前日常使用——系統匣、Ctrl+P 快速跳轉 | 本機 |
+| 🖥️ **桌面視窗**（Windows） | 在電腦前日常使用——系統匣、Ctrl+P 快速跳轉 | 與瀏覽器相同的網頁密碼 |
 | 🌐 **瀏覽器** | 區網內任何裝置，或透過反向代理／Tunnel 遠端連線 | 網頁密碼（限 `web.allowed_cidrs` 內的 IP） |
 | 📱 **Telegram Mini App** | 離開座位時——出錯推播、手機上即時授權 | Telegram `initData` + 白名單 |
 
@@ -22,23 +22,20 @@
 
 ## 🚀 快速開始
 
-**需求：** 機器上已安裝並登入要用的 CLI（`claude`、`cursor agent`、`codex`、`kiro-cli`、`agy` 等），以及 Telegram Bot Token（[@BotFather](https://t.me/BotFather)）——僅限本機使用時可改設 `no_auth: true`。
+**第一次使用？請跟著[從零開始教學](docs/getting-started.zh-TW.md)**，依序完成安裝、設定、登入與第一則代理回覆，內含 Windows／Linux 各自的指令。下載版不需要安裝 Go，也不需要建置前端。
 
-**下載（建議）：** 到 [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest) 下載 zip／tar.gz，整個資料夾解壓（執行檔旁必須有 `internal/static/`），把 `config.example.yaml` 複製成 `config.yaml`，再執行 `claude-miniapp-desktop.exe`（Windows 桌面版）或 `claude-miniapp`（純 server）。
+1. 到 [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest) 下載 Windows x64 zip 或 Linux x64 tar.gz，解壓整個資料夾，保留 `internal/static/`。
+2. 在該電腦安裝並登入**一個**要用的代理。[CLI 安裝連結與檢查方式](docs/getting-started.zh-TW.md#2-安裝並登入一個代理)列出程式需要的命令名稱。
+3. 將 `config.example.yaml` 複製為 `config.yaml`，依[設定步驟](docs/getting-started.zh-TW.md#3-建立設定檔)填寫。目前即使不使用 Telegram 遠端入口，密碼登入仍需 Bot Token；請更換範例密碼。
+4. **選一個**啟動：Windows 桌面版 `claude-miniapp-desktop.exe`、Windows server `claude-miniapp.exe`，或 Linux server `./claude-miniapp`。server 版啟動後在主機開啟 <http://127.0.0.1:8080>，輸入 `web.password`。
+5. [建立 Session 並送測試訊息](docs/getting-started.zh-TW.md#5-建立第一個-session)。工作目錄填執行 server 的電腦上的專案路徑。
 
-> [!NOTE]
-> Windows 執行檔未簽章，SmartScreen 可能跳警告：點「**其他資訊 → 仍要執行**」。桌面視窗需要 WebView2（Windows 11 已內建）。
+**Telegram 遠端使用：** 先完成本機操作，再跟著 [HTTPS Tunnel、白名單與 BotFather 選單設定](docs/getting-started.zh-TW.md#6-選用從-telegram-開啟)。只填 Bot Token 不會自動建立 Mini App 按鈕。
 
-**從原始碼建置**（Go 1.25+）：
+> [!WARNING]
+> `no_auth: true` 會略過擁有者驗證，但**不會讓 server 只監聽 localhost**。僅在已隔離的本機開發環境試用，不可搭配公開 Tunnel。
 
-```bash
-git clone https://github.com/jerry12122/Claude-Code-Mini-App
-cd Claude-Code-Mini-App
-cp config.example.yaml config.yaml   # 填 bot_token、whitelist_tg_ids
-go build -o claude-miniapp ./cmd/server && ./claude-miniapp   # → http://localhost:8080
-```
-
-Windows 也可建置桌面視窗：`go build -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop`。關視窗只會縮到系統匣，從匣選單或 Ctrl+Q 結束。建置細節與快捷鍵見[桌面視窗](docs/features.zh-TW.md#桌面視窗windows)。
+[問題排解](docs/getting-started.zh-TW.md#問題排解) · [從原始碼建置（Go 1.25+）](docs/getting-started.zh-TW.md#從原始碼建置) · [桌面視窗與快捷鍵](docs/features.zh-TW.md#桌面視窗windows)
 
 ## ✨ 功能
 
@@ -74,7 +71,7 @@ Windows 也可建置桌面視窗：`go build -ldflags "-H windowsgui" -o claude-
 │  QuotaService（快取擷取）         │
 └────────────────┬────────────────┘
                  ↓
-  claude · cursor agent · codex · kiro-cli (ACP) · agy
+  claude · cursor-agent · codex · kiro-cli (ACP) · agy
 ```
 
 每則使用者訊息 spawn 一個子進程。詳細規格：[`docs/spec/plan.md`](docs/spec/plan.md)、[`docs/spec/headless.md`](docs/spec/headless.md)。
@@ -94,6 +91,7 @@ Windows 也可建置桌面視窗：`go build -ldflags "-H windowsgui" -o claude-
 
 | 主題 | 路徑 |
 |---|---|
+| 安裝、登入與第一則回覆 | [`docs/getting-started.zh-TW.md`](docs/getting-started.zh-TW.md) |
 | 每項功能詳述 | [`docs/features.zh-TW.md`](docs/features.zh-TW.md) |
 | 規格、API / WebSocket | [`docs/spec/plan.md`](docs/spec/plan.md) |
 | 設定欄位 | [`config.example.yaml`](config.example.yaml) |

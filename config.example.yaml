@@ -1,10 +1,13 @@
+# 首次使用：docs/getting-started.zh-TW.md（English: docs/getting-started.md）
+# no_auth: false 時目前仍必填，即使只使用桌面版／網頁密碼登入。
 bot_token: "YOUR_BOT_TOKEN_HERE"
 
 whitelist_tg_ids:
   - 123456789  # Your Telegram user ID (get it from @userinfobot)
 
 web:
-  # 網頁登入密碼（透過 POST /auth/login 傳入，非 query param）
+  # 桌面版與網頁共用的登入密碼；開始使用前務必更換 change-me。
+  # 透過 POST /auth/login 傳入，非 query param。
   password: "change-me"
 
   # 允許使用 web 密碼登入的 IP 範圍（內網 + 本機）
@@ -29,7 +32,8 @@ web:
   # 若省略且 whitelist 僅一人，會自動綁定該人；多人時請填此欄或改 API 帶 tg_user_id。
   # default_notify_tg_id: 123456789
 
-# true = 跳過所有驗證（僅限本機開發）
+# true = 略過擁有者驗證（僅限已隔離的本機開發；訪客仍受權限限制）。
+# 仍監聽所有網路介面，不會限制為 localhost；不可搭配公開 Tunnel。
 no_auth: false
 
 # 供其他 agent（MCP client）呼叫 /mcp 的固定 service token；留空則 /mcp 停用。

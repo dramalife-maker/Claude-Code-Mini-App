@@ -33,6 +33,7 @@ jobs:
           stage() { # $1=目錄
             mkdir -p "$1/internal"
             cp -r internal/static "$1/internal/static"
+            cp -r docs "$1/docs"
             cp config.example.yaml README.md README.zh-TW.md LICENSE CHANGELOG.md "$1/"
           }
 

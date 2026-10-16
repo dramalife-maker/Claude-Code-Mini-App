@@ -14,7 +14,7 @@ Your agents keep running on the machine where your code lives; this app is the c
 
 | Way in | For | Auth |
 |---|---|---|
-| 🖥️ **Desktop window** (Windows) | Daily use at your PC — tray icon, Ctrl+P switcher | local |
+| 🖥️ **Desktop window** (Windows) | Daily use at your PC — tray icon, Ctrl+P switcher | same web password as the browser |
 | 🌐 **Browser** | Any device on your LAN, or remote through a reverse proxy / tunnel | web password (restricted to `web.allowed_cidrs`) |
 | 📱 **Telegram Mini App** | Away from your desk — phone push on errors, approvals on the go | Telegram `initData` + allowlist |
 
@@ -22,23 +22,20 @@ All three talk to the same server and see the same sessions in real time.
 
 ## 🚀 Quick Start
 
-**Requires:** the CLI(s) you use (`claude`, `cursor agent`, `codex`, `kiro-cli`, `agy`) installed and logged in on the machine, plus a Telegram bot token ([@BotFather](https://t.me/BotFather)) — or `no_auth: true` for local-only use.
+**First time? Follow [Getting started from scratch](docs/getting-started.md)** — installation, configuration, sign-in, and your first successful agent reply, with separate Windows and Linux commands. Downloaded builds do not require Go or a frontend build.
 
-**Download (recommended):** grab the zip / tar.gz from [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest), extract the whole folder (the executable needs `internal/static/` beside it), copy `config.example.yaml` to `config.yaml`, then run `claude-miniapp-desktop.exe` (Windows desktop) or `claude-miniapp` (server only).
+1. Download the Windows x64 zip or Linux x64 tar.gz from [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest). Extract the whole folder, including `internal/static/`.
+2. Install and sign in to **one** agent on that computer. [CLI links and checks](docs/getting-started.md#2-install-and-sign-in-to-one-agent) include the required command names.
+3. Copy `config.example.yaml` to `config.yaml` and follow the [configuration steps](docs/getting-started.md#3-create-your-configuration). Password sign-in currently requires a Bot Token even without Telegram remote access; replace the example password.
+4. Run **one** executable: Windows desktop `claude-miniapp-desktop.exe`, Windows server `claude-miniapp.exe`, or Linux server `./claude-miniapp`. For server builds, open <http://127.0.0.1:8080> on the host and enter `web.password`.
+5. [Create a session and send a test message](docs/getting-started.md#5-create-your-first-session). The working directory is a path on the server computer.
 
-> [!NOTE]
-> The Windows executables are unsigned, so SmartScreen may warn: click **More info → Run anyway**. The desktop window needs WebView2 (built into Windows 11).
+**Telegram remote access:** complete local setup first, then follow [HTTPS tunnel, allowlist, and BotFather menu setup](docs/getting-started.md#6-optional-open-from-telegram). A Bot Token alone does not configure a Mini App button.
 
-**From source** (Go 1.25+):
+> [!WARNING]
+> `no_auth: true` disables owner authentication but does **not** bind the server to localhost. Use it only in an isolated local development environment, never with a public tunnel.
 
-```bash
-git clone https://github.com/jerry12122/Claude-Code-Mini-App
-cd Claude-Code-Mini-App
-cp config.example.yaml config.yaml   # set bot_token, whitelist_tg_ids
-go build -o claude-miniapp ./cmd/server && ./claude-miniapp   # → http://localhost:8080
-```
-
-On Windows you can also build the desktop window: `go build -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe ./cmd/desktop`. Closing its window hides it to the tray; quit from the tray menu or with Ctrl+Q. Build notes and shortcuts: [Desktop window](docs/features.md#desktop-window-windows).
+[Troubleshooting](docs/getting-started.md#troubleshooting) · [Build from source (Go 1.25+)](docs/getting-started.md#building-from-source) · [Desktop window and shortcuts](docs/features.md#desktop-window-windows)
 
 ## ✨ Features
 
@@ -74,7 +71,7 @@ Desktop window · Browser · Telegram Mini App · Share guests
 │   QuotaService (cached fetch)   │
 └────────────────┬────────────────┘
                  ↓
-  claude · cursor agent · codex · kiro-cli (ACP) · agy
+  claude · cursor-agent · codex · kiro-cli (ACP) · agy
 ```
 
 Each user message spawns a short-lived subprocess. Details: [`docs/spec/plan.md`](docs/spec/plan.md), [`docs/spec/headless.md`](docs/spec/headless.md).
@@ -94,6 +91,7 @@ Each user message spawns a short-lived subprocess. Details: [`docs/spec/plan.md`
 
 | Topic | Path |
 |---|---|
+| Install, sign in, and get your first reply | [`docs/getting-started.md`](docs/getting-started.md) |
 | All features in detail | [`docs/features.md`](docs/features.md) |
 | Spec & API / WebSocket | [`docs/spec/plan.md`](docs/spec/plan.md) |
 | Config reference | [`config.example.yaml`](config.example.yaml) |
