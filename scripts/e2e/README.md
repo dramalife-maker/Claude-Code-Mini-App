@@ -49,7 +49,7 @@ python scripts/e2e/run_e2e.py --work "$env:TEMP\cma-e2e" --only matrix:api-404
 | `busy` | 注入一筆 queued 訊息 | update_busy／busyReason=queued，未啟動 helper，ready 保留 |
 | `helper-fail` | `CMA_E2E_FAIL_RESTART=1`（manager 層） | helper_failed，ready 保留，閘門已釋放 |
 | `watchdog` | `CMA_E2E_HANG_SHUTDOWN=1` | ShutdownDeadline 後強制結束，新程序仍能開啟 DB 並保有資料 |
-| `cleanup` | 啟動前在 exe 旁放假的 `<exe>.old.<數字>`（含最新一份與名稱相近的其他檔案） | 啟動後只清掉較舊的 `.old.*`，最新一份與其他檔案都不動，日誌有記錄 |
+| `cleanup` | 啟動前在 exe 旁放假的 `<exe>.old.<數字>`（含最新一份）與名稱相近的其他檔案 | 啟動後所有 `.old.<數字>` 都被清掉（一個都不留），其他檔案不動，日誌有記錄 |
 | `replacement-fail` | 以 FileShare.Read 鎖住目標 exe 約 45 秒 | 雙重故障：原 exe SHA 不變、`.bak` 與 helper 日誌保留；**不要求** relaunch |
 
 ### `replacement-fail` 雙重故障說明

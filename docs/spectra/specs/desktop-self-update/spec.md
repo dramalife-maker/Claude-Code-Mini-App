@@ -600,7 +600,7 @@ Updates SHALL replace only the currently running desktop executable and MUST NOT
 #### Scenario: Clean stale replaced executables at startup
 
 - **WHEN** the desktop starts and its executable directory contains files named exactly `<current exe name>.old.<digits>` (the previous executable that the updater renamed aside)
-- **THEN** it removes all but the newest of them (newest by the numeric suffix) and logs each removal; the newest is kept as a manual rollback copy
+- **THEN** it removes all of them, including the newest, and logs each removal; no automatic rollback copy of the previous executable is kept, so users who want one MUST back up the executable before updating
 - **AND** it never removes directories, symbolic links, the running executable, `<exe>.bak`, or any file whose name does not match exactly; a file that cannot be removed (for example still in use) is logged and does not stop startup
 
 #### Scenario: No published release yet

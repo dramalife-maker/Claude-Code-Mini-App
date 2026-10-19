@@ -44,11 +44,11 @@ func main() {
 
 	icon := favicon()
 
-	// 清掉 Wails 更新後留在 exe 旁的舊檔（<exe>.old.<時間戳>），只留最新一份供手動還原。
-	// 背景執行、失敗只記錄，不影響啟動；規則見 desktopupdate.CleanOldAsides。
+	// 清掉 Wails 更新後留在 exe 旁的舊檔（<exe>.old.<時間戳>），一個都不留。
+	// 背景執行、失敗只記錄（下次啟動再試），不影響啟動；規則見 desktopupdate.CleanOldAsides。
 	if exe, err := os.Executable(); err == nil {
 		go func() {
-			removed, err := desktopupdate.CleanOldAsides(exe, 1)
+			removed, err := desktopupdate.CleanOldAsides(exe)
 			for _, p := range removed {
 				slog.Info("已清除舊的更新殘留檔: " + p)
 			}

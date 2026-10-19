@@ -47,7 +47,7 @@ The Windows desktop app can check GitHub Releases and update **itself**. Only `c
 - **Busy refusal:** a restart is refused (`update_busy`) while any session has a running task, a shell command, a pending approval, or **any queued message, even if the queue is paused**. Finish the work or clear the queue, then try again. The downloaded update is kept.
 - **Writable folder required:** the folder containing the exe must be writable by your user. The updater does not ask for administrator rights.
 - **Kept as-is:** `config.yaml`, `claude-miniapp.db`, `workspace/` (attachments), `logs/`, and `internal/static/` are not changed. Only `claude-miniapp-desktop.exe` is replaced.
-- **Leftover previous exe:** Windows cannot delete a running executable, so after an update the old one stays next to the new one as `<name>.exe.old.<number>` (about the size of the exe). It is a ready-made rollback copy. At startup the app removes older leftovers and keeps only the newest; you can also delete it by hand.
+- **Leftover previous exe:** Windows cannot delete a running executable, so the updater renames the old one aside as `<name>.exe.old.<number>`. The app deletes every such leftover the next time it starts, so **no rollback copy is kept** — back up the exe yourself before updating if you want one (see below).
 - **Not auto-updated:** the Windows server (`claude-miniapp.exe`) and Linux builds. Update those by hand.
 - **Manual restore:** before upgrading, keep a backup copy of the current exe. To go back, close the app and copy the backup over the exe:
 

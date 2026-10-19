@@ -50,29 +50,33 @@ func equal(a, b []string) bool {
 	return true
 }
 
-func TestCleanOldAsides_KeepsNewestRemovesOlder(t *testing.T) {
+func TestCleanOldAsides_RemovesEveryAside(t *testing.T) {
 	dir, exe := asideFixture(t, "app.exe.old.100", "app.exe.old.300", "app.exe.old.200")
-	removed, err := CleanOldAsides(exe, 1)
+	removed, err := CleanOldAsides(exe)
 	if err != nil {
 		t.Fatalf("不應有錯誤: %v", err)
 	}
 	sort.Strings(removed)
-	want := []string{filepath.Join(dir, "app.exe.old.100"), filepath.Join(dir, "app.exe.old.200")}
-	if !equal(removed, want) {
-		t.Fatalf("removed = %v, want %v", removed, want)
+	want := []string{
+		filepath.Join(dir, "app.exe.old.100"),
+		filepath.Join(dir, "app.exe.old.200"),
+		filepath.Join(dir, "app.exe.old.300"),
 	}
-	if got, want := names(t, dir), []string{"app.exe", "app.exe.old.300"}; !equal(got, want) {
-		t.Fatalf("剩下 %v, want %v（應保留最新的 300 與目前的 exe）", got, want)
+	if !equal(removed, want) {
+		t.Fatalf("removed = %v, want %v（一個都不留，包含最新的）", removed, want)
+	}
+	if got, want := names(t, dir), []string{"app.exe"}; !equal(got, want) {
+		t.Fatalf("剩下 %v, want %v（只剩目前的 exe）", got, want)
 	}
 }
 
-func TestCleanOldAsides_NumericNotLexicalOrder(t *testing.T) {
-	// 字串排序 "9" > "10"；必須用數值比較，否則會刪掉較新的。
-	dir, exe := asideFixture(t, "app.exe.old.9", "app.exe.old.10")
-	if _, err := CleanOldAsides(exe, 1); err != nil {
-		t.Fatal(err)
+func TestCleanOldAsides_SingleAsideIsRemovedToo(t *testing.T) {
+	dir, exe := asideFixture(t, "app.exe.old.5")
+	removed, err := CleanOldAsides(exe)
+	if err != nil || len(removed) != 1 {
+		t.Fatalf("removed=%v err=%v", removed, err)
 	}
-	if got, want := names(t, dir), []string{"app.exe", "app.exe.old.10"}; !equal(got, want) {
+	if got, want := names(t, dir), []string{"app.exe"}; !equal(got, want) {
 		t.Fatalf("剩下 %v, want %v", got, want)
 	}
 }
@@ -88,10 +92,10 @@ func TestCleanOldAsides_NeverTouchesOtherFiles(t *testing.T) {
 		"other.exe.old.5",                     // 別的檔案的 aside
 		"xapp.exe.old.7",                      // 前綴多一個字
 		"app.exe.OLD.9",                       // 大小寫不同
-		"app.exe.bak",                         // Wails 的 .bak
+		"app.exe.bak",                         // Wails 的 .bak（失敗還原用，不是我們的）
 		"config.yaml",                         // 使用者檔案
 		"claude-miniapp.db",                   // 資料庫
-		"app.exe.old.99999999999999999999999", // 超過 uint64
+		"app.exe.old.99999999999999999999999", // 超過 uint64，不可能是 UnixNano
 	}
 	dir, exe := asideFixture(t, append([]string{"app.exe.old.1", "app.exe.old.2"}, others...)...)
 	if err := os.MkdirAll(filepath.Join(dir, "app.exe.old.50"), 0o755); err != nil { // 同名資料夾
@@ -100,61 +104,46 @@ func TestCleanOldAsides_NeverTouchesOtherFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "app.exe.old.50", "keep.txt"), []byte("k"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	removed, err := CleanOldAsides(exe, 1)
+	removed, err := CleanOldAsides(exe)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(removed) != 1 || removed[0] != filepath.Join(dir, "app.exe.old.1") {
-		t.Fatalf("只應刪除 app.exe.old.1，實際 %v", removed)
+	sort.Strings(removed)
+	want := []string{filepath.Join(dir, "app.exe.old.1"), filepath.Join(dir, "app.exe.old.2")}
+	if !equal(removed, want) {
+		t.Fatalf("只應刪除 .old.1 與 .old.2，實際 %v", removed)
 	}
-	for _, f := range append(others, "app.exe", "app.exe.old.2", filepath.Join("app.exe.old.50", "keep.txt")) {
+	for _, f := range append(others, "app.exe", filepath.Join("app.exe.old.50", "keep.txt")) {
 		if _, err := os.Stat(filepath.Join(dir, f)); err != nil {
 			t.Errorf("%s 不該被動到: %v", f, err)
 		}
 	}
 }
 
-func TestCleanOldAsides_KeepIsAtLeastOne(t *testing.T) {
-	for _, keep := range []int{0, -3} {
-		dir, exe := asideFixture(t, "app.exe.old.1", "app.exe.old.2")
-		if _, err := CleanOldAsides(exe, keep); err != nil {
-			t.Fatal(err)
-		}
-		if got, want := names(t, dir), []string{"app.exe", "app.exe.old.2"}; !equal(got, want) {
-			t.Fatalf("keep=%d：剩下 %v, want %v（不能全刪）", keep, got, want)
-		}
-	}
-}
-
 func TestCleanOldAsides_NothingToDo(t *testing.T) {
 	dir, exe := asideFixture(t) // 沒有 aside
-	removed, err := CleanOldAsides(exe, 1)
+	removed, err := CleanOldAsides(exe)
 	if err != nil || len(removed) != 0 {
 		t.Fatalf("removed=%v err=%v", removed, err)
 	}
-	dir2, exe2 := asideFixture(t, "app.exe.old.5") // 只有一份
-	removed, err = CleanOldAsides(exe2, 1)
-	if err != nil || len(removed) != 0 {
-		t.Fatalf("removed=%v err=%v", removed, err)
-	}
-	if got, want := names(t, dir2), []string{"app.exe", "app.exe.old.5"}; !equal(got, want) {
+	if got, want := names(t, dir), []string{"app.exe"}; !equal(got, want) {
 		t.Fatalf("剩下 %v, want %v", got, want)
 	}
-	_ = dir
 }
 
 func TestCleanOldAsides_MissingDirIsAnErrorNotAPanic(t *testing.T) {
-	removed, err := CleanOldAsides(filepath.Join(t.TempDir(), "nope", "app.exe"), 1)
+	removed, err := CleanOldAsides(filepath.Join(t.TempDir(), "nope", "app.exe"))
 	if err == nil || len(removed) != 0 {
 		t.Fatalf("目錄不存在應回錯誤：removed=%v err=%v", removed, err)
 	}
 }
 
-func TestCleanOldAsides_RunningAsideItselfDoesNotMatchAnything(t *testing.T) {
-	// 萬一是從 aside 檔本身啟動：它的名稱是 app.exe.old.N，不會吻合 "app.exe.old.N.old.M"，所以不會刪到自己或別的。
+func TestCleanOldAsides_NeverDeletesTheRunningExecutable(t *testing.T) {
+	// 目前的 exe 本身永遠不吻合 "<自己的檔名>.old.<數字>"；即使是從 aside 檔本身啟動
+	// （名稱是 app.exe.old.6），也只會找 "app.exe.old.6.old.<數字>"，不會刪到自己或 app.exe。
 	dir, _ := asideFixture(t, "app.exe.old.5", "app.exe.old.6")
 	self := filepath.Join(dir, "app.exe.old.6")
-	removed, err := CleanOldAsides(self, 1)
+	removed, err := CleanOldAsides(self)
 	if err != nil || len(removed) != 0 {
 		t.Fatalf("removed=%v err=%v", removed, err)
 	}
@@ -164,7 +153,7 @@ func TestCleanOldAsides_RunningAsideItselfDoesNotMatchAnything(t *testing.T) {
 }
 
 func TestCleanOldAsides_SkipsSymlinks(t *testing.T) {
-	dir, exe := asideFixture(t, "app.exe.old.1", "app.exe.old.9")
+	dir, exe := asideFixture(t, "app.exe.old.1")
 	target := filepath.Join(t.TempDir(), "outside.txt")
 	if err := os.WriteFile(target, []byte("outside"), 0o644); err != nil {
 		t.Fatal(err)
@@ -173,7 +162,7 @@ func TestCleanOldAsides_SkipsSymlinks(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("無法建立符號連結（Windows 需要權限）: %v", err)
 	}
-	removed, err := CleanOldAsides(exe, 1)
+	removed, err := CleanOldAsides(exe)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,14 +187,16 @@ func TestCleanOldAsides_LockedFileDoesNotAbortTheRest(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer held.Close()
-	removed, err := CleanOldAsides(exe, 1)
+	removed, err := CleanOldAsides(exe)
 	if err == nil {
 		t.Fatal("有檔案刪不掉時應回傳錯誤")
 	}
-	if len(removed) != 1 || removed[0] != filepath.Join(dir, "app.exe.old.2") {
-		t.Fatalf("鎖住的 1 刪不掉，但 2 仍應被刪：removed=%v", removed)
+	sort.Strings(removed)
+	want := []string{filepath.Join(dir, "app.exe.old.2"), filepath.Join(dir, "app.exe.old.3")}
+	if !equal(removed, want) {
+		t.Fatalf("鎖住的 1 刪不掉，但 2 與 3 仍應被刪：removed=%v", removed)
 	}
-	if got, want := names(t, dir), []string{"app.exe", "app.exe.old.1", "app.exe.old.3"}; !equal(got, want) {
+	if got, want := names(t, dir), []string{"app.exe", "app.exe.old.1"}; !equal(got, want) {
 		t.Fatalf("剩下 %v, want %v", got, want)
 	}
 }
