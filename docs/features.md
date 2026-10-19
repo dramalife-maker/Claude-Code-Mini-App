@@ -7,10 +7,13 @@
 - **Multi-agent** — Claude Code, Cursor Agent, Codex, Antigravity (`agy`, NDJSON streaming), Kiro ACP (interactive permission prompts over Agent Client Protocol); per session. Existing Kiro CLI sessions keep working, but new ones use Kiro ACP. Legacy `gemini` sessions use the Antigravity runner; choose Antigravity for new sessions. Supported model lists are fetched from each CLI on startup (Claude included) and can be refreshed without a restart from Settings → General
 - **Sessions** — Multiple conversations, each with its own agent, `work_dir` and permission mode
 - **Permissions** — Shows the full command / file content. Claude prompt-tool and Kiro ACP approve a single operation; the legacy Claude denial flow allows the listed tools for the retry run. Edit tools can also be allowed with auto-accept edits
-- **Quota badge** — Session header shows usage (e.g. Claude `5h 16% · Week 9%`). Antigravity shows separate Gemini and Claude/GPT allowances; the compact mobile badge shows the highest usage percentage
+- **Usage bars** — The session header shows account usage as progress bars (e.g. Claude `5h 16% · Week 9%`, with the plan when known). Antigravity shows separate Gemini and Claude/GPT allowances; the compact mobile badge shows the highest usage percentage
 - **Unread tracking** — Sessions with new activity are marked unread in the list; "read all" to clear. The list updates in real time over a `/events` WebSocket (30 s polling as a fallback); the tab title shows the unread count, and a toast appears when another session finishes or needs approval
 - **Quick switcher** — Ctrl/Cmd+P opens a VS Code-style palette to jump to any session (search by name, directory, or branch)
-- **Message queue** — Messages sent while a task is running are queued (persisted in the DB, survives restarts) and run in order; the queue pauses on failure or interrupt, and can be resumed or edited
+- **Tabs & split groups** (desktop, ≥1024px) — Each open session is a tab in a group with a tab bar (name, agent icon, status dot, close button; middle-click closes). A session lives in only one tab, so opening one that is already open just focuses it. Only the active tab of a group is mounted. Closing the active tab selects its right neighbour, else the left. A second group appears side by side or stacked; the active group has a highlighted frame
+- **Drag & drop placement** — Drag a session from the sidebar onto a tab bar (inserts where you drop) or onto a group's content area: the centre adds it to that group; with a single group, an edge splits off a second group (left/right = side by side, top/bottom = stacked). With two groups, dropping anywhere only adds to that group, and dropping an already-open session moves it. Drag tabs to reorder or move them between groups; Esc cancels. Layout is restored after a reload and is stored per browser. Below 1024px the app keeps the single pane and shows no tabs
+- **Shortcuts** — `Ctrl+\` splits the active tab into a new group (needs at least two tabs) or merges two groups back; `Ctrl+Alt+←/→` moves focus between groups; `Ctrl+Alt+O` switches side-by-side/stacked. They are ignored during IME composition
+- **Message queue** — Messages sent while a task is running are queued (persisted in the DB, survives restarts) and run in order; the queue pauses on failure or interrupt, and can be resumed or edited. If the agent has answered but its process is still waiting (for example for a scheduled wake-up), the stop button stays available and a new message is queued until it ends
 
 ## Chat
 
@@ -18,6 +21,7 @@
 - **Code blocks** — syntax highlighting with language tag, one-click copy
 - **Attachments** — 📎 upload or paste images / text files; they show as removable chips (with thumbnails) above the input and are handed to the agent by path (stored under `workspace/uploads/`, not your `work_dir`); drag & drop on desktop
 - **Message actions** — Copy / forward buttons sit beside each message's timestamp; long-press a message for a floating menu (copy, plus forward on incoming messages)
+- **Input bar controls** — Model, effort and permission mode are chips in the input bar (not the header), so you can change them right before sending
 - **Chat UX** — IME-safe Enter, Enter inserts a newline on touch devices, scrolling up isn't yanked back by streaming (with a "jump to latest" button), deleted sessions can be undone for 5 seconds
 
 ## Collaboration & integration
@@ -26,6 +30,7 @@
 - **MCP server** — Expose sessions to other agents over Streamable HTTP (`POST /mcp`, off by default): operate sessions, read chat history, and query cross-session activity; `ask_session` asks another session and waits for its answer, with a hop limit (`mcp_max_hops`) to stop agent-to-agent loops
 - **Auth** — Telegram `initData` + allowlist; optional web login on private IPs. Forwarded IP headers are accepted only from `web.trusted_proxies` (loopback by default); configure exact CIDRs for other proxies, or an empty list to disable header handling
 - **Optional shell** — Run commands in `work_dir` (off by default); when on, also shows "Open in VS Code" / "Open folder" buttons in the session header (desktop only)
+- **Version info** — Settings shows the app version and the Git commit it was built from
 - **Log viewer** — Settings → Logs streams the server log live (level filter, search, pause, copy; toggle Debug at runtime). Handy for the desktop build, which has no console; only the log since the current start is shown, the full history stays in `logs/server.log`
 
 ## Desktop window (Windows)

@@ -14,7 +14,7 @@ Your agents keep running on the machine where your code lives; this app is the c
 
 | Way in | For | Auth |
 |---|---|---|
-| 🖥️ **Desktop window** (Windows) | Daily use at your PC — tray icon, Ctrl+P switcher | same web password as the browser |
+| 🖥️ **Desktop window** (Windows) | Daily use at your PC — session tabs and split view, tray icon, Ctrl+P switcher | same web password as the browser |
 | 🌐 **Browser** | Any device on your LAN, or remote through a reverse proxy / tunnel | web password (restricted to `web.allowed_cidrs`) |
 | 📱 **Telegram Mini App** | Away from your desk — phone push on errors, approvals on the go | Telegram `initData` + allowlist |
 
@@ -64,7 +64,8 @@ Copy-Item .\claude-miniapp-desktop.previous.exe .\claude-miniapp-desktop.exe -Fo
 
 - **Multi-agent** — Claude Code, Cursor Agent, Codex, Kiro ACP and Antigravity, chosen per session. Tool approvals show the full command or file content before you allow them
 - **Live chat** — WebSocket streaming with Markdown, syntax-highlighted code and one-click copy; multiple tabs stay in sync
-- **Sessions** — each bound to a `work_dir` and permission mode, with real-time unread and needs-approval badges, a Ctrl/Cmd+P quick switcher, and an account-quota badge in the header
+- **Sessions** — each bound to a `work_dir` and permission mode, with real-time unread and needs-approval badges, a Ctrl/Cmd+P quick switcher, and account-usage progress bars in the header
+- **Tabs & split view** (desktop, ≥1024px) — open sessions as tabs, split into two groups, drag a session from the sidebar (or a tab) to place it; `Ctrl+\` splits or merges. Model, effort and permission mode sit in the input bar
 - **Message queue** — messages sent while a task runs are queued, survive restarts, and pause on failure or interrupt
 - **Attachments** — paste or drag & drop images and files; the agent gets them by path, stored outside your `work_dir`
 - **Temporary sharing** — link + 6-digit PIN + nickname, default 1 hour; guests join as read-only `viewer` or full-access `editor`

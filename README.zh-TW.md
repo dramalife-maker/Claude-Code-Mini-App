@@ -14,7 +14,7 @@
 
 | 入口 | 適用情境 | 驗證 |
 |---|---|---|
-| 🖥️ **桌面視窗**（Windows） | 在電腦前日常使用——系統匣、Ctrl+P 快速跳轉 | 與瀏覽器相同的網頁密碼 |
+| 🖥️ **桌面視窗**（Windows） | 在電腦前日常使用——會話分頁與分割檢視、系統匣、Ctrl+P 快速跳轉 | 與瀏覽器相同的網頁密碼 |
 | 🌐 **瀏覽器** | 區網內任何裝置，或透過反向代理／Tunnel 遠端連線 | 網頁密碼（限 `web.allowed_cidrs` 內的 IP） |
 | 📱 **Telegram Mini App** | 離開座位時——出錯推播、手機上即時授權 | Telegram `initData` + 白名單 |
 
@@ -64,7 +64,8 @@ Copy-Item .\claude-miniapp-desktop.previous.exe .\claude-miniapp-desktop.exe -Fo
 
 - **多代理** — Claude Code、Cursor Agent、Codex、Kiro ACP、Antigravity，依 Session 選擇。工具授權前會顯示完整指令或檔案內容
 - **即時對話** — WebSocket 串流、Markdown、語法高亮程式碼與一鍵複製；多分頁同步
-- **Session 管理** — 各自綁定 `work_dir` 與權限模式，即時的未讀與待授權標記、Ctrl/Cmd+P 快速跳轉，header 顯示帳戶用量
+- **Session 管理** — 各自綁定 `work_dir` 與權限模式，即時的未讀與待授權標記、Ctrl/Cmd+P 快速跳轉，header 以進度條顯示帳戶用量
+- **分頁與分割檢視**（桌面，≥1024px）— 以分頁開啟會話、可分成兩個群組，從側欄（或分頁）拖曳來擺放；`Ctrl+\` 分割／合併。Model、Effort、權限模式在輸入列
 - **訊息佇列** — 執行中送出的訊息會排隊、重啟不遺失，失敗或中斷時暫停
 - **附件** — 貼上或拖放圖片與檔案，以路徑交給 agent，存放在 `work_dir` 之外
 - **臨時共享** — 連結 + 6 位數 PIN + 暱稱，預設 1 小時；訪客可為唯讀 `viewer` 或完整權限 `editor`
