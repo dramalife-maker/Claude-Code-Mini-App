@@ -87,14 +87,14 @@ port 已被另一個行程占用（例如還開著 `cmd/server`）：對話框�
 Wails v2 的 WebView2 只攔截 `wails.localhost`。導向 `http://127.0.0.1` 會交給 WebView 預設處理，因此第一版用殼頁 `location.replace`，沒有做反向代理。
 
 - [x] 以 Wails 原始碼確認跨 host 請求不會被資產伺服器吃掉
-- [ ] 視窗能完成網頁登入（需本機點一次）
-- [ ] WebSocket 能串流一則訊息（需本機點一次）
+- [x] 視窗能完成網頁登入（2026-10-19 v0.13.0 桌面版實機：日誌 `[auth] Web 登入成功`）
+- [x] WebSocket 能串流一則訊息（2026-10-19 v0.13.0 桌面版實機：session 連線並完成 `claude.Run`）
 
 ### Phase 1 — 抽出 `internal/server`（行為不變）
 
 - [x] 將 `cmd/server/main.go` 的 Fiber 組裝搬到 `internal/server`
 - [x] `cmd/server/main.go` 改成呼叫 `Start` + `Wait`
-- [ ] `go run ./cmd/server`：登入、開 session、串流，與抽出前相同（路由未改，尚未人工點過）
+- [ ] `go run ./cmd/server`：登入、開 session、串流，與抽出前相同（2026-10-19 冒煙：server 版可啟動、`/` 與 `/js/app.js` 回 200、未登入 401、登入端點 200；開 session 與串流尚未用 server 版人工驗證）
 
 ### Phase 2 — `cmd/desktop`
 

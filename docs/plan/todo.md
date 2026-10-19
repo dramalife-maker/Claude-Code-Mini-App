@@ -5,6 +5,9 @@
 ---
 
 ## 🚀 待執行項目
+- [ ] 桌面自我更新實機驗收：從 v0.13.0 在真實 GitHub 自動更新到下一版（目前只在 fixture 驗證）、點系統匣圖示「檢查更新」、真實 helper 啟動失敗；已知限制：外部／分享連結無法交外部瀏覽器（Wails beta.26 Windows 無導航攔截 API）、替換與還原都被鎖時不自動重啟（見封存的 design.md）
+- [ ] 版本化桌面 EXE 自更新後檔名不變（檔名仍帶舊版號）：評估改以 ZIP 內固定名稱的 `claude-miniapp-desktop.exe` 當預設入口
+- [ ] `go mod tidy` 既有差異（`fasthttp`、`jsonschema-go`）與本輪無關，需另外處理
 - [ ] Antigravity 後續驗收：真實 CLI 多輪對話、權限模式、帳戶配額與 TG WebView；回合 Token 統計串接待補（見 [整合計劃](agy-integration.md)）
 - [x] 附件輸入與聊天呈現：輸入框內佔位／重試、訊息附件卡片、驗證預覽與歷史持久化；實機驗證待補（見 [計劃](todo/attachment-experience.md)）
 - [ ] Claude ask 規則走 miniapp 授權：`bypassPermissions` 下命中 `permissions.ask` 時跳出允許／拒絕，按允許同輪執行（見 [計劃](todo/claude-permission-prompt.md)）
@@ -14,6 +17,16 @@
 - [ ] 主要情境即時回饋與可靠性：授權／中斷 send 失敗處理、WS 斷線指示、用量刷新（手機）、建立 session 重複、載入中與登入卡住（見 [計劃](todo/ux-feedback.md)）
 - [ ] Kiro 故障復原：重新建置／啟動新版後觀察真實 EmptyResponse；自動接手的權限／工具設定與連鎖防護仍待 review（手動入口及 handoff 測試 race 已完成，見 [驗收紀錄](done/kiro-fault-recovery.md)）
 - [ ] 接手提示的整頁重載／離線恢復，及 TG WebView／真實供應商接手實機驗收（目前提示保存在 App 記憶體，見 [紀錄](done/manual-session-handoff.md)）
+
+## ✅ 本輪完成（2026-10-16，v0.12.0／v0.13.0）
+
+- [x] 桌面版會話分頁：群組分頁列、側欄與分頁拖放（中央加入、單群組邊緣分割）、`Ctrl+\` 分割／合併、`Ctrl+Alt+←/→` 切換群組焦點；移除側欄「在副視窗開啟」按鈕；作用中面板與側欄選中列加外框（規格：`docs/spectra/specs/session-tabs`）
+- [x] 輸入列模型控制（Model／Effort／權限模式移到輸入列）與頂欄用量進度條（`docs/spectra/specs/composer-model-controls`、`quota-usage-bars`）
+- [x] 修正 claude 回完話但程序未退出（`ScheduleWakeup`）時畫面 IDLE、後端卻視為忙碌而讓新訊息排隊且無法中斷：超過 3 秒未退出改推 `lingering`，前端顯示中斷鈕
+- [x] Antigravity 以 `agy models` 同步模型選單；設定頁顯示版本與 Git SHA
+- [x] 桌面版自我更新（Wails updater）：固定穩定版來源、強制 SHA256、確認後才下載與重啟、六小時背景檢查、任務維護閘門（有工作或排隊中就不重啟）、production 嵌入前端（規格：`docs/spectra/specs/desktop-distribution`、`desktop-self-update`；已知限制見 `docs/spectra/changes/archive/2026-10-16-desktop-self-update/design.md`）
+- [x] 發佈流程：草稿優先、比對通過才公開為 latest、已公開版本禁止覆寫、新增版本化桌面 EXE 資產；真實 GitHub 首次發佈（v0.13.0）失敗過一次（Windows CR 污染 asset id），已修並加本機回歸測試（`scripts/release/`）
+- [x] Windows 真程序端到端驗證腳本（`scripts/e2e/`），抓到並修正兩個單元測試漏掉的缺陷：桌面啟動即 panic、ExecJS 永不送出導致更新橋接失效
 
 ## ✅ 本輪完成（2026-10-12）
 

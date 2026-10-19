@@ -36,7 +36,7 @@
 - [ ] 結構化輸出驗收迴圈（有迭代上限）— M
 
 ## 需要時再做
-- 桌面視窗殼（Wails，見 `todo/desktop-window.md`）：同一行程多開一個視窗，不取代網頁／Mini App
+- 桌面視窗殼（Wails，見 `todo/desktop-window.md`）：同一行程多開一個視窗，不取代網頁／Mini App；自我更新與發佈已於 2026-10-16 完成（見 `docs/spectra/specs/desktop-self-update`）
 - 統一 ACP（見 `todo/codex-acp-migration.md`，暫緩）
 - 歷史訊息全文搜尋（SQLite FTS5）
 - 更多 CLI
