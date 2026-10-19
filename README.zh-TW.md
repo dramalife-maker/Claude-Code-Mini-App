@@ -6,7 +6,7 @@
 
 [English](README.md)
 
-![Agent Console：左側依專案分組的 Claude、Codex、Kiro、Cursor 會話，右側為串流對話](docs/images/console.png)
+![Agent Console：左側依專案分組並帶未讀標記的 Claude、Codex、Kiro、Cursor 會話，上方為會話分頁，右側為帶用量進度條與模型控制的串流對話](docs/images/console.png)
 
 <sub>示範資料，取自臨時啟動的實例。</sub>
 

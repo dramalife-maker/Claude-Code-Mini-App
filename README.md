@@ -6,7 +6,7 @@
 
 [繁體中文](README.zh-TW.md)
 
-![Agent Console: sessions for Claude, Codex, Kiro and Cursor grouped by project, with a streaming chat on the right](docs/images/console.png)
+![Agent Console: sessions for Claude, Codex, Kiro and Cursor grouped by project with unread badges, session tabs on top, and a streaming chat with usage bars and model controls](docs/images/console.png)
 
 <sub>Demo data on a throwaway instance. The UI is shown in Traditional Chinese.</sub>
 
