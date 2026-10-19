@@ -167,6 +167,9 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       requestAnimationFrame(() => {
         const el = chatInputRef.current;
         if (!el || el.disabled) return;
+        // 分割窗格時另一格的任務結束／歷史載入也會呼叫到這裡；使用者正在別的輸入框打字就不能搶走游標
+        const active = document.activeElement;
+        if (active && active !== el && active.closest && active.closest('input, textarea, select, [contenteditable="true"]')) return;
         try {
           el.focus({ preventScroll: true });
         } catch (_) {
