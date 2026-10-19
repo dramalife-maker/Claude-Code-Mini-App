@@ -15,6 +15,10 @@
 - **Shortcuts** — `Ctrl+\` splits the active tab into a new group (needs at least two tabs) or merges two groups back; `Ctrl+Alt+←/→` moves focus between groups; `Ctrl+Alt+O` switches side-by-side/stacked. They are ignored during IME composition
 - **Message queue** — Messages sent while a task is running are queued (persisted in the DB, survives restarts) and run in order; the queue pauses on failure or interrupt, and can be resumed or edited. If the agent has answered but its process is still waiting (for example for a scheduled wake-up), the stop button stays available and a new message is queued until it ends
 
+![Split view: two groups side by side, each with its own tab bar and a different session streaming; the right group is focused and outlined](images/split-view.png)
+
+_Split view on desktop: two groups, each with its own tab bar. The focused group (right) has a highlighted frame; unread badges stay in the sidebar._
+
 ## Chat
 
 - **Live streaming** — WebSocket chat with Markdown; multi-tab sync
