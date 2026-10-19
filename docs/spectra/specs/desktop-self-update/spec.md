@@ -597,6 +597,12 @@ Updates SHALL replace only the currently running desktop executable and MUST NOT
 - **WHEN** the installed executable stays locked for the whole swap (all swap attempts are exhausted) and restoring the backup also fails because the same lock blocks removing the target
 - **THEN** the helper does not relaunch automatically; the original executable remains unchanged on disk (same SHA256), `<exe>.bak` remains, user data is untouched, and the user recovers manually (close the process holding the file, then start the application or restore `<exe>.bak` to the executable name, as documented in the README)
 
+#### Scenario: Clean stale replaced executables at startup
+
+- **WHEN** the desktop starts and its executable directory contains files named exactly `<current exe name>.old.<digits>` (the previous executable that the updater renamed aside)
+- **THEN** it removes all but the newest of them (newest by the numeric suffix) and logs each removal; the newest is kept as a manual rollback copy
+- **AND** it never removes directories, symbolic links, the running executable, `<exe>.bak`, or any file whose name does not match exactly; a file that cannot be removed (for example still in use) is logged and does not stop startup
+
 #### Scenario: No published release yet
 
 - **WHEN** the release endpoint returns 404 because no public release exists yet

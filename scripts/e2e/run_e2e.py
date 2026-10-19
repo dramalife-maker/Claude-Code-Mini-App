@@ -748,7 +748,51 @@ def scenario_checks_matrix(ctx: Ctx, only: set[str] | None = None) -> list[dict]
             if only is None or name in only]
 
 
+def scenario_cleanup(ctx: Ctx) -> dict:
+    """啟動時清除舊的更新殘留檔（<exe>.old.<時間戳>）：啟動前放假的舊檔，真實程序啟動後只應剩最新一份，
+    其他名稱相近的檔案（非純數字後綴、.bak 等）一律不動。"""
+    name = "cleanup-on-start"
+    ck = Check()
+    v100, v101 = ctx.manifest["versions"]["1.0.0"], ctx.manifest["versions"]["1.0.1"]
+    port, cdp = ctx.ports()
+    fx = FixtureServer(pathlib.Path(v101["desktop_exe"]), v101["asset_name"], "v1.0.1")
+    fx.start()
+    app = None
+    try:
+        inst = prepare_install(ctx, name, "1.0.0", port)
+        exe_name = "claude-miniapp-desktop.exe"
+        stale = {f"{exe_name}.old.1000": b"old-1000", f"{exe_name}.old.2000": b"old-2000"}
+        newest = {f"{exe_name}.old.3000": b"old-3000"}
+        unrelated = {
+            f"{exe_name}.old.abc": b"keep-abc",   # 後綴不是純數字
+            f"{exe_name}.bak": b"keep-bak",       # Wails 的 .bak
+            f"{exe_name}.old.2000.bak": b"keep-2000-bak",
+            "other.exe.old.1": b"keep-other",     # 別的檔案的殘留
+        }
+        for files in (stale, newest, unrelated):
+            for fname, data in files.items():
+                (inst / fname).write_bytes(data)
+        app = App(ctx, name, inst, port, cdp, fx)
+        app.start()
+        wait_until(lambda: all(not (inst / f).exists() for f in stale), 60, 1.0, what="舊殘留檔被清除")
+        ck.ok("較舊的殘留檔已被清除", all(not (inst / f).exists() for f in stale), str(sorted(p.name for p in inst.iterdir())))
+        ck.ok("最新的一份保留且內容不變", all((inst / f).read_bytes() == d for f, d in newest.items()), "")
+        ck.ok("名稱相近的其他檔案都沒被動", all((inst / f).read_bytes() == d for f, d in unrelated.items()), "")
+        ck.ok("目前的 exe 未被改動", sha256(app.exe) == v100["desktop_sha256"], "")
+        log = (inst / "logs" / "server.log").read_text(encoding="utf-8", errors="replace")
+        ck.ok("日誌記錄了被清除的檔案", all(f in log and "已清除舊的更新殘留檔" in log for f in stale), "")
+        ck.ok("日誌沒有提到最新的那份", f"{exe_name}.old.3000" not in log.split("已清除舊的更新殘留檔")[-1] if "已清除舊的更新殘留檔" in log else True, "")
+    except Exception as exc:  # noqa: BLE001
+        ck.ok("場景執行無例外", False, f"{exc}\n{traceback.format_exc()}")
+    finally:
+        if app is not None:
+            app.stop()
+        fx.stop()
+    return finish(name, name, ck)
+
+
 SCENARIOS = {
+    "cleanup": lambda c: [scenario_cleanup(c)],
     "happy": lambda c: [scenario_happy(c)],
     "matrix": scenario_checks_matrix,
     "not-writable": lambda c: [scenario_not_writable(c)],

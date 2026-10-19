@@ -4,6 +4,11 @@
 
 發版流程：更新 `VERSION`、`internal/version/version.go`、README 版本徽章與本檔 → commit → 打 `vX.Y.Z` tag 並 push，GitHub Actions 會自動建置並發佈 Release（說明文字取自本檔對應段落）。
 
+## [Unreleased]
+
+### 新增
+- 桌面版啟動時清除更新留下的舊 exe（`<exe>.old.<時間戳>`）：只保留最新一份作為手動還原用，只刪檔名嚴格吻合、純數字後綴的一般檔案，刪不掉的檔案只記錄、不影響啟動
+
 ## [0.13.2] - 2026-10-19
 
 ### 變更
