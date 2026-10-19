@@ -47,7 +47,25 @@ function SessionTabBar({
     };
   }, []);
 
-  if (!Array.isArray(tabs) || tabs.length === 0) {
+  // 滾輪（垂直）轉橫向捲動分頁列；React onWheel 為 passive，需原生 listener 才能 preventDefault
+  const hasTabs = Array.isArray(tabs) && tabs.length > 0;
+  useEffect(() => {
+    const el = tabBarRef.current;
+    if (!el) return undefined;
+    const onWheel = (e) => {
+      if (e.ctrlKey || el.scrollWidth <= el.clientWidth) return;
+      // 觸控板已有橫向位移時維持原生行為
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      // deltaMode: 0=pixel, 1=line, 2=page
+      const delta = e.deltaMode === 1 ? e.deltaY * 32 : e.deltaMode === 2 ? e.deltaY * el.clientWidth : e.deltaY;
+      el.scrollLeft += delta;
+      e.preventDefault();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [hasTabs]);
+
+  if (!hasTabs) {
     return null;
   }
 
