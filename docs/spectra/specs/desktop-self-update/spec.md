@@ -8,7 +8,7 @@ Provides Windows desktop users with checks for stable GitHub Releases, explicit 
 
 ### Requirement: Desktop update entry points
 
-The desktop SHALL provide Check for Updates in the system tray and beside the existing version and SHA display in settings. Both SHALL open the same update section showing current identity, available version, plain-text release notes, progress, and applicable download, later, retry, and restart actions. Browser, Telegram, guest, and standalone server contexts SHALL NOT expose desktop update controls.
+The desktop SHALL provide Check for Updates in the system tray and beside the existing version and SHA display in settings. Both SHALL open the same update section showing current identity, available version, release notes (the changelog part, rendered through a minimal built-in Markdown subset), progress, and applicable download, later, retry, and restart actions. Browser, Telegram, guest, and standalone server contexts SHALL NOT expose desktop update controls.
 
 #### Scenario: Open updates from either entry point
 
@@ -19,6 +19,12 @@ The desktop SHALL provide Check for Updates in the system tray and beside the ex
 
 - **WHEN** release notes contain HTML or script markup
 - **THEN** the update section displays it as text without executing it
+- **AND** only headings, lists, emphasis, inline code, code blocks, quotes and rules are rendered as formatting, every other character is escaped, and links and images show their text only
+
+#### Scenario: Show only the changelog
+
+- **WHEN** the release body starts with download and first-time-setup sections followed by a "## 更新內容" heading
+- **THEN** the update section shows only the content after that heading, and shows the whole body when the heading is absent
 
 #### Scenario: Open settings outside desktop
 

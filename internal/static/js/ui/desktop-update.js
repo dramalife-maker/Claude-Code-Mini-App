@@ -119,3 +119,112 @@ function desktopUpdateView(status, laterVersion) {
     actions,
   };
 }
+
+// ── 更新說明（release notes）渲染 ───────────────────────────────────────────
+// 更新視窗是有桌面 bridge 的特權頁面，所以不能用 marked 這類「原始 HTML 直通」的渲染器。
+// 這裡自己做一個最小的 Markdown 子集：使用者文字一律先逐字跳脫，標籤只由程式產生
+// （白名單：h3 h4 h5 p ul ol li strong em code pre blockquote hr，屬性只有我們自己的 class），
+// 連結與圖片只留文字（桌面視窗點連結會直接導覽離開首頁）。測試：scripts/desktop-update.test.cjs。
+
+/** Release 內文開頭是下載表與首次設定；只取第一個「## 更新內容」之後的 changelog，沒有標記就用整段。 */
+function desktopUpdateNotesBody(raw) {
+  const text = typeof raw === 'string' ? raw.replace(/\r\n?/g, '\n') : '';
+  const m = /^## 更新內容[ \t]*$/m.exec(text);
+  const body = m ? text.slice(m.index + m[0].length) : text;
+  return body.trim();
+}
+
+function desktopUpdateEscapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** 行內：`code`、**粗體**、*斜體*、[文字](網址)→只留文字、![替代文字](網址)→只留替代文字。 */
+function desktopUpdateInline(line) {
+  const parts = String(line).split('`');
+  let out = '';
+  for (let i = 0; i < parts.length; i++) {
+    const isCode = i % 2 === 1 && i < parts.length - 1; // 沒有成對的反引號就當一般文字
+    if (isCode) {
+      out += '<code class="ra-notes-code">' + desktopUpdateEscapeHtml(parts[i]) + '</code>';
+      continue;
+    }
+    let t = desktopUpdateEscapeHtml(parts[i]);
+    if (i % 2 === 1) t = '`' + t; // 落單的反引號
+    t = t
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
+      .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^*\w])\*([^*\s][^*\n]*?)\*(?![*\w])/g, '$1<em>$2</em>');
+    out += t;
+  }
+  return out;
+}
+
+/** 更新說明 → 安全的 HTML 字串（給 dangerouslySetInnerHTML 用；空輸入回空字串）。 */
+function desktopUpdateRenderNotes(raw) {
+  const text = typeof raw === 'string' ? raw.replace(/\r\n?/g, '\n') : '';
+  if (text.trim() === '') return '';
+  const lines = text.split('\n');
+  const out = [];
+  let para = [];
+  let list = null; // { tag: 'ul' | 'ol', items: [] }
+  let quote = [];
+  const flushPara = () => {
+    if (para.length) out.push('<p class="ra-notes-p">' + para.map(desktopUpdateInline).join(' ') + '</p>');
+    para = [];
+  };
+  const flushList = () => {
+    if (list) {
+      out.push('<' + list.tag + ' class="ra-notes-' + list.tag + '">' + list.items.map((x) => '<li>' + desktopUpdateInline(x) + '</li>').join('') + '</' + list.tag + '>');
+    }
+    list = null;
+  };
+  const flushQuote = () => {
+    if (quote.length) out.push('<blockquote class="ra-notes-bq">' + quote.map(desktopUpdateInline).join(' ') + '</blockquote>');
+    quote = [];
+  };
+  const flushAll = () => { flushPara(); flushList(); flushQuote(); };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = /^\s*```/.exec(line);
+    if (fence) {
+      flushAll();
+      const code = [];
+      i++;
+      while (i < lines.length && !/^\s*```/.test(lines[i])) { code.push(lines[i]); i++; }
+      out.push('<pre class="ra-notes-pre"><code>' + desktopUpdateEscapeHtml(code.join('\n')) + '</code></pre>');
+      continue;
+    }
+    if (line.trim() === '') { flushAll(); continue; }
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushAll();
+      const level = heading[1].length;
+      const tag = level <= 2 ? 'h3' : level === 3 ? 'h4' : 'h5';
+      out.push('<' + tag + ' class="ra-notes-' + tag + '">' + desktopUpdateInline(heading[2].trim()) + '</' + tag + '>');
+      continue;
+    }
+    if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { flushAll(); out.push('<hr class="ra-notes-hr">'); continue; }
+    const q = /^\s*>\s?(.*)$/.exec(line);
+    if (q) { flushPara(); flushList(); quote.push(q[1]); continue; }
+    const ul = /^\s*[-*+]\s+(.*)$/.exec(line);
+    const ol = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+    if (ul || ol) {
+      flushPara(); flushQuote();
+      const tag = ul ? 'ul' : 'ol';
+      if (list && list.tag !== tag) flushList();
+      if (!list) list = { tag, items: [] };
+      list.items.push((ul || ol)[1]);
+      continue;
+    }
+    flushList(); flushQuote();
+    para.push(line.trim());
+  }
+  flushAll();
+  return out.join('');
+}

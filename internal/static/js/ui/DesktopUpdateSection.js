@@ -1,13 +1,16 @@
 // ── 桌面更新區塊（設定頁「更新」分類；系統匣「檢查更新」開啟的也是同一區）────
-// 只在桌面 bridge 存在時由 SettingsModal 渲染。文字與 release notes 一律以 React 文字節點呈現，
-// 不使用 innerHTML，因此 notes 內的 HTML／script 只會當成純文字。
-// 純邏輯（狀態文字、動作模型）在 desktop-update.js。
+// 只在桌面 bridge 存在時由 SettingsModal 渲染。其他文字以 React 文字節點呈現；release notes 是唯一用
+// innerHTML 的地方，且只吃 desktopUpdateRenderNotes 的輸出：使用者文字先逐字跳脫、標籤只由程式產生
+// （白名單與屬性見 desktop-update.js，另有不變量測試），所以 notes 內的 HTML／script 只會顯示成文字。
+// 純邏輯（狀態文字、動作模型、notes 渲染）在 desktop-update.js。
 
 function DesktopUpdateSection({ status, laterVersion = '', request, later, showOffer }) {
   const st = status || { state: 'idle' };
   const view = desktopUpdateView(st, laterVersion);
   const percent = desktopUpdateProgressPercent(st.downloadedBytes, st.totalBytes);
   const inProgress = st.state === 'downloading' || st.state === 'verifying';
+  // 只取「## 更新內容」之後的 changelog，再以安全的 Markdown 子集渲染（不含原始 HTML）。
+  const notesHtml = useMemo(() => desktopUpdateRenderNotes(desktopUpdateNotesBody(st.releaseNotes)), [st.releaseNotes]);
 
   // 重新啟動需要二次確認：第一次點擊只展開確認面板，按下「確定」才會送出 restart。
   const [confirming, setConfirming] = useState(false);
@@ -52,12 +55,13 @@ function DesktopUpdateSection({ status, laterVersion = '', request, later, showO
           </div>
         ) : null}
 
-        {view.showNotes && st.releaseNotes ? (
+        {view.showNotes && notesHtml ? (
           <div className="mt-3">
-            <div className="text-[11px] text-[oklch(0.6_0.01_264)] mb-1">更新內容（純文字）</div>
-            <pre className="whitespace-pre-wrap break-words rounded-lg border border-[oklch(0.28_0.02_264)] bg-[oklch(0.16_0.02_264)] px-3 py-2 text-xs leading-relaxed text-[oklch(0.85_0.01_264)] max-h-48 overflow-y-auto">
-              {st.releaseNotes}
-            </pre>
+            <div className="text-[11px] text-[oklch(0.6_0.01_264)] mb-1">更新內容</div>
+            <div
+              className="ra-notes rounded-lg border border-[oklch(0.28_0.02_264)] bg-[oklch(0.16_0.02_264)] px-3 py-2 max-h-64 overflow-y-auto"
+              dangerouslySetInnerHTML={{ __html: notesHtml }}
+            />
           </div>
         ) : null}
 

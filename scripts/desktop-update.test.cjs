@@ -19,6 +19,8 @@ const {
   desktopUpdateProgressPercent,
   desktopUpdateView,
   desktopUpdateShortSha,
+  desktopUpdateNotesBody,
+  desktopUpdateRenderNotes,
 } = context;
 
 // vm 上下文的陣列與主 realm 的陣列原型不同，這裡用 Array.from 轉成主 realm 陣列再比較。
@@ -186,6 +188,70 @@ function findAction(view, id) {
       }
     }
   }
+}
+
+// 13. 更新說明：只取「## 更新內容」之後的 changelog（Release 內文開頭是下載表與首次設定，不是更新內容）。
+{
+  const body = '## 下載\n\n| 平台 | 檔案 |\n|---|---|\n| Windows | a.zip |\n\n---\n\n## 更新內容\n\n### 新增\n- 功能 A\n';
+  assert.strictEqual(desktopUpdateNotesBody(body), '### 新增\n- 功能 A');
+  assert.strictEqual(desktopUpdateNotesBody('### 變更\n- 只有 changelog'), '### 變更\n- 只有 changelog', '沒有標記就用整段');
+  assert.strictEqual(desktopUpdateNotesBody(''), '');
+  assert.strictEqual(desktopUpdateNotesBody(null), '');
+  assert.strictEqual(desktopUpdateNotesBody('  \n '), '');
+  // 只取第一個標記；之後出現的同名標題屬於內容的一部分
+  assert.strictEqual(desktopUpdateNotesBody('x\n## 更新內容\n- a\n## 更新內容\n- b'), '- a\n## 更新內容\n- b');
+}
+
+// 14. Markdown 子集：標題、清單、行內樣式、程式碼區塊、引用、分隔線。
+{
+  const html = desktopUpdateRenderNotes('### 新增\n- 第一項 **粗體** 與 `code`\n- 第二項 *斜體*\n\n### 變更\n1. 步驟一\n2. 步驟二\n\n一般段落\n同一段第二行\n\n> 引用文字\n\n---\n\n```go\nx := a < b\n```\n');
+  assert.ok(/<h4 class="ra-notes-h4">新增<\/h4>/.test(html), 'h3 標題 → h4');
+  assert.ok(/<ul class="ra-notes-ul"><li>第一項 <strong>粗體<\/strong> 與 <code class="ra-notes-code">code<\/code><\/li><li>第二項 <em>斜體<\/em><\/li><\/ul>/.test(html), html);
+  assert.ok(/<ol class="ra-notes-ol"><li>步驟一<\/li><li>步驟二<\/li><\/ol>/.test(html), '有序清單');
+  assert.ok(/<p class="ra-notes-p">一般段落 同一段第二行<\/p>/.test(html), '連續行合成一段');
+  assert.ok(/<blockquote class="ra-notes-bq">引用文字<\/blockquote>/.test(html), '引用');
+  assert.ok(/<hr class="ra-notes-hr">/.test(html), '分隔線');
+  assert.ok(/<pre class="ra-notes-pre"><code>x := a &lt; b<\/code><\/pre>/.test(html), '程式碼區塊內容要跳脫');
+  assert.strictEqual(desktopUpdateRenderNotes(''), '');
+  assert.strictEqual(desktopUpdateRenderNotes(null), '');
+  // 連結只留文字，不產生 <a>／href（桌面視窗點連結會直接導覽離開首頁）；圖片語法同理
+  const link = desktopUpdateRenderNotes('看 [說明](https://example.com/x) 與 ![圖](https://example.com/i.png)');
+  assert.ok(!/<a[\s>]/i.test(link) && !/href/i.test(link) && !/<img/i.test(link), link);
+  assert.ok(link.includes('說明'), '連結文字保留');
+}
+
+// 15. 安全：任何輸入的輸出都只能含白名單標籤，屬性只能是我們自己的 class。
+{
+  const hostile = [
+    '<script>alert(1)</script>',
+    '<img src=x onerror=alert(1)>',
+    '- <b onmouseover="x()">hi</b>',
+    '`<svg onload=alert(1)>`',
+    '```\n</code></pre><script>alert(1)</script>\n```',
+    '[x](javascript:alert(1))',
+    '[x](" onclick="alert(1))',
+    '> <iframe src=//evil></iframe>',
+    '### <style>*{display:none}</style>',
+    '**<a href=//evil>x</a>**',
+    '&lt;script&gt; &amp; "quoted" \'single\'',
+    '1. <details open ontoggle=alert(1)>',
+    '`unbalanced <img src=x onerror=alert(1)>',
+  ];
+  const allowed = new Set(['h3', 'h4', 'h5', 'p', 'ul', 'ol', 'li', 'strong', 'em', 'code', 'pre', 'blockquote', 'hr']);
+  const ours = /<\/?[a-z0-9]+( class="ra-notes-[a-z0-9-]+")?>/g;
+  for (const input of hostile) {
+    const out = desktopUpdateRenderNotes(input);
+    const tags = out.match(/<\/?[a-zA-Z][^>]*>/g) || [];
+    for (const t of tags) {
+      const name = t.match(/^<\/?([a-zA-Z0-9]+)/)[1].toLowerCase();
+      assert.ok(allowed.has(name), `不允許的標籤 ${t}（輸入：${input}）`);
+      assert.ok(/^<\/?[a-z0-9]+( class="ra-notes-[a-z0-9-]+")?>$/.test(t), `標籤帶了不明屬性 ${t}（輸入：${input}）`);
+    }
+    // 去掉我們產生的標籤後，不得殘留任何 < 或 >（使用者文字必須全被跳脫）
+    const rest = out.replace(ours, '');
+    assert.ok(!/[<>]/.test(rest), `殘留未跳脫的 < 或 >：${rest}（輸入：${input}）`);
+  }
+  assert.ok(desktopUpdateRenderNotes('<script>alert(1)</script>').includes('&lt;script&gt;'));
 }
 
 console.log('desktop-update tests passed');
