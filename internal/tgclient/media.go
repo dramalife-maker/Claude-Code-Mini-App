@@ -112,22 +112,28 @@ func photoSize(p *tg.Photo) int {
 
 // OpenMedia 依目前綁定的私聊讀取單一訊息的檔案，直接寫進 w。不落地。
 func (m *Manager) OpenMedia(ctx context.Context, sessionID string, msgID int) (name, mimeType string, r io.ReadCloser, err error) {
+	// 失敗原因只在這裡看得到：HTTP 端一律回 503，沒有日誌就無法分辨是解析對象、查訊息還是下載失敗。
+	unavailable := func(step string, cause error) (string, string, io.ReadCloser, error) {
+		slog.Warn(fmt.Sprintf("[telegram] 讀取媒體失敗（%s）msg=%d: %v", step, msgID, cause))
+		return "", "", nil, ErrHistoryUnavailable
+	}
 	if msgID <= 0 || msgID > 1<<31-1 {
 		return "", "", nil, ErrHistoryInvalidCursor
 	}
 	if m.db == nil {
-		return "", "", nil, ErrHistoryUnavailable
+		return unavailable("資料庫未就緒", nil)
 	}
 	s, err := m.db.GetSession(sessionID)
 	if err != nil {
-		return "", "", nil, ErrHistoryUnavailable
+		return unavailable("讀取會話", err)
 	}
 	peer, err := m.liveHistoryPeer(ctx, s)
 	if err != nil {
+		slog.Warn(fmt.Sprintf("[telegram] 讀取媒體失敗（解析對象）msg=%d: %v", msgID, err))
 		return "", "", nil, err
 	}
 	if m.historyFn == nil || m.fileFn == nil {
-		return "", "", nil, ErrHistoryUnavailable
+		return unavailable("上游函式未接線", nil)
 	}
 	resp, err := m.historyFn(ctx, &tg.MessagesGetHistoryRequest{
 		Peer:     &tg.InputPeerUser{UserID: peer.peerID, AccessHash: peer.accessHash},
@@ -138,22 +144,27 @@ func (m *Manager) OpenMedia(ctx context.Context, sessionID string, msgID int) (n
 		if d, ok := tgerr.AsFloodWait(err); ok {
 			return "", "", nil, &HistoryRateLimitedError{RetryAfter: d}
 		}
+		slog.Warn(fmt.Sprintf("[telegram] 讀取媒體失敗（查詢訊息）msg=%d: %v", msgID, err))
 		return "", "", nil, fmt.Errorf("%w: %v", ErrHistoryUnavailable, err)
 	}
 	if m.currentAccount() != peer.account {
-		return "", "", nil, fmt.Errorf("%w: account changed during request", ErrHistoryUnavailable)
+		return unavailable("請求途中帳號改變", nil)
 	}
 	msg := messageByID(resp, msgID)
 	if msg == nil {
-		return "", "", nil, ErrHistoryUnavailable
+		return unavailable("上游沒回這則訊息", fmt.Errorf("回應 %T", resp))
 	}
 	loc, name, mimeType := mediaLocation(msg)
 	if loc == nil {
-		return "", "", nil, ErrHistoryUnavailable
+		return unavailable("訊息沒有可下載的媒體", fmt.Errorf("media=%T", msg.Media))
 	}
 	pr, pw := io.Pipe()
 	go func() {
-		pw.CloseWithError(m.fileFn(ctx, loc, pw))
+		err := m.fileFn(ctx, loc, pw)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("[telegram] 讀取媒體失敗（下載 %T）msg=%d: %v", loc, msgID, err))
+		}
+		pw.CloseWithError(err)
 	}()
 	return name, mimeType, pr, nil
 }

@@ -1,6 +1,8 @@
 package api
 
 import (
+	"fmt"
+	"log/slog"
 	"mime"
 	"strconv"
 	"strings"
@@ -19,10 +21,12 @@ func (h *SessionHandler) TelegramMediaHTTP(c *fiber.Ctx) error {
 	if h.TelegramMedia == nil {
 		return historyError(c, tgclient.ErrHistoryUnavailable)
 	}
+	slog.Info(fmt.Sprintf("[telegram] 媒體請求 session=%s msg=%d download=%s", c.Params("id"), msgID, c.Query("download")))
 	name, mimeType, body, err := h.TelegramMedia(c.UserContext(), c.Params("id"), msgID)
 	if err != nil {
 		return historyError(c, err)
 	}
+	slog.Info(fmt.Sprintf("[telegram] 媒體開始串流 msg=%d name=%s mime=%s", msgID, name, mimeType))
 	// SetBodyStream 送完會關閉 body；這裡再 Close 會在寫出前把串流截斷。
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
