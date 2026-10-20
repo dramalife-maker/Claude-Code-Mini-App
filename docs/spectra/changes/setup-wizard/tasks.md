@@ -22,11 +22,11 @@
 
 ## 5. 桌面版啟動
 
-- [ ] 5.1 [after: 4.2] 完成 Desktop first run writes next to the executable：桌面版在目前目錄沒有 `config.yaml` 但 exe 旁邊有 `config.example.yaml` 時，將工作目錄切到 exe 旁（現有的 `chdirToExeIfConfigured` 只處理 exe 旁已有 `config.yaml` 的情況），並改用 `Server.EntryURL()` 開啟視窗；`go run` 的暫存 exe 旁邊沒有該檔，維持原行為。驗證：把判斷抽成可測的純函式，新增 `TestWorkDirForFirstRun`（Windows 建置標籤）涵蓋「exe 旁有 config.yaml」「exe 旁僅有 config.example.yaml」「兩者皆無」三種情況；`go build -tags production -ldflags "-H windowsgui" ./cmd/desktop` 通過。
+- [x] 5.1 [after: 4.2] 完成 Desktop first run writes next to the executable：桌面版在目前目錄沒有 `config.yaml` 但 exe 旁邊有 `config.example.yaml` 時，將工作目錄切到 exe 旁（現有的 `chdirToExeIfConfigured` 只處理 exe 旁已有 `config.yaml` 的情況），並改用 `Server.EntryURL()` 開啟視窗；`go run` 的暫存 exe 旁邊沒有該檔，維持原行為。驗證：把判斷抽成可測的純函式，新增 `TestWorkDirForFirstRun`（Windows 建置標籤）涵蓋「exe 旁有 config.yaml」「exe 旁僅有 config.example.yaml」「兩者皆無」三種情況；`go build -tags production -ldflags "-H windowsgui" ./cmd/desktop` 通過。
 
 ## 6. 設定精靈前端
 
-- [ ] 6.1 新增 `internal/static/js/setup/setupForm.js`（不依賴 DOM 的純函式）：與伺服器相同的欄位驗證規則、以 `crypto.getRandomValues` 產生符合規則的隨機密碼、白名單文字解析（接受逗號與換行分隔的正整數）、組出 `POST /setup/save` 的請求內容（Mini App 關閉時不含 `bot_token` 與白名單）、從網址讀取設定憑證。驗證：新增 `scripts/setup-wizard.test.cjs` 的 `TestPasswordRules`、`TestGeneratedPasswordValid`（重複產生 200 次皆通過規則）、`TestPayloadMiniAppOff`、`TestWhitelistParse`、`TestReadSetupToken`，由 `node --test scripts/*.test.cjs` 執行。
+- [x] 6.1 新增 `internal/static/js/setup/setupForm.js`（不依賴 DOM 的純函式）：與伺服器相同的欄位驗證規則、以 `crypto.getRandomValues` 產生符合規則的隨機密碼、白名單文字解析（接受逗號與換行分隔的正整數）、組出 `POST /setup/save` 的請求內容（Mini App 關閉時不含 `bot_token` 與白名單）、從網址讀取設定憑證。驗證：新增 `scripts/setup-wizard.test.cjs` 的 `TestPasswordRules`、`TestGeneratedPasswordValid`（重複產生 200 次皆通過規則）、`TestPayloadMiniAppOff`、`TestWhitelistParse`、`TestReadSetupToken`，由 `node --test scripts/*.test.cjs` 執行。
 - [ ] 6.2 [after: 6.1, 4.2] 完成 Guided wizard flow 與 Install guidance without blocking setup 的畫面部分：新增 `internal/static/js/setup/SetupWizard.js` 並在 `app.js` 啟動時先查 `/setup/status`：`needs_setup` 為真顯示精靈，否則維持原流程。步驟依序為歡迎與 CLI 檢查結果（僅提示，不擋儲存）、密碼與連接埠與資料庫路徑與「允許區網裝置登入」（預設關）、Telegram Mini App 開關（預設關，開啟才顯示 Token 與白名單欄位與需要外部 HTTPS 網址的說明）、確認儲存；讀到憑證後用 `history.replaceState` 清掉網址列；`switched` 時導向首頁登入，`restart_required` 時顯示新網址與重新啟動提示；不提供 `no_auth`。`index.html` 加入新檔，`static.IsPublic` 已允許 `js/` 底下的檔案所以不需改白名單。驗證：以 esbuild 以 JSX 載入器解析兩個新檔與 `app.js` 皆無語法錯誤；`go test ./internal/static/` 通過（含 production 建置的資源清單）；瀏覽器實測列在 8.1。
 
 ## 7. 文件

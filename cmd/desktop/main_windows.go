@@ -131,7 +131,7 @@ func main() {
 		Height:           800,
 		MinWidth:         960,
 		MinHeight:        640,
-		URL:              started.URL() + "/",
+		URL:              windowURL(started.EntryURL()),
 		BackgroundColour: application.NewRGBA(0x15, 0x16, 0x1e, 255),
 		// 預設在非 production 建置會開 devtools；這裡關掉，避免一般使用時出現。
 		DevToolsEnabled: false,
@@ -220,15 +220,19 @@ func desktopWorkGate() (func(), error) {
 	return release, nil
 }
 
-// chdirToExeIfConfigured 在打包後的 exe 旁邊找到 config.yaml 時，把工作目錄切過去。
-// go run 的 exe 在暫存目錄、旁邊沒有設定檔，就維持目前工作目錄（專案根）。
+// chdirToExeIfConfigured 依 firstRunWorkDir 決定要不要切到 exe 旁邊。
+// 旁邊已有 config.yaml，或發布包只有 config.example.yaml 且目前目錄還沒有設定檔時才切。
 func chdirToExeIfConfigured() {
 	exe, err := os.Executable()
 	if err != nil {
 		return
 	}
-	dir := filepath.Dir(exe)
-	if _, err := os.Stat(filepath.Join(dir, "config.yaml")); err != nil {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	dir := firstRunWorkDir(filepath.Dir(exe), cwd, fileExists)
+	if dir == "" {
 		return
 	}
 	_ = os.Chdir(dir)
