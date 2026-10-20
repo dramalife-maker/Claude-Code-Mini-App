@@ -13,6 +13,8 @@ const (
 	TypeKiroACP = "kiroacp"
 	// TypeGemini 是 Antigravity 的舊別名，既有 Session 可執行，但不可新建。
 	TypeGemini = "gemini"
+	// TypeTelegram 為 Telegram 秘密聊天室會話。
+	TypeTelegram = "telegram"
 )
 
 // createDisabledAgentTypes 不可新建，但既有 Session 仍可執行。

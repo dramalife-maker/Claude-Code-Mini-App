@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 )
 
@@ -16,6 +17,8 @@ type SyncPayload struct {
 	InputMode       string
 	ShellType       string
 	ShellPendingCmd *shellPendingInfo
+	// Telegram：sync 不帶歷史；TelegramScope 為目前已驗證的 account/peer（未驗證時為 nil）。
+	TelegramScope *tgScope
 }
 
 func computeWSState(sess *db.Session, msgs []*db.Message) string {
@@ -63,33 +66,24 @@ func buildSyncPayload(database *db.DB, sessionID string) (SyncPayload, error) {
 	if err != nil {
 		return SyncPayload{}, err
 	}
-	msgs, err := database.ListMessages(sessionID)
-	if err != nil {
-		return SyncPayload{}, err
+	// Telegram：歷史由 HTTP 直通 getHistory，sync 只帶 scope；其餘 agent 維持完整列表。
+	var msgs []*db.Message
+	var scope *tgScope
+	if sess.AgentType == agent.TypeTelegram {
+		// 歷史改由 HTTP 直通 getHistory。sync 只帶目前 scope，不從資料庫帶訊息。
+		if telegramScopeFn != nil {
+			if acct, peer, ok := telegramScopeFn(sessionID); ok {
+				scope = &tgScope{AccountID: acct, PeerID: peer}
+			}
+		}
+	} else {
+		var err error
+		if msgs, err = database.ListMessages(sessionID); err != nil {
+			return SyncPayload{}, err
+		}
 	}
 	uiState := computeWSState(sess, msgs)
-	type row struct {
-		ID          int64           `json:"id"`
-		Role        string          `json:"role"`
-		Content     string          `json:"content"`
-		ResultText  string          `json:"result_text,omitempty"`
-		Status      string          `json:"status"`
-		CreatedAt   string          `json:"created_at,omitempty"`
-		Author      string          `json:"author,omitempty"`
-		Attachments []db.Attachment `json:"attachments,omitempty"`
-	}
-	out := make([]row, 0, len(msgs))
-	for _, m := range msgs {
-		st := m.Status
-		if st == "" {
-			st = db.MessageStatusDone
-		}
-		out = append(out, row{
-			ID: m.ID, Role: m.Role, Content: m.Content, ResultText: m.ResultText,
-			Status: st, CreatedAt: m.CreatedAt, Author: m.Author, Attachments: m.Attachments,
-		})
-	}
-	raw, err := json.Marshal(out)
+	raw, err := marshalSyncRows(msgs)
 	if err != nil {
 		return SyncPayload{}, err
 	}
@@ -103,6 +97,7 @@ func buildSyncPayload(database *db.DB, sessionID string) (SyncPayload, error) {
 		InputMode:       im,
 		ShellType:       shellTypeString(),
 		ShellPendingCmd: peekShellPending(sess.ID),
+		TelegramScope:   scope,
 	}, nil
 }
 
@@ -127,4 +122,36 @@ func loadQueueState(database *db.DB, sessionID string) ([]db.QueuedMessage, bool
 	}
 	paused, _ := database.QueuePaused(sessionID)
 	return q, paused
+}
+
+// syncMsgRow 是 sync／telegram_scope 事件中的一則訊息（Telegram 欄位與 HTTP 分頁同一份 DTO）。
+type syncMsgRow struct {
+	ID          int64           `json:"id"`
+	Role        string          `json:"role"`
+	Content     string          `json:"content"`
+	ResultText  string          `json:"result_text,omitempty"`
+	Status      string          `json:"status"`
+	CreatedAt   string          `json:"created_at,omitempty"`
+	Author      string          `json:"author,omitempty"`
+	Attachments []db.Attachment `json:"attachments,omitempty"`
+	// Telegram 時間線欄位。
+	Telegram        *db.TelegramRef `json:"telegram,omitempty"`
+	Delivery        string          `json:"delivery,omitempty"`
+	ClientMessageID string          `json:"client_message_id,omitempty"`
+}
+
+func marshalSyncRows(msgs []*db.Message) (json.RawMessage, error) {
+	out := make([]syncMsgRow, 0, len(msgs))
+	for _, m := range msgs {
+		st := m.Status
+		if st == "" {
+			st = db.MessageStatusDone
+		}
+		out = append(out, syncMsgRow{
+			ID: m.ID, Role: m.Role, Content: m.Content, ResultText: m.ResultText,
+			Status: st, CreatedAt: m.CreatedAt, Author: m.Author, Attachments: m.Attachments,
+			Telegram: m.Telegram, Delivery: m.Delivery, ClientMessageID: m.ClientMessageID,
+		})
+	}
+	return json.Marshal(out)
 }

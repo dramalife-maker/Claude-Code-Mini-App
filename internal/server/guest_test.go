@@ -31,6 +31,7 @@ type guestEnv struct {
 	database *db.DB
 	base     string
 	wsBase   string
+	sessions *api.SessionHandler // 測試可注入 TelegramHistory
 }
 
 func newGuestEnv(t *testing.T) *guestEnv {
@@ -61,6 +62,7 @@ func newGuestEnv(t *testing.T) *guestEnv {
 	app.Post("/sessions/:id/uploads", auth, uh.Upload)
 	app.Get("/sessions/:id/uploads/:attachmentId/details", auth, uh.Details)
 	app.Get("/sessions/:id/uploads/:attachmentId", auth, uh.Content)
+	app.Get("/sessions/:id/tg-media/:msgId", auth, sh.TelegramMediaHTTP)
 	app.Post("/sessions/:id/shares", auth, shareH.Create)
 	app.Get("/sessions/:id/shares", auth, shareH.ListBySession)
 	app.Get("/shares", auth, shareH.ListAll)
@@ -83,7 +85,7 @@ func newGuestEnv(t *testing.T) *guestEnv {
 	go func() { _ = app.Listener(ln) }()
 	t.Cleanup(func() { _ = app.Shutdown(); database.Close() })
 	addr := ln.Addr().String()
-	return &guestEnv{t: t, database: database, base: "http://" + addr, wsBase: "ws://" + addr}
+	return &guestEnv{t: t, database: database, base: "http://" + addr, wsBase: "ws://" + addr, sessions: sh}
 }
 
 func (e *guestEnv) session(name string) *db.Session {

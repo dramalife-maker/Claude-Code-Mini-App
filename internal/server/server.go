@@ -33,6 +33,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/quota"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/static"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/tg"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/tgclient"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/version"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/ws"
 )
@@ -294,6 +295,7 @@ func Start(ctx context.Context) (*Server, error) {
 	app.Patch("/sessions/:id", authMiddleware, sh.Patch)
 	app.Delete("/sessions/:id", authMiddleware, sh.Delete)
 	app.Get("/sessions/:id/messages", authMiddleware, sh.Messages)
+	app.Get("/sessions/:id/tg-media/:msgId", authMiddleware, sh.TelegramMediaHTTP)
 	app.Get("/model-options/:agentType", authMiddleware, sh.ModelOptions)
 	// 不必重啟就重新抓各 CLI 的模型清單；會等到抓完才回（數秒），failed 為抓取失敗的 agent_type。
 	app.Post("/model-options/refresh", authMiddleware, func(c *fiber.Ctx) error {
@@ -336,6 +338,11 @@ func Start(ctx context.Context) (*Server, error) {
 	app.Get("/quota", authMiddleware, qh.GetAll)
 	app.Get("/quota/:provider", authMiddleware, qh.Get)
 	app.Post("/quota/:provider/refresh", authMiddleware, qh.Refresh)
+
+	tgMgr := tgclient.NewManager(cfg.TelegramClient, database)
+	_ = tgMgr.Start(ctx)
+	sh.TelegramHistory = tgMgr.HistoryPage
+	sh.TelegramMedia = tgMgr.OpenMedia
 
 	app.Use("/sessions/:id/ws", func(c *fiber.Ctx) error {
 		if fiberws.IsWebSocketUpgrade(c) {

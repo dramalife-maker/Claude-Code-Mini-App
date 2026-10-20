@@ -132,6 +132,15 @@ type serverMsg struct {
 	Author       string             `json:"author,omitempty"`    // 說話者暱稱；空字串＝擁有者。presence 事件中為事件主角
 	Online       []string           `json:"online,omitempty"`    // presence：目前在線名單
 	Handoff      *manualHandoffInfo `json:"handoff,omitempty"`   // type=handoff_available：自動交接未成功時的手動接手資訊
+
+	// Telegram 時間線（與 HTTP 分頁同一份 DTO；其他 agent 不使用）。
+	Telegram                *db.TelegramRef `json:"telegram,omitempty"`
+	Delivery                string          `json:"delivery,omitempty"`
+	ClientMessageID         string          `json:"client_message_id,omitempty"`
+	ReplacesClientMessageID string          `json:"replaces_client_message_id,omitempty"`
+	Error                   string          `json:"error,omitempty"`      // type=delivery 的送達錯誤
+	SyncState               string          `json:"sync_state,omitempty"` // type=sync（Telegram）：ready／offline
+	TelegramScope           *tgScope        `json:"telegram_scope,omitempty"`
 }
 
 type shellPendingPayload struct {
@@ -272,6 +281,10 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			q := quotaSvc.Get(agentType)
 			p := q.ToPayload()
 			syncMsg.Quota = &p
+		}
+		if agentType == agent.TypeTelegram {
+			syncMsg.SyncState = telegramSyncStateFn(sessionID)
+			syncMsg.TelegramScope = syncData.TelegramScope
 		}
 		syncMsg.Model = sessionModelPayload(sess)
 		syncMsg.Queue, syncMsg.QueuePaused = loadQueueState(database, sessionID)
@@ -436,7 +449,8 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 		// runAgent：與 WS 解耦，任務在背景執行。
 		// allowedOnce：僅「允許此操作」該次 retry 帶入 --allowedTools，不可寫入 DB（否則變成永久 allowlist）。
-		runAgent := func(prompt string, allowedOnce []string) {
+		// userMsgID：本次 prompt 對應的本機 user 訊息 ID（0 表示非使用者輸入，例如重試提示）；Telegram 發送據此綁定本機列。
+		runAgent := func(prompt string, allowedOnce []string, userMsgID int64, tgFiles []string) {
 			// 閘門必須在第一個 cancel 與任何寫入之前：維護中直接拒絕，不取消、不寫 running、不取出佇列。
 			release, err := admitWork()
 			if err != nil {
@@ -483,7 +497,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			broadcast(serverMsg{Type: "status", Value: StateThinking})
 
-			extra := map[string]string{}
+			extra := map[string]string{
+				"miniapp_session_id": sessionID,
+			}
 			if pm != "" {
 				extra[agent.ArgPermissionMode] = pm
 			}
@@ -501,6 +517,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			}
 			if s.Effort != "" && agentType != agent.TypeCursor {
 				extra[agent.ArgEffort] = s.Effort
+			}
+			if agentType == agent.TypeTelegram && userMsgID > 0 {
+				extra["tg_local_message_id"] = fmt.Sprint(userMsgID)
+			}
+			if agentType == agent.TypeTelegram && len(tgFiles) > 0 {
+				extra["tg_attachment_ids"] = strings.Join(tgFiles, ",")
 			}
 
 			opts := agent.RunOptions{
@@ -825,6 +847,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 
 						if !permDenied && !runFailed {
 							succeeded = true
+							if agentType == agent.TypeTelegram {
+								_ = database.DeleteEmptyMessage(msgID)
+							}
 							if err := database.FinalizeMessage(msgID); err != nil {
 								slog.Info(fmt.Sprintf("[ws] FinalizeMessage: %v", err))
 							}
@@ -916,6 +941,9 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 				}
 
 				if (err != nil || cancelled || (runFailed && err == nil)) && !permDenied {
+					if agentType == agent.TypeTelegram && !runFailed {
+						_ = database.DeleteEmptyMessage(msgID)
+					}
 					if finErr := database.FinalizeMessage(msgID); finErr != nil {
 						slog.Info(fmt.Sprintf("[ws] FinalizeMessage (err/cancel path): %v", finErr))
 					}
@@ -961,6 +989,35 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			if who != "" {
 				prompt = "[" + who + "] " + prompt
 			}
+			// Telegram 的對話內容不進 messages 表：待傳氣泡只存在這次連線，重整後改向 Telegram 要最新頁。
+			// 佇列裡的項目也只出列，不晉升成歷史列。
+			if agentType == agent.TypeTelegram {
+				content := input.Data
+				files := input.AttachmentIDs
+				if queued != nil {
+					if err := database.DeleteQueuedMessage(sessionID, queued.ID); err != nil {
+						return err
+					}
+					content = queued.Content
+					files = queued.AttachmentIDs
+				}
+				id := time.Now().UnixNano()
+				broadcast(serverMsg{
+					Type: "user_message", ID: id, Content: content, Author: who,
+					CreatedAt:       time.Now().UTC().Format("2006-01-02 15:04:05"),
+					ClientMessageID: fmt.Sprint(id), Delivery: "pending",
+				})
+				if input.RequestID != "" {
+					send(serverMsg{Type: "input_accepted", RequestID: input.RequestID})
+				}
+				// 附件走 sendMedia，不把伺服器路徑當成聊天文字。
+				caption := content
+				if who != "" {
+					caption = "[" + who + "] " + caption
+				}
+				runAgent(caption, nil, id, files)
+				return nil
+			}
 			var m *db.Message
 			if queued != nil {
 				m, err = database.PromoteQueuedMessage(sessionID, *queued)
@@ -974,7 +1031,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 			if input.RequestID != "" {
 				send(serverMsg{Type: "input_accepted", RequestID: input.RequestID})
 			}
-			runAgent(prompt, nil)
+			runAgent(prompt, nil, m.ID, nil)
 			return nil
 		}
 
@@ -1503,7 +1560,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					if err := database.UpdateAllowedTools(sessionID, nil); err != nil {
 						slog.Info(fmt.Sprintf("[ws] UpdateAllowedTools: %v", err))
 					}
-					runAgent("please retry the previous operation", once)
+					runAgent("please retry the previous operation", once, 0, nil)
 				})
 
 			case "deny_once":
@@ -1527,7 +1584,7 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 					}
 					// 使用者拒絕代表計畫被打斷，後面排隊的不自動接著跑。
 					pauseQueue()
-					runAgent("[Permission denied by user. Please acknowledge that you cannot perform the requested operation and stop.]", nil)
+					runAgent("[Permission denied by user. Please acknowledge that you cannot perform the requested operation and stop.]", nil, 0, nil)
 				})
 
 			case "set_mode":

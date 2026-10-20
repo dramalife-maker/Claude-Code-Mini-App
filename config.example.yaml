@@ -72,3 +72,12 @@ db:
 #     - git
 #     - ls
 #     - echo
+
+# Telegram MTProto 個人帳號客戶端（api_id 與 api_hash 請至 my.telegram.org 申請）
+# 啟用後可透過暗號 tg://@username 建立秘密聊天室與朋友直接通訊
+# telegram_client:
+#   enabled: true
+#   api_id: 12345678
+#   api_hash: "0123456789abcdef0123456789abcdef"
+#   default_target: "@friend_username"
+#   session_file: "./telegram.session"

@@ -38,6 +38,13 @@ func (b *broadcaster) Subscribe(sessionID string, send func(serverMsg) bool) (un
 	}
 }
 
+// has 回報該 session 目前是否有任何訂閱連線（沒有人在看就不必組裝事件）。
+func (b *broadcaster) has(sessionID string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.subs[sessionID]) > 0
+}
+
 // Broadcast 將訊息送給該 session 所有訂閱連線
 func (b *broadcaster) Broadcast(sessionID string, msg serverMsg) {
 	b.mu.Lock()

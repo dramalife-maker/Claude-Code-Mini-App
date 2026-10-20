@@ -25,6 +25,17 @@ type Message struct {
 	Author        string       `json:"author,omitempty"` // 說話者；空字串＝擁有者
 	AttachmentIDs []string     `json:"-"`
 	Attachments   []Attachment `json:"attachments,omitempty"`
+	Telegram      *TelegramRef `json:"telegram,omitempty"`
+	Delivery      string       `json:"delivery,omitempty"`
+	// ClientMessageID 是尚未取得遠端識別的本機待傳項目的穩定識別；已有遠端識別的列為空。
+	ClientMessageID string `json:"client_message_id,omitempty"`
+}
+
+// TelegramRef 是 Telegram 私聊訊息的遠端識別（message_id 以數字傳遞；超過 JS 安全整數時由前端以字串游標處理）。
+type TelegramRef struct {
+	AccountID string `json:"account_id"`
+	PeerID    string `json:"peer_id"`
+	MessageID int64  `json:"message_id"`
 }
 
 // AddMessage 寫入一則已完成的訊息；author 為說話者暱稱，空字串代表擁有者。
@@ -123,6 +134,15 @@ func (db *DB) UpdateMessageResultText(msgID int64, resultText string) error {
 // FinalizeMessage marks a message as done.
 func (db *DB) FinalizeMessage(msgID int64) error {
 	_, err := db.Exec(`UPDATE messages SET status = ? WHERE id = ?`, MessageStatusDone, msgID)
+	return err
+}
+
+// DeleteEmptyMessage 刪除未產生內容的訊息（如 Telegram 直接轉發無回覆之情況）。
+func (db *DB) DeleteEmptyMessage(msgID int64) error {
+	_, err := db.Exec(
+		`DELETE FROM messages WHERE id = ? AND TRIM(COALESCE(content, '')) = ''`,
+		msgID,
+	)
 	return err
 }
 

@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/auth"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 )
@@ -143,8 +144,12 @@ func (h *ShareHandler) Create(c *fiber.Ctx) error {
 		return jsonErr(c, 400, err.Error())
 	}
 	sessionID := c.Params("id")
-	if _, err := h.db.GetSession(sessionID); err != nil {
+	sess, err := h.db.GetSession(sessionID)
+	if err != nil {
 		return jsonErr(c, 404, "session 不存在")
+	}
+	if sess.AgentType == agent.TypeTelegram {
+		return jsonErr(c, 400, "Telegram 會話不支援分享")
 	}
 	s, err := h.db.CreateShare(sessionID, body.Role, body.Mode, ttl)
 	if err != nil {

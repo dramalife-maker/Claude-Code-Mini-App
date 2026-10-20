@@ -1,7 +1,11 @@
 package api
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -9,6 +13,7 @@ import (
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/gitinfo"
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/tgclient"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -46,6 +51,10 @@ type SessionHandler struct {
 	db *db.DB
 	// OnSharesRevoked 在刪除 session 而撤銷其分享後呼叫（用來踢掉訪客連線）；可為 nil。
 	OnSharesRevoked func(shareIDs []int64)
+	// TelegramHistory 供 pagination=telegram 使用（server 接 Manager.HistoryPage）；nil 代表尚未可用（503）。
+	TelegramHistory func(ctx context.Context, sessionID string, limit int, cursor string) (*tgclient.HistoryPageResult, error)
+	// TelegramMedia 串流一則 Telegram 檔案（server 接 Manager.OpenMedia）。不落地。
+	TelegramMedia func(ctx context.Context, sessionID string, msgID int) (name, mime string, body io.ReadCloser, err error)
 }
 
 func NewSessionHandler(database *db.DB) *SessionHandler {
@@ -151,6 +160,42 @@ func (h *SessionHandler) Create(c *fiber.Ctx) error {
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
 	}
+
+	// 密技暗號偵測：若 Name、WorkDir 或 Description 以 "tg://" 開頭，
+	// 自動解鎖隱藏的 Telegram 秘密聊天室會話。
+	secretTarget := ""
+	trimmedName := strings.TrimSpace(body.Name)
+	trimmedWorkDir := strings.TrimSpace(body.WorkDir)
+	trimmedDesc := strings.TrimSpace(body.Description)
+
+	if strings.HasPrefix(trimmedName, "tg://") {
+		secretTarget = strings.TrimPrefix(trimmedName, "tg://")
+		body.AgentType = agent.TypeTelegram
+		if secretTarget != "" {
+			body.Name = "TG: " + secretTarget
+		} else {
+			body.Name = "Telegram"
+		}
+	} else if strings.HasPrefix(trimmedWorkDir, "tg://") {
+		secretTarget = strings.TrimPrefix(trimmedWorkDir, "tg://")
+		body.AgentType = agent.TypeTelegram
+		body.WorkDir = "" // 清空路徑避免非法工作目錄
+		if body.Name == "" {
+			if secretTarget != "" {
+				body.Name = "TG: " + secretTarget
+			} else {
+				body.Name = "Telegram"
+			}
+		}
+	} else if strings.HasPrefix(trimmedDesc, "tg://") {
+		secretTarget = strings.TrimPrefix(trimmedDesc, "tg://")
+		body.AgentType = agent.TypeTelegram
+	}
+
+	if body.AgentType == agent.TypeTelegram && secretTarget != "" {
+		body.Description = "tg_target:" + secretTarget
+	}
+
 	if body.AgentType == "" {
 		body.AgentType = "claude"
 	}
@@ -250,6 +295,28 @@ func (h *SessionHandler) ReadAll(c *fiber.Ctx) error {
 
 func (h *SessionHandler) Messages(c *fiber.Ctx) error {
 	id := c.Params("id")
+	// pagination=telegram 只給 Telegram session；沒有該參數的非 Telegram 請求維持原本的完整陣列。
+	args := c.Context().QueryArgs()
+	paginated := args.Has("pagination")
+	s, err := h.db.GetSession(id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+	}
+	if paginated {
+		if string(args.Peek("pagination")) != "telegram" {
+			return c.Status(400).JSON(fiber.Map{"error": "未知的 pagination 模式", "code": "invalid_pagination"})
+		}
+		if s == nil {
+			return historyError(c, tgclient.ErrHistorySessionNotFound)
+		}
+		if s.AgentType != agent.TypeTelegram {
+			return historyError(c, tgclient.ErrHistoryNotTelegram)
+		}
+	}
+	if s != nil && s.AgentType == agent.TypeTelegram {
+		return h.telegramMessages(c, s, paginated)
+	}
+
 	q := db.MessageQuery{SessionID: id, IncludeResult: true}
 	// 快照分享的訪客（authMiddleware 寫入）只能讀到 snapshot_msg_id 為止。
 	if maxID, ok := c.Locals("share_snapshot_msg_id").(int64); ok {

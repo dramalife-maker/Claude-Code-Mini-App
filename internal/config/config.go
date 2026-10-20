@@ -19,6 +19,8 @@ type Config struct {
 	McpToken string `mapstructure:"mcp_token"`
 	// McpMaxHops 為 session 互問（send_message / ask_session 帶 from_session_id）的跳數上限，預設 5。
 	McpMaxHops int `mapstructure:"mcp_max_hops"`
+	// TelegramClient MTProto 個人客戶端設定（api_id 與 api_hash）
+	TelegramClient TelegramClient `mapstructure:"telegram_client"`
 }
 
 // Notify 任務結束時的 Telegram 推播設定。
@@ -55,6 +57,15 @@ type DB struct {
 	Path string `mapstructure:"path"`
 }
 
+// TelegramClient MTProto 個人帳號客戶端設定。
+type TelegramClient struct {
+	Enabled       bool   `mapstructure:"enabled"`
+	APIID         int    `mapstructure:"api_id"`
+	APIHash       string `mapstructure:"api_hash"`
+	DefaultTarget string `mapstructure:"default_target"` // 預設聊天對象（@username 或 ID）
+	SessionFile   string `mapstructure:"session_file"`   // session 儲存路徑，預設 ./telegram.session
+}
+
 func Load() (*Config, error) {
 	viper.SetConfigName("config")
 	viper.SetConfigType("yaml")
@@ -82,6 +93,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("notify.include_prompt", true)
 	viper.SetDefault("notify.prompt_preview_len", 120)
 	viper.SetDefault("mcp_max_hops", 5)
+	viper.SetDefault("telegram_client.enabled", false)
+	viper.SetDefault("telegram_client.session_file", "./telegram.session")
 
 	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("讀取 config.yaml 失敗: %w", err)

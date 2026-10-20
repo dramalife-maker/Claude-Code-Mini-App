@@ -9,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/jerry12122/Claude-Code-Mini-App/internal/agent"
 	"github.com/jerry12122/Claude-Code-Mini-App/internal/db"
 )
 
@@ -40,6 +41,10 @@ func guestAuth(database *db.DB, c *fiber.Ctx, token string) error {
 	sh := &ga.Share
 	if !sh.Active(time.Now()) {
 		return guestDeny(c, http.StatusUnauthorized, "share_ended", "分享已結束")
+	}
+	// Telegram 是私聊，不開放分享；關閉前建立的舊分享也一併擋下。
+	if sess, err := database.GetSession(sh.SessionID); err == nil && sess.AgentType == agent.TypeTelegram {
+		return guestDeny(c, http.StatusForbidden, "share_forbidden", "Telegram 會話不支援分享")
 	}
 	allowed, err := guestRouteAllowed(database, c, ga)
 	if err != nil {
