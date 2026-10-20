@@ -27,12 +27,14 @@
 ## 6. 設定精靈前端
 
 - [x] 6.1 新增 `internal/static/js/setup/setupForm.js`（不依賴 DOM 的純函式）：與伺服器相同的欄位驗證規則、以 `crypto.getRandomValues` 產生符合規則的隨機密碼、白名單文字解析（接受逗號與換行分隔的正整數）、組出 `POST /setup/save` 的請求內容（Mini App 關閉時不含 `bot_token` 與白名單）、從網址讀取設定憑證。驗證：新增 `scripts/setup-wizard.test.cjs` 的 `TestPasswordRules`、`TestGeneratedPasswordValid`（重複產生 200 次皆通過規則）、`TestPayloadMiniAppOff`、`TestWhitelistParse`、`TestReadSetupToken`，由 `node --test scripts/*.test.cjs` 執行。
-- [ ] 6.2 [after: 6.1, 4.2] 完成 Guided wizard flow 與 Install guidance without blocking setup 的畫面部分：新增 `internal/static/js/setup/SetupWizard.js` 並在 `app.js` 啟動時先查 `/setup/status`：`needs_setup` 為真顯示精靈，否則維持原流程。步驟依序為歡迎與 CLI 檢查結果（僅提示，不擋儲存）、密碼與連接埠與資料庫路徑與「允許區網裝置登入」（預設關）、Telegram Mini App 開關（預設關，開啟才顯示 Token 與白名單欄位與需要外部 HTTPS 網址的說明）、確認儲存；讀到憑證後用 `history.replaceState` 清掉網址列；`switched` 時導向首頁登入，`restart_required` 時顯示新網址與重新啟動提示；不提供 `no_auth`。`index.html` 加入新檔，`static.IsPublic` 已允許 `js/` 底下的檔案所以不需改白名單。驗證：以 esbuild 以 JSX 載入器解析兩個新檔與 `app.js` 皆無語法錯誤；`go test ./internal/static/` 通過（含 production 建置的資源清單）；瀏覽器實測列在 8.1。
+- [x] 6.2 [after: 6.1, 4.2] 完成 Guided wizard flow 與 Install guidance without blocking setup 的畫面部分：新增 `internal/static/js/setup/SetupWizard.js` 並在 `app.js` 啟動時先查 `/setup/status`：`needs_setup` 為真顯示精靈，否則維持原流程。步驟依序為歡迎與 CLI 檢查結果（僅提示，不擋儲存）、密碼與連接埠與資料庫路徑與「允許區網裝置登入」（預設關）、Telegram Mini App 開關（預設關，開啟才顯示 Token 與白名單欄位與需要外部 HTTPS 網址的說明）、確認儲存；讀到憑證後用 `history.replaceState` 清掉網址列；`switched` 時導向首頁登入，`restart_required` 時顯示新網址與重新啟動提示；不提供 `no_auth`。`index.html` 加入新檔，`static.IsPublic` 已允許 `js/` 底下的檔案所以不需改白名單。驗證：以 esbuild 以 JSX 載入器解析兩個新檔與 `app.js` 皆無語法錯誤；`go test ./internal/static/` 通過（含 production 建置的資源清單）；瀏覽器實測列在 8.1。
 
 ## 7. 文件
 
-- [ ] 7.1 [after: 6.2] 改寫 `docs/getting-started.zh-TW.md` 與 `docs/getting-started.md` 的「建立設定檔」段落，以精靈為主、手動編輯為輔：說明首次啟動會出現精靈、Mini App 為可選、純 server 在遠端機器需用 SSH 連接埠轉發並從 log 取得含憑證的網址、Windows 設定檔權限提醒；同步更新 `README.md`、`README.zh-TW.md` 的快速開始與 `config.example.yaml` 開頭註解（`bot_token` 現為可選）。驗證：文件內容審閱，確認不再要求「只用網頁也要填 Bot Token」，所有指令與連結可點擊／可執行，中英文版本內容一致。
+- [x] 7.1 [after: 6.2] 改寫 `docs/getting-started.zh-TW.md` 與 `docs/getting-started.md` 的「建立設定檔」段落，以精靈為主、手動編輯為輔：說明首次啟動會出現精靈、Mini App 為可選、純 server 在遠端機器需用 SSH 連接埠轉發並從 log 取得含憑證的網址、Windows 設定檔權限提醒；同步更新 `README.md`、`README.zh-TW.md` 的快速開始與 `config.example.yaml` 開頭註解（`bot_token` 現為可選）。驗證：文件內容審閱，確認不再要求「只用網頁也要填 Bot Token」，所有指令與連結可點擊／可執行，中英文版本內容一致。
 
 ## 8. 實機驗證
 
 - [ ] 8.1 [after: 1.2, 3.2, 4.4, 5.1, 6.2] 在乾淨資料夾（沒有 `config.yaml`）完整走一次：桌面版與純 server 版各一次，每次各走 Mini App 關閉與開啟兩條路徑；另驗證連接埠變更的提示、已有設定檔時精靈不出現、從區網另一台裝置無法開啟設定 API。驗證：逐項記錄實測結果與觀察到的限制；沒有條件的項目保留為未驗證，不宣稱完成。
+
+2026-10-20 實測：四條設定流程、變更埠／重啟、已有設定不顯示精靈均通過；只有第二台區網裝置的連線拒絕尚未實測，故 8.1 保持未完成。詳見 [verification.md](verification.md)。

@@ -2,7 +2,7 @@
 
 > A self-hosted **multi-agent console** for Claude Code, Cursor Agent, Codex, Kiro and Antigravity. Run and supervise all your coding agents in one place — from a desktop window, any browser, or a Telegram Mini App on your phone. **One Go binary**, no separate frontend build.
 
-[![Version](https://img.shields.io/badge/version-0.14.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
+[![Version](https://img.shields.io/badge/version-0.15.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
 
 [繁體中文](README.zh-TW.md)
 
@@ -26,7 +26,7 @@ All three talk to the same server and see the same sessions in real time.
 
 1. Download the Windows x64 zip or Linux x64 tar.gz from [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest). Extract the whole folder, including `internal/static/`.
 2. Install and sign in to **one** agent on that computer. [CLI links and checks](docs/getting-started.md#2-install-and-sign-in-to-one-agent) include the required command names.
-3. Copy `config.example.yaml` to `config.yaml` and follow the [configuration steps](docs/getting-started.md#3-create-your-configuration). Password sign-in currently requires a Bot Token even without Telegram remote access; replace the example password.
+3. Start without `config.yaml` and follow the [first-run wizard](docs/getting-started.md#3-create-your-configuration) to set a password and check available CLIs. Telegram Mini App is off by default; local use needs no Bot Token or domain.
 4. Run **one** executable: Windows desktop `claude-miniapp-desktop.exe`, Windows server `claude-miniapp.exe`, or Linux server `./claude-miniapp`. For server builds, open <http://127.0.0.1:8080> on the host and enter `web.password`.
 5. [Create a session and send a test message](docs/getting-started.md#5-create-your-first-session). The working directory is a path on the server computer.
 

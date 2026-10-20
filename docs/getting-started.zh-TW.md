@@ -54,61 +54,49 @@ Windows 控制台不能直接使用只安裝在 WSL 裡的 CLI。若 CLI 裝在 
 
 ## 3. 建立設定檔
 
-先選一種方式：
+首次啟動時不必先建立 `config.yaml`，程式會開啟設定精靈；已有設定檔就直接沿用，絕不覆寫。依下方第 4 步啟動：桌面視窗會自動顯示精靈；純 server 版請開啟終端機或 `logs/server.log` 印出的完整本機設定網址（包含 `?setup=…`）。
 
-| 方式 | 適用情境 | 需要 Telegram Bot Token？ |
-|---|---|---|
-| A：密碼登入（建議） | 桌面版、本機瀏覽器；之後可接 Telegram | **目前需要**，即使只用網頁 |
-| B：免登入試用 | 已隔離網路的本機開發環境 | 不需要 |
+精靈依序引導：
 
-### A：密碼登入
+1. **本機 CLI 檢查：** 顯示已安裝的代理與版本；找不到時提供官方安裝連結，仍可完成設定。
+2. **登入與儲存：** 輸入至少 8 個字元的密碼，或產生隨機密碼並妥善保存；空白與 `change-me` 不可使用。沒有特殊需求就保留連接埠 `8080`、資料庫路徑 `./claude-miniapp.db`；資料庫目錄必須已存在且可寫入。「允許區網裝置登入」預設關閉。
+3. **Telegram Mini App：** 預設關閉。只用桌面版或瀏覽器不需要 Bot Token、網域或 Tunnel；有需要才開啟，填入 BotFather Token 與數字 Telegram User ID。Telegram 需要外部可連入的 HTTPS 網址，精靈不會建立 Tunnel。
+4. **確認並儲存：** 在程式工作目錄寫入最小必要的 `config.yaml`（發布包的桌面版會寫在 exe 旁）。連接埠未變時直接切到密碼登入；有變更則完整結束、重啟程式，再開啟畫面顯示的新網址。
 
-1. 開啟 Telegram 的 [@BotFather](https://t.me/BotFather)，送出 `/newbot`，依提示建立 Bot 並保存 Token。[官方建立步驟](https://core.telegram.org/bots/tutorial#obtain-your-bot-token)。本機使用暫時不需要公開網址。
-2. 在解壓資料夾內，將 `config.example.yaml` 複製成 `config.yaml`（注意不要變成 `config.yaml.txt`）。
-3. 使用文字編輯器將 `config.yaml` **整份內容替換**成以下設定，換掉兩個提示字串；不要保留範例密碼：
+設定 API 只接受帶有一次性設定憑證的本機連線。頁面讀到憑證後會從網址列移除；若儲存前重整，請重新開啟日誌中的完整網址。每次啟動憑證都會變更。完成後精靈與儲存 API 不提供編輯功能；之後需手動修改 `config.yaml` 再重啟。
+
+**遠端 Linux server：** 在自己的電腦轉發相同連接埠到 server：
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 user@your-server
+```
+
+保持 SSH 執行，在自己電腦的瀏覽器開啟遠端 server 日誌中的完整 `http://127.0.0.1:8080/?setup=…` 網址。自己的 8080 埠必須空閒；Host 檢查要求轉發前後連接埠相同。首次設定不能使用區網網址或公開 Tunnel。
+
+**檔案權限：** 設定檔以明文保存密碼與 Bot Token。Unix 寫入權限為 `0600`；Windows 繼承資料夾權限，請放在私人且可寫入的資料夾。儲存需要支援硬連結的檔案系統（例如 NTFS）；若隨身碟寫入失敗，請移到支援且可寫入的磁碟後重試。
+
+### 手動設定（選用）
+
+也可略過精靈，在程式目錄建立以下 `config.yaml`，替換範例密碼。這份設定允許本機密碼登入，不需要 Telegram：
 
 ```yaml
-bot_token: "貼上 BotFather 給你的 Token"
-whitelist_tg_ids: []
 no_auth: false
 web:
   password: "換成你自己的長密碼"
   allowed_cidrs:
-    - "127.0.0.1/32"
+    - "127.0.0.0/8"
     - "::1/128"
-  trusted_proxies:
-    - "127.0.0.1/32"
-    - "::1/128"
-  session_ttl: "168h"
 server:
   port: 8080
 db:
   path: "./claude-miniapp.db"
 ```
 
-這份設定先只允許本機密碼登入，Telegram 白名單與通知稍後再設定。**桌面視窗也使用同一個密碼**，不是 Telegram 密碼或代理帳號密碼。其他選項與預設值見 [設定範本](../config.example.yaml)。
-
-### B：免登入試用
-
-只在已用防火牆或網路隔離確保他人無法連入的環境使用。`no_auth` 會略過擁有者驗證；**程式仍監聽所有網路介面，不會自動限制為 localhost**。不要開 Tunnel、路由器連接埠轉發或對外防火牆規則。
-
-建立 `config.yaml`，內容如下：
-
-```yaml
-bot_token: ""
-whitelist_tg_ids: []
-no_auth: true
-server:
-  port: 8080
-db:
-  path: "./claude-miniapp.db"
-```
-
-若無法確認網路隔離，使用 A。之後要接 Telegram，先改回 A 的設定並重啟。
+桌面視窗也使用同一個密碼。進階選項見[設定範本](../config.example.yaml)。精靈不提供 `no_auth`；正常使用請保留登入驗證。
 
 ## 4. 啟動與登入
 
-**Windows 桌面版：** 雙擊 `claude-miniapp-desktop.exe`，視窗會自動開啟。若採 A，輸入剛設定的 `web.password`；採 B 則直接進入。
+**Windows 桌面版：** 雙擊 `claude-miniapp-desktop.exe`，視窗會自動開啟。首次啟動先完成精靈；已有設定時輸入 `web.password`。
 
 **Windows 純 server：** 在解壓資料夾開啟 PowerShell，執行：
 
@@ -122,7 +110,7 @@ db:
 ./claude-miniapp
 ```
 
-server 啟動後保持終端機開著，在**同一台電腦**開啟 <http://127.0.0.1:8080>，依 A／B 登入。不要同時啟動桌面版與 server 版占用同一個 port；桌面版已包含 server，也可用瀏覽器連入。
+server 啟動後保持終端機開著，在**同一台電腦**首次開啟日誌中含憑證的設定網址；完成後開啟 <http://127.0.0.1:8080>，輸入設定的密碼。不要同時啟動桌面版與 server 版占用同一個 port；桌面版已包含 server，也可用瀏覽器連入。
 
 桌面版按 × 只會縮到系統匣；要關閉或套用修改後的設定，使用系統匣「結束」或 Ctrl+Q，再重開。server 用 Ctrl+C 結束。修改 `config.yaml` 後需要重新啟動。
 
@@ -143,7 +131,11 @@ Claude 顯示「需要你的回答」時，請按題目單選、多選或填寫�
 
 ## 6. 選用：從 Telegram 開啟
 
-先完成第 5 步。本節使用 **A 的設定、`no_auth: false`**，並讓同一台電腦上的 Tunnel 將公開 HTTPS 網址轉到本機 server。
+先完成第 5 步。本節保留 **`no_auth: false`**，並讓同一台電腦上的 Tunnel 將公開 HTTPS 網址轉到本機 server。
+
+### 建立 Bot（尚未設定時）
+
+到 [@BotFather](https://t.me/BotFather) 送出 `/newbot`，依[官方建立步驟](https://core.telegram.org/bots/tutorial#obtain-your-bot-token)取得 Token。將 `bot_token: "你的 Token"` 加入 `config.yaml`；已在精靈填入就不必重建 Bot。
 
 ### 填入自己的 Telegram ID
 
@@ -174,7 +166,7 @@ cloudflared tunnel --url http://127.0.0.1:8080
 
 ### 設定 Telegram 開啟按鈕
 
-1. 在 @BotFather 送 `/setmenubutton`，選擇第 3 步建立的 Bot。
+1. 在 @BotFather 送 `/setmenubutton`，選擇自己的 Bot。
 2. 依提示填入剛取得的 HTTPS 網址與按鈕文字，例如「開啟控制台」。[官方選單按鈕說明](https://core.telegram.org/bots/webapps#launching-mini-apps-from-the-menu-button)。
 3. 回到該 Bot 的私聊，點選單按鈕，**在 Telegram 內開啟**。
 4. 應直接看到和電腦相同的 Session；送第二則測試訊息確認可收到回覆。
@@ -185,8 +177,8 @@ cloudflared tunnel --url http://127.0.0.1:8080
 
 | 現象 | 先做什麼 |
 |---|---|
-| 找不到 `config.yaml`／靜態頁 404 | 從解壓資料夾啟動，確認檔名不是 `.yaml.txt`，且 `internal/static/index.html` 存在；不要只搬執行檔 |
-| 缺少 `bot_token` | A 必須填真實 Bot Token；目前還不支援「不填 Token、只開網頁密碼」的組合 |
+| 沒有出現設定精靈／靜態頁 404 | 已有 `config.yaml` 時不會出現精靈；首次使用請從完整解壓資料夾啟動並開啟日誌的設定網址，確認檔名不是 `.yaml.txt` |
+| 缺少 `bot_token` 或 `web.password` | 本機使用只需有效的網頁密碼（至少 8 字元、不可為 `change-me`）；開啟 Telegram 才需要真實 Bot Token |
 | 密碼錯誤／仍要求登入 | 輸入 `web.password`，修改設定後完整退出並重啟；桌面版也需要登入 |
 | `僅允許內網存取`／403 | 先在主機用 `127.0.0.1`；區網使用者需把自己的可信網段加入 `web.allowed_cidrs`，不要直接允許全網；Telegram 則確認從 Bot 選單開啟且 ID 在白名單 |
 | 8080 被占用 | 關掉先前的 server 或系統匣中的桌面版；或修改 `server.port`，並一併更換瀏覽器與 Tunnel 的 port |
@@ -213,8 +205,7 @@ cd Claude-Code-Mini-App
 Windows PowerShell：
 
 ```powershell
-Copy-Item config.example.yaml config.yaml
-# 依第 3 步編輯 config.yaml，再選擇一種建置方式
+# 不必先建立 config.yaml，首次執行依第 3 步完成精靈；選擇一種建置方式
 go build -o claude-miniapp.exe ./cmd/server
 .\claude-miniapp.exe
 ```
@@ -229,8 +220,7 @@ go build -tags production -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe
 Linux／macOS 純 server：
 
 ```bash
-cp config.example.yaml config.yaml
-# 依第 3 步編輯 config.yaml
+# 不必先建立 config.yaml，首次執行依第 3 步完成精靈
 go build -o claude-miniapp ./cmd/server
 ./claude-miniapp
 ```

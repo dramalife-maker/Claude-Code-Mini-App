@@ -756,4 +756,5 @@ function App() {
 }
 
 // /share/<token> 進入訪客模式（只看／參與單一聊天室，不載入側欄、設定、快速切換）；其餘為擁有者主介面。
-ReactDOM.createRoot(document.getElementById('root')).render(isGuestMode ? <GuestApp /> : <App />);
+// 先等 /setup/status。needs_setup 才進精靈；查詢中與失敗都不掛 App。
+ReactDOM.createRoot(document.getElementById('root')).render(<SetupGate guest={isGuestMode} />);

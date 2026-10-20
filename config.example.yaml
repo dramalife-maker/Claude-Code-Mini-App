@@ -1,5 +1,7 @@
 # 首次使用：docs/getting-started.zh-TW.md（English: docs/getting-started.md）
-# no_auth: false 時目前仍必填，即使只使用桌面版／網頁密碼登入。
+# 沒有 config.yaml 時會開啟首次設定精靈，通常不需手動複製本檔。
+# bot_token 僅在使用 Telegram Mini App 時需要；只用桌面版／網頁可省略，
+# 但 web.password 必須至少 8 個字元且不可為 change-me。
 bot_token: "YOUR_BOT_TOKEN_HERE"
 
 whitelist_tg_ids:

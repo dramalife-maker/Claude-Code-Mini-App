@@ -144,6 +144,10 @@ func handleSetupSave(c *fiber.Ctx, env setupSaveEnv) error {
 	env.mu.Lock()
 	defer env.mu.Unlock()
 
+	if _, err := os.Lstat(env.configPath); err == nil {
+		return setupJSON(c, 409, "already_configured", "", "設定檔已存在")
+	}
+
 	in, field, err := decodeSetupInput(c.Body())
 	if err != nil {
 		return setupJSON(c, 400, "invalid_input", field, "JSON 格式不正確")

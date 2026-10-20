@@ -30,8 +30,8 @@
 
 1. **解壓整個資料夾**：執行檔必須與 `internal/static/`（前端）放在一起，不能只搬 exe。
 2. 在同一台機器、同一使用者下安裝並登入一個代理（`claude`、`codex`、`kiro-cli`、`cursor-agent`、`agy`），先在終端機確認可以對話。
-3. 把 `config.example.yaml` 複製為 `config.yaml`，依教學填入 `bot_token`、更換 `web.password`。目前即使只用桌面／網頁密碼登入仍需 Bot Token；Telegram 入口另需白名單與 BotFather 選單設定。
-4. 桌面與 server 二選一啟動。server 版在主機開 <http://127.0.0.1:8080>；桌面版自動開視窗。輸入 `web.password` 後建立 Session，填主機上的工作目錄並送測試訊息。
+3. 不必先建立 `config.yaml`，首次啟動會顯示設定精靈，協助設定密碼與檢查 CLI。Telegram Mini App 預設關閉；只用桌面／本機網頁不需要 Bot Token 或網域。已有設定檔會直接沿用。
+4. 桌面與 server 二選一啟動。桌面版自動開啟精靈；server 版在主機開啟日誌中含一次性憑證的完整設定網址。儲存後輸入設定的密碼，再建立 Session，填主機上的工作目錄並送測試訊息。變更連接埠時依畫面提示重啟。
 
 `no_auth: true` 僅供已隔離的本機開發環境：它不會限制 server 只監聽 localhost，不可搭配公開 Tunnel。
 

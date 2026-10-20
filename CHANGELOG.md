@@ -4,6 +4,18 @@
 
 發版流程：更新 `VERSION`、`internal/version/version.go`、README 版本徽章與本檔 → commit → 打 `vX.Y.Z` tag 並 push，GitHub Actions 會自動建置並發佈 Release（說明文字取自本檔對應段落）。
 
+## [0.15.0] - 2026-10-20
+
+### 新增
+- 首次使用設定精靈：沒有 `config.yaml` 時直接引導設定登入密碼、連接埠與資料庫路徑，可產生隨機密碼；區網登入與 Telegram Mini App 預設關閉，只用桌面版或本機網頁不需要 Bot Token、網域或 Tunnel
+- 精靈檢查 Claude、Codex、Cursor、Kiro 與 Antigravity CLI 的可用性與版本，提供官方安裝連結；沒有安裝 CLI 也能先儲存設定
+- 設定模式僅接受本機連線，驗證 Host 與一次性憑證；設定檔原子寫入且不覆寫已有檔案。儲存需要支援硬連結的檔案系統（例如 NTFS）
+- 連接埠不變時儲存後直接切換到密碼登入；變更連接埠時提示重啟與新網址。桌面版首次設定會寫在發布包 exe 旁邊
+
+### 變更
+- `bot_token` 改為可選；沒有 Token 時需有效的網頁密碼，並停用 Telegram initData 驗證與通知
+- 中英文快速開始改以精靈為主，補上遠端 server 透過 SSH 連接埠轉發進行首次設定的方式
+
 ## [0.14.0] - 2026-10-20
 
 ### 新增

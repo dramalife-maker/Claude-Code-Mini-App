@@ -54,61 +54,49 @@ A Windows console cannot directly invoke a CLI installed only inside WSL. If you
 
 ## 3. Create your configuration
 
-Choose one route:
+On first launch, leave `config.yaml` absent. The app opens a setup wizard; an existing configuration is used as-is and is never overwritten. Start the app using step 4 below. The desktop window opens the wizard automatically; for the server build, open the full local setup URL printed in the terminal or `logs/server.log` (including `?setup=…`).
 
-| Route | Use case | Telegram Bot Token needed? |
-|---|---|---|
-| A: Password sign-in (recommended) | Desktop, local browser, and optionally Telegram later | **Currently yes**, even for browser-only use |
-| B: No-auth trial | Local development with network access isolated | No |
+The wizard guides you through:
 
-### A: Password sign-in
+1. **Local CLI check:** see which agents are installed and their versions. Missing tools show official install links; you can still finish setup without one.
+2. **Sign-in and storage:** enter a password of at least 8 characters, or generate one and keep it somewhere safe. Blank passwords and `change-me` are rejected. Keep port `8080` and `./claude-miniapp.db` unless you need different values; the database directory must already exist and be writable. **Allow LAN devices to sign in** is off by default.
+3. **Telegram Mini App:** off by default. Desktop and browser use need no Bot Token, domain, or tunnel. Turn it on only if needed, then supply your BotFather token and numeric Telegram user IDs. Telegram requires an externally reachable HTTPS URL; the wizard does not create a tunnel.
+4. **Review and save:** writes a minimal `config.yaml` in the app's working directory (beside the packaged desktop executable). With the same port, it switches to password sign-in immediately. If you change the port, fully quit and restart, then open the new URL shown on screen.
 
-1. Open [@BotFather](https://t.me/BotFather) in Telegram, send `/newbot`, follow the prompts, and save the token. See the [official bot creation instructions](https://core.telegram.org/bots/tutorial#obtain-your-bot-token). Local use does not need a public URL yet.
-2. In the extracted folder, copy `config.example.yaml` to `config.yaml` (not `config.yaml.txt`).
-3. Open `config.yaml` in a text editor and **replace its entire contents** with the following. Replace both placeholder strings; do not keep an example password:
+Setup APIs accept only local connections with the one-time setup token. After the page reads the token, it removes it from the address bar; reopen the full logged URL if you reload before saving. The token changes each launch. After setup, the wizard and save API cannot edit your configuration. Edit `config.yaml` manually and restart for later changes.
+
+**Remote Linux server:** on your own computer, forward the same port to the server:
+
+```bash
+ssh -N -L 8080:127.0.0.1:8080 user@your-server
+```
+
+Keep SSH running and open the complete `http://127.0.0.1:8080/?setup=…` URL from the remote server's log in your local browser. Keep local port 8080 free; the Host check requires the forwarded port to match. A LAN URL or public tunnel cannot be used for first-run setup.
+
+**File permissions:** the configuration contains your password and any Bot Token in plaintext. Unix writes it with mode `0600`; Windows inherits its folder's permissions, so use a private writable folder. Saving requires a filesystem that supports hard links (for example NTFS); if writing fails on a removable drive, move the app to a supported writable drive and retry.
+
+### Manual configuration (optional)
+
+Instead of the wizard, create `config.yaml` in the app directory with the following, replacing the example password. This enables local password sign-in without Telegram:
 
 ```yaml
-bot_token: "PASTE_YOUR_BOTFATHER_TOKEN"
-whitelist_tg_ids: []
 no_auth: false
 web:
   password: "REPLACE_WITH_YOUR_OWN_LONG_PASSWORD"
   allowed_cidrs:
-    - "127.0.0.1/32"
+    - "127.0.0.0/8"
     - "::1/128"
-  trusted_proxies:
-    - "127.0.0.1/32"
-    - "::1/128"
-  session_ttl: "168h"
 server:
   port: 8080
 db:
   path: "./claude-miniapp.db"
 ```
 
-This initially permits password sign-in only from the local computer. Telegram access and notifications are configured later. **The desktop window uses this same password**, not your Telegram or agent password. Other options and defaults are in the [configuration example](../config.example.yaml).
-
-### B: No-auth trial
-
-Use this only when a firewall or network isolation already prevents other people from connecting. `no_auth` bypasses owner authentication; **the server still listens on all network interfaces, not just localhost**. Do not enable a tunnel, router port forwarding, or external firewall access.
-
-Create `config.yaml` with:
-
-```yaml
-bot_token: ""
-whitelist_tg_ids: []
-no_auth: true
-server:
-  port: 8080
-db:
-  path: "./claude-miniapp.db"
-```
-
-If you cannot confirm network isolation, choose A. Before connecting Telegram later, switch to A and restart.
+The desktop window uses this same password. See the [configuration example](../config.example.yaml) for advanced options. The wizard never offers `no_auth`; leave authentication enabled for normal use.
 
 ## 4. Start and sign in
 
-**Windows desktop:** Double-click `claude-miniapp-desktop.exe`. Its window opens automatically. For A, enter your `web.password`; B opens directly.
+**Windows desktop:** Double-click `claude-miniapp-desktop.exe`. Its window opens automatically. Complete the wizard on first launch; with an existing configuration, enter your `web.password`.
 
 **Windows server:** Open PowerShell in the extracted folder and run:
 
@@ -122,7 +110,7 @@ If you cannot confirm network isolation, choose A. Before connecting Telegram la
 ./claude-miniapp
 ```
 
-Keep the server terminal open. On **that same computer**, visit <http://127.0.0.1:8080> and sign in according to A / B. Do not run desktop and server builds on the same port simultaneously; the desktop app already includes the server and accepts browser connections.
+Keep the server terminal open. On **that same computer**, open the logged setup URL with its token on first launch; after setup, visit <http://127.0.0.1:8080> and enter your password. Do not run desktop and server builds on the same port simultaneously; the desktop app already includes the server and accepts browser connections.
 
 Closing the desktop window hides it to the tray. To exit or apply configuration changes, choose **結束 (Quit)** in the tray menu or press Ctrl+Q, then reopen. Stop the server with Ctrl+C. Changes to `config.yaml` require a restart.
 
@@ -145,7 +133,11 @@ Models load in the background. If the selector only shows **預設** (Default), 
 
 ## 6. Optional: Open from Telegram
 
-Complete step 5 first. Use **route A with `no_auth: false`**. A tunnel on the same computer will connect a public HTTPS address to your local server.
+Complete step 5 first. Keep **`no_auth: false`**. A tunnel on the same computer will connect a public HTTPS address to your local server.
+
+### Create a bot (if not configured yet)
+
+Send `/newbot` to [@BotFather](https://t.me/BotFather) and follow the [official instructions](https://core.telegram.org/bots/tutorial#obtain-your-bot-token). Add `bot_token: "YOUR_TOKEN"` to `config.yaml`. If you supplied it in the wizard, reuse that bot.
 
 ### Add your Telegram user ID
 
@@ -176,7 +168,7 @@ Copy the printed `https://random-name.trycloudflare.com` URL. Keep that terminal
 
 ### Configure the Telegram button
 
-1. Send `/setmenubutton` to @BotFather and select the bot created in step 3.
+1. Send `/setmenubutton` to @BotFather and select your bot.
 2. Follow the prompts to enter the HTTPS URL and button text, such as “Open console.” See the [official menu button instructions](https://core.telegram.org/bots/webapps#launching-mini-apps-from-the-menu-button).
 3. Return to your bot's private chat and tap its menu button to **open inside Telegram**.
 4. You should see the same sessions as on your computer. Send another test message and confirm the reply.
@@ -187,8 +179,8 @@ Pasting the public URL into an ordinary browser does not supply Telegram identit
 
 | Symptom | First check |
 |---|---|
-| Missing `config.yaml` / static page 404 | Start from the extracted folder; check that the file is not `.yaml.txt` and `internal/static/index.html` exists. Do not move just the executable |
-| Missing `bot_token` | Route A needs a real bot token; password-only operation without a token is not yet supported |
+| Wizard missing / static page 404 | An existing `config.yaml` hides the wizard. On first launch, start from the whole extracted folder and open the logged setup URL; check that the config filename is not `.yaml.txt` |
+| Missing `bot_token` or `web.password` | Local use needs only a valid web password (at least 8 characters, not `change-me`); Telegram needs a real Bot Token |
 | Wrong password / still asks to sign in | Use `web.password`. Fully quit and restart after editing configuration; desktop also requires sign-in |
 | `僅允許內網存取` (LAN access only) / 403 | First try `127.0.0.1` on the host. For LAN access, add only your trusted subnet to `web.allowed_cidrs`. For Telegram, open through the bot menu and check your allowlisted ID |
 | Port 8080 in use | Stop the previous server or tray app, or change `server.port` and update the browser / tunnel port too |
@@ -215,8 +207,7 @@ cd Claude-Code-Mini-App
 Windows PowerShell:
 
 ```powershell
-Copy-Item config.example.yaml config.yaml
-# Edit config.yaml using step 3, then choose one build
+# Leave config.yaml absent; complete the wizard in step 3 on first launch, then choose one build
 go build -o claude-miniapp.exe ./cmd/server
 .\claude-miniapp.exe
 ```
@@ -231,8 +222,7 @@ go build -tags production -ldflags "-H windowsgui" -o claude-miniapp-desktop.exe
 Linux / macOS server:
 
 ```bash
-cp config.example.yaml config.yaml
-# Edit config.yaml using step 3
+# Leave config.yaml absent; complete the wizard in step 3 on first launch
 go build -o claude-miniapp ./cmd/server
 ./claude-miniapp
 ```

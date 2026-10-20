@@ -2,7 +2,7 @@
 
 > 自架的**多代理（multi-agent）控制台**，統一管理 Claude Code、Cursor Agent、Codex、Kiro 與 Antigravity。可從桌面視窗、任何瀏覽器，或手機上的 Telegram Mini App 操作。**單一 Go 二進位**，無需獨立前端建置。
 
-[![Version](https://img.shields.io/badge/version-0.14.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
+[![Version](https://img.shields.io/badge/version-0.15.0-blue)](#) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE) [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](#)
 
 [English](README.md)
 
@@ -26,7 +26,7 @@
 
 1. 到 [Releases](https://github.com/jerry12122/Claude-Code-Mini-App/releases/latest) 下載 Windows x64 zip 或 Linux x64 tar.gz，解壓整個資料夾，保留 `internal/static/`。
 2. 在該電腦安裝並登入**一個**要用的代理。[CLI 安裝連結與檢查方式](docs/getting-started.zh-TW.md#2-安裝並登入一個代理)列出程式需要的命令名稱。
-3. 將 `config.example.yaml` 複製為 `config.yaml`，依[設定步驟](docs/getting-started.zh-TW.md#3-建立設定檔)填寫。目前即使不使用 Telegram 遠端入口，密碼登入仍需 Bot Token；請更換範例密碼。
+3. 不必先建立 `config.yaml`，啟動後依[首次設定精靈](docs/getting-started.zh-TW.md#3-建立設定檔)設定密碼並檢查可用 CLI。Telegram Mini App 預設關閉；本機使用不需要 Bot Token 或網域。
 4. **選一個**啟動：Windows 桌面版 `claude-miniapp-desktop.exe`、Windows server `claude-miniapp.exe`，或 Linux server `./claude-miniapp`。server 版啟動後在主機開啟 <http://127.0.0.1:8080>，輸入 `web.password`。
 5. [建立 Session 並送測試訊息](docs/getting-started.zh-TW.md#5-建立第一個-session)。工作目錄填執行 server 的電腦上的專案路徑。
 

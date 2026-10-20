@@ -168,3 +168,63 @@ function stripSetupToken(href) {
 function shouldShowSetup(status) {
   return !!status && status.needs_setup === true;
 }
+
+// 狀態還沒回來時是 pending，不掛正常 App。查詢失敗不是首次設定，也不要空白。
+function setupBootView(state) {
+  if (!state || state.pending) return 'pending';
+  if (state.error) return 'error';
+  if (shouldShowSetup(state.status)) return 'wizard';
+  if (state.status && state.status.needs_setup === false) return 'app';
+  return 'error';
+}
+
+function setupTokenHint(token) {
+  if (token) return '';
+  return '請在這台電腦開啟啟動時印出的設定網址（網址裡有一次性憑證）。沒有憑證就不能儲存。';
+}
+
+function setupCliAdvisory(tools) {
+  var list = Array.isArray(tools) ? tools : [];
+  var any = false;
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].found) any = true;
+  }
+  return {
+    blockSave: false,
+    recommend: !any,
+    message: any ? '' : '這台電腦還沒找到代理程式。仍可先完成設定；建立對話前建議至少安裝一個。',
+  };
+}
+
+function setupAccountReady(form) {
+  return setupPasswordError(form.password) === '' && setupPortError(form.port) === '' && setupDBPathError(form.db_path) === '';
+}
+
+function setupCanSave(form) {
+  return validateSetupForm(form).ok === true;
+}
+
+function setupApplyGeneratedPassword(form) {
+  var next = {};
+  for (var key in form) next[key] = form[key];
+  next.password = generateSetupPassword();
+  return next;
+}
+
+function setupSaveOutcome(status, body) {
+  var data = body || {};
+  if (status === 200 && data.applied === 'switched') return { kind: 'switched', url: data.url || '/' };
+  if (status === 200 && data.applied === 'restart_required') return { kind: 'restart', url: data.url || '', resend: false };
+  if (status === 500 && data.code === 'start_failed') {
+    return { kind: 'start_failed', error: data.error || '', resend: false };
+  }
+  if (status === 400) return { kind: 'invalid', field: data.field || '', error: data.error || '' };
+  if (status === 403) return { kind: 'forbidden', error: data.error || '' };
+  if (status === 409) return { kind: 'exists', error: data.error || '設定檔已存在', resend: false };
+  if (status === 500) return { kind: 'write_failed', error: data.error || '', resend: true };
+  return { kind: 'error', error: data.error || '儲存失敗', resend: true };
+}
+
+function setupWizardSteps() {
+  return ['welcome', 'account', 'miniapp', 'review'];
+}

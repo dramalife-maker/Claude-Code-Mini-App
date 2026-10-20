@@ -345,12 +345,18 @@ func TestSetupSaveSwitches(t *testing.T) {
 
 func TestSetupSaveStartFailed(t *testing.T) {
 	const password = "longpassword"
+	var dbPath string
 	srv, port, dir := newSetupForSave(t, setupOptions{
-		startNormal: func(context.Context) (*Server, error) {
-			return nil, errors.New("DB 初始化失敗: 開不了")
+		startNormal: func(ctx context.Context) (*Server, error) {
+			// 通過輸入驗證後，把檔案路徑變成資料夾，實際觸發資料庫啟動失敗。
+			if err := os.Mkdir(dbPath, 0700); err != nil {
+				return nil, err
+			}
+			return startNormal(ctx)
 		},
 	})
-	body := mustSetupJSON(t, config.SetupInput{Password: password, Port: port, DBPath: filepath.Join(dir, "app.db")})
+	dbPath = filepath.Join(dir, "app.db")
+	body := mustSetupJSON(t, config.SetupInput{Password: password, Port: port, DBPath: dbPath})
 	token := setupTokenFromURL(t, srv.EntryURL())
 	host := hostFor(port)
 	status, raw := setupPost(t, srv.URL()+"/setup/save", host, token, body)

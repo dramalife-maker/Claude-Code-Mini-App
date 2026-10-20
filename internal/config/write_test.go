@@ -8,8 +8,24 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 )
+
+func TestWriteNewUnsupportedLinkLeavesNoConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	err := writeNew(path, []byte("complete config"), func(string, string) error {
+		return syscall.ENOTSUP
+	})
+	if !errors.Is(err, syscall.ENOTSUP) {
+		t.Fatalf("不支援原子寫入時應回報錯誤，得到 %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("失敗時不應建立設定檔：%v", err)
+	}
+	assertNoTemp(t, dir, "")
+}
 
 func TestWriteNewAtomic(t *testing.T) {
 	t.Run("已存在不覆寫", func(t *testing.T) {
