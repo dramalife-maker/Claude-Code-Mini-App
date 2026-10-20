@@ -74,3 +74,6 @@ docs/spectra/.vector-search.db*
 .cursorrules
 **/skills/
 
+
+# Telegram 登入 session（帳號憑證）
+/telegram.session
