@@ -39,11 +39,13 @@ import (
 )
 
 // Server 是已綁定 port 的 Fiber 服務。
-// Wait 與 Shutdown 擇一呼叫：前者阻塞到行程結束，後者關掉監聽。
+// Shutdown 關掉監聽；之後 Wait 也會返回。
 type Server struct {
-	app  *fiber.App
-	url  string
-	done chan error
+	app      *fiber.App
+	url      string
+	entryURL string
+	serveErr error
+	done     chan struct{}
 }
 
 // URL 是本機視窗要開的位址，例如 http://127.0.0.1:8080。
@@ -52,9 +54,18 @@ func (s *Server) URL() string {
 	return s.url
 }
 
-// Wait 阻塞到 HTTP 服務結束。
+// Wait 阻塞到 HTTP 服務結束。Shutdown 之後再呼叫也會立刻返回。
 func (s *Server) Wait() error {
-	return <-s.done
+	<-s.done
+	return s.serveErr
+}
+
+// EntryURL 是要打開的網址。設定模式帶一次性憑證；正常模式與 URL 相同。
+func (s *Server) EntryURL() string {
+	if s.entryURL != "" {
+		return s.entryURL
+	}
+	return s.URL()
 }
 
 // Shutdown 停止接受連線，並等 Listener 返回或 ctx 逾時。
@@ -79,6 +90,9 @@ func Start(ctx context.Context) (*Server, error) {
 
 	cfg, err := config.Load()
 	if err != nil {
+		if setupOnMissing(err) {
+			return startSetup(ctx, 8080, setupOptions{})
+		}
 		return nil, err
 	}
 
@@ -139,6 +153,11 @@ func Start(ctx context.Context) (*Server, error) {
 	app.Use(static.Handler(assets))
 	// 聊天截圖（media.SaveBase64Image 寫入 internal/static/uploads）仍由磁碟提供，與嵌入的前端資源分開。
 	app.Use("/uploads", static.UploadsHandler(static.Uploads))
+
+	// 前端啟動時先問要不要進設定精靈。不需登入；cli-check 與 save 在正常模式不註冊，所以是 404。
+	app.Get("/setup/status", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{"needs_setup": false})
+	})
 
 	app.Post("/auth/login", func(c *fiber.Ctx) error {
 		if cfg.NoAuth {
@@ -421,12 +440,12 @@ func Start(ctx context.Context) (*Server, error) {
 	s := &Server{
 		app:  app,
 		url:  fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port),
-		done: make(chan error, 1),
+		done: make(chan struct{}),
 	}
 	go func() {
-		serveErr := app.Listener(ln)
+		s.serveErr = app.Listener(ln)
 		_ = database.Close()
-		s.done <- serveErr
+		close(s.done)
 	}()
 	return s, nil
 }
