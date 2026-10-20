@@ -20,7 +20,7 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     prevStatusRef.current = new Map(list.map((s) => [s.id, String(s.status || '').toLowerCase()]));
     if (!prev) return;
     for (const s of list) {
-      if (prev.get(s.id) !== 'running' || s.id === activeIdRef.current) continue;
+      if (prev.get(s.id) !== 'running' || s.id === activeIdRef.current || s.agent_type === 'telegram') continue;
       const st = String(s.status || '').toLowerCase();
       if (st === 'running') continue;
       const name = s.name || '未命名';

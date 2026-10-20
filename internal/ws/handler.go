@@ -203,6 +203,12 @@ func NewHandler(database *db.DB, botToken string, shellCfg ShellOpts, quotaSvc *
 		if agentType == "" {
 			agentType = agent.TypeClaude
 		}
+		// Telegram 會話的「執行」只是把訊息轉出去，每次送出都推「任務完成」是干擾；空 token 讓 notifyTaskAsync 直接略過。
+		// 必須是本連線的區域變數，不能改到外層共用的 botToken。
+		botToken := botToken
+		if agentType == agent.TypeTelegram {
+			botToken = ""
+		}
 		agentSessionID := sess.AgentSessionID
 
 		isClaude := agentType == agent.TypeClaude
