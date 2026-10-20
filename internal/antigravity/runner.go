@@ -55,7 +55,7 @@ func (r *Runner) runPrintText(ctx context.Context, opts agent.RunOptions, cb age
 		slog.Info(fmt.Sprintf("[antigravity] 工作目錄: %s", opts.WorkDir))
 	}
 
-	cmd := exec.CommandContext(ctx, agyBinary(), args...)
+	cmd := exec.CommandContext(ctx, Binary(), args...)
 	cmd.Stdin = strings.NewReader(opts.Prompt)
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir
@@ -122,7 +122,7 @@ type dispatchState struct {
 }
 
 func (r *Runner) execAndParseNDJSON(ctx context.Context, opts agent.RunOptions, args []string, cb agent.EventCallback) error {
-	cmd := exec.CommandContext(ctx, agyBinary(), args...)
+	cmd := exec.CommandContext(ctx, Binary(), args...)
 	cmd.Stdin = strings.NewReader(opts.Prompt)
 	if opts.WorkDir != "" {
 		cmd.Dir = opts.WorkDir
@@ -341,7 +341,8 @@ func configureCmd(cmd *exec.Cmd) {
 	}
 }
 
-func agyBinary() string {
+// Binary 回傳要執行的 agy。CC_AGY_BIN 優先（路徑或名稱皆可），否則用 PATH 上的名稱 agy。
+func Binary() string {
 	if b := strings.TrimSpace(os.Getenv("CC_AGY_BIN")); b != "" {
 		return b
 	}

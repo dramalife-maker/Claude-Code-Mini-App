@@ -20,7 +20,7 @@ type ModelEntry struct {
 func FetchModelOptions(ctx context.Context) ([]ModelEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, agyBinary(), "models")
+	cmd := exec.CommandContext(ctx, Binary(), "models")
 	cmd.SysProcAttr = proc.SysProcAttr()
 	out, err := cmd.Output()
 	if err != nil {
