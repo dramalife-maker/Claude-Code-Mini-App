@@ -230,9 +230,14 @@ func Start(ctx context.Context) (*Server, error) {
 			return c.Next()
 		}
 
-		initData := c.Get("X-Telegram-Init-Data")
-		if initData == "" {
-			initData = c.Query("initData")
+		// bot_token 為空時簽章金鑰是公開可算的（HMAC-SHA256(WebAppData, "")），
+		// 偽造的 initData 會通過 tg.Verify。標頭與查詢參數都當沒有，改走後面的驗證。
+		var initData string
+		if cfg.BotToken != "" {
+			initData = c.Get("X-Telegram-Init-Data")
+			if initData == "" {
+				initData = c.Query("initData")
+			}
 		}
 		if initData != "" {
 			user, err := tg.Verify(initData, cfg.BotToken)

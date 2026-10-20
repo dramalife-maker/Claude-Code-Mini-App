@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -31,6 +33,66 @@ func TestTrustedProxiesConfig(t *testing.T) {
 			}
 			if !reflect.DeepEqual(cfg.Web.TrustedProxies, tt.want) {
 				t.Fatalf("trusted_proxies = %v，預期 %v", cfg.Web.TrustedProxies, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadMissingConfig(t *testing.T) {
+	t.Run("空目錄", func(t *testing.T) {
+		viper.Reset()
+		t.Cleanup(viper.Reset)
+		t.Chdir(t.TempDir())
+		_, err := Load()
+		if !errors.Is(err, ErrConfigMissing) {
+			t.Fatalf("err = %v，預期 ErrConfigMissing", err)
+		}
+	})
+	t.Run("壞 YAML", func(t *testing.T) {
+		viper.Reset()
+		t.Cleanup(viper.Reset)
+		t.Chdir(t.TempDir())
+		if err := os.WriteFile("config.yaml", []byte("bot_token: [\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load()
+		if err == nil {
+			t.Fatal("壞 YAML 應失敗")
+		}
+		if errors.Is(err, ErrConfigMissing) {
+			t.Fatalf("壞 YAML 被當成缺檔: %v", err)
+		}
+	})
+}
+
+func TestLoadBotTokenOptional(t *testing.T) {
+	tests := []struct {
+		name, yaml string
+		ok         bool
+	}{
+		{"僅密碼通過", "web:\n  password: correct-horse\n", true},
+		{"兩者皆無", "{}\n", false},
+		{"change-me", "web:\n  password: change-me\n", false},
+		{"7 字元密碼", "web:\n  password: abcdefg\n", false},
+		{"no_auth 且 token 為空", "no_auth: true\n", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			viper.Reset()
+			t.Cleanup(viper.Reset)
+			t.Chdir(t.TempDir())
+			if err := os.WriteFile("config.yaml", []byte(tt.yaml), 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load()
+			if tt.ok {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), "需要 bot_token 或 web.password") {
+				t.Fatalf("err = %v，預期指出需要 bot_token 或 web.password", err)
 			}
 		})
 	}

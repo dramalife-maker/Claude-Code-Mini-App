@@ -1,10 +1,31 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/viper"
 )
+
+// ErrConfigMissing 表示工作目錄沒有 config.yaml。
+// 檔案在但 YAML 壞掉或欄位非法不是這個錯誤，避免首次設定精靈把壞檔當成首次使用而覆寫。
+var ErrConfigMissing = errors.New("找不到 config.yaml")
+
+// PasswordValid 檢查網頁密碼能否單獨當登入方式。設定載入與設定精靈共用這一份規則。
+func PasswordValid(pw string) error {
+	pw = strings.TrimSpace(pw)
+	switch {
+	case pw == "":
+		return errors.New("web.password 為空")
+	case pw == "change-me":
+		return errors.New("web.password 仍是 change-me")
+	case len([]rune(pw)) < 8:
+		return errors.New("web.password 少於 8 個字元")
+	default:
+		return nil
+	}
+}
 
 type Config struct {
 	BotToken       string  `mapstructure:"bot_token"`
@@ -97,6 +118,10 @@ func Load() (*Config, error) {
 	viper.SetDefault("telegram_client.session_file", "./telegram.session")
 
 	if err := viper.ReadInConfig(); err != nil {
+		var missing viper.ConfigFileNotFoundError
+		if errors.As(err, &missing) {
+			return nil, fmt.Errorf("%w: %w", ErrConfigMissing, err)
+		}
 		return nil, fmt.Errorf("讀取 config.yaml 失敗: %w", err)
 	}
 
@@ -106,7 +131,9 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.BotToken == "" && !cfg.NoAuth {
-		return nil, fmt.Errorf("config.yaml 缺少 bot_token（或設定 no_auth: true 跳過驗證）")
+		if err := PasswordValid(cfg.Web.Password); err != nil {
+			return nil, fmt.Errorf("需要 bot_token 或 web.password: %w", err)
+		}
 	}
 
 	return &cfg, nil
