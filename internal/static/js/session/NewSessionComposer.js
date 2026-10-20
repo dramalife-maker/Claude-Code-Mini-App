@@ -5,6 +5,7 @@ const NEW_SESSION_AGENT_OPTIONS = [
   { value: 'antigravity', label: 'Antigravity' },
   { value: 'kiroacp', label: 'Kiro ACP' },
   { value: 'codex', label: 'Codex' },
+  { value: 'telegram', label: 'Telegram' },
 ];
 
 // 沒填名稱時的自動命名：有訊息就取首行，否則用 runner + 時間
@@ -28,8 +29,8 @@ function NewSessionComposer({ prefill, onCreated, onCancel }) {
     messageInputRef.current?.focus();
   }, []);
 
-  // codex/kiro 沒有可切換的權限模式（固定行為），不顯示切換器；kiroacp 有互動/全自動兩種
-  const showPermMode = !['codex', 'kiro'].includes(newForm.agent);
+  // codex/kiro/telegram 沒有可切換的權限模式（固定行為），不顯示切換器；kiroacp 有互動/全自動兩種
+  const showPermMode = !['codex', 'kiro', 'telegram'].includes(newForm.agent);
 
   const submit = async () => {
     if (loading) return;

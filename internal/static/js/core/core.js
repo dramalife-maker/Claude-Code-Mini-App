@@ -485,7 +485,7 @@ const PERM_MODE_LABEL = {
   plan: '規劃模式',
 };
 
-const AGENT_LABEL = { claude: 'Claude', cursor: 'Cursor', codex: 'Codex', antigravity: 'Antigravity', kiro: 'Kiro', kiroacp: 'Kiro ACP' };
+const AGENT_LABEL = { claude: 'Claude', cursor: 'Cursor', codex: 'Codex', antigravity: 'Antigravity', kiro: 'Kiro', kiroacp: 'Kiro ACP', telegram: 'Telegram' };
 
 /** 聊天室頂欄狀態角標：中文短標（避免與權限列搶注意力） */
 const SESSION_STATE_LABEL = {

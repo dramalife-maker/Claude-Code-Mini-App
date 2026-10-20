@@ -105,7 +105,7 @@ function permModeOptionsFor(agentType) {
       { value: 'bypassPermissions', label: '全自動放行 ⚠️' },
     ];
   }
-  if (t === 'kiro' || t === 'codex') {
+  if (t === 'kiro' || t === 'codex' || t === 'telegram') {
     return [{ value: 'default', label: '預設（固定）' }];
   }
   return [
@@ -428,6 +428,7 @@ function getAgentBadgeClass(agentType) {
     antigravity: 'bg-sky-500/20 text-sky-300',
     kiro: 'bg-fuchsia-500/20 text-fuchsia-300',
     kiroacp: 'bg-fuchsia-500/20 text-fuchsia-300',
+    telegram: 'bg-sky-500/20 text-sky-300',
   };
   return map[t] || 'bg-[oklch(0.24_0.02_264)] text-[oklch(0.65_0.01_264)]';
 }
@@ -440,6 +441,7 @@ const AGENT_BADGE_ICON_CDN = {
   claude: { slug: 'claude', color: 'fed7aa' },
   cursor: { slug: 'cursor', color: '6ee7b7' },
   antigravity: { slug: 'google', color: '7dd3fc' },
+  telegram: { slug: 'telegram', color: '38bdf8' },
 };
 
 /** Simple Icons 已移除 openai / amazonwebservices，改內嵌 path（simple-icons@14，CC0） */
@@ -992,7 +994,7 @@ function ModeToggleBtn({ value, onChange, disabled, showLabel = false, agentLabe
 
 /** 將 API / sync 的訊息列轉成 ChatView 用的物件（含 pending 串流） */
 function mapMessageRow(m) {
-  const role = m.role;
+  const role = (m.role === 'assistant' || m.role === 'telegram') ? 'claude' : m.role;
   const status = m.status || 'done';
   const pending = status === 'pending';
   const resultText = m.result_text || '';
@@ -1005,7 +1007,13 @@ function mapMessageRow(m) {
     resultText,
     status,
     createdAt: m.created_at || m.createdAt || null,
-    author: m.author || '', // 分享聊天室：空字串＝擁有者；有值＝訪客暱稱
+    author: m.author || '', // 分享聊天室／Telegram：空字串＝擁有者；有值＝說話者暱稱
+    // Telegram 時間線：穩定識別、送達狀態與取代關係（其他 agent 為空值）。
+    telegram: m.telegram || null,
+    delivery: m.delivery || '',
+    clientMessageId: m.client_message_id || m.clientMessageId || '',
+    replacesClientMessageId: m.replaces_client_message_id || m.replacesClientMessageId || '',
+    deliveryError: m.deliveryError || '',
     html: role === 'claude' ? (content ? parseMarkdown(content) : null) : null,
     streaming: pending,
     exitCode: role === 'shell' ? parseShellExitCode(content) : undefined,

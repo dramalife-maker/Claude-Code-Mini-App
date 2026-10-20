@@ -235,13 +235,19 @@ function SessionView({ onEnter, onSessionsLoaded, onSortedSessionsChange, active
     const unset = '（未設定工作目錄）';
     for (const s of displaySessions) {
       const raw = s.work_dir != null ? String(s.work_dir).trim() : '';
-      const key = raw || unset;
+      let key = raw || unset;
+      if (s.agent_type === 'telegram') {
+        key = 'Telegram 聊天室';
+      }
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(s);
     }
     return [...map.entries()].sort((a, b) => {
       const ka = String(a[0]);
       const kb = String(b[0]);
+      const tgGroup = 'Telegram 聊天室';
+      if (ka === tgGroup && kb !== tgGroup) return -1;
+      if (ka !== tgGroup && kb === tgGroup) return 1;
       if (ka === unset && kb !== unset) return 1;
       if (ka !== unset && kb === unset) return -1;
       if (sessionSort === 'last_active_asc' || sessionSort === 'last_active_desc') {

@@ -11,6 +11,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
   const [shareEnded, setShareEnded] = useState('');
   const shareEndedRef = useRef('');
   const [messages, setMessages]   = useState([]);
+  const messagesRef = useRef([]);
+  messagesRef.current = messages;
   const [state, setState]         = useState('IDLE');
   const [question, setQuestion] = useState(null);
   const [questionError, setQuestionError] = useState('');
@@ -20,6 +22,16 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
   const [modelSel, setModelSel]   = useState(() => session.model || '');
   const [effortSel, setEffortSel] = useState(() => session.effort || '');
   const [histLoaded, setHistLoaded] = useState(false);
+  /** Telegram：{ nextCursor, hasMore, syncState }；null＝尚未載入（較舊頁的載入 UI 由後續任務處理） */
+  const [tgPaging, setTgPaging] = useState(null);
+  /** Telegram：最近一次 sync 的已驗證 scope（改綁偵測） */
+  const tgScopeRef = useRef('');
+  const isTG = agentType === 'telegram';
+  /** 較早頁請求：單頁 inflight 去重（{ controller }）；generation 在換 session／scope 時遞增，過期回應直接丟棄。 */
+  const tgReqRef = useRef(null);
+  const tgGenRef = useRef(0);
+  const tgPagingRef = useRef(null);
+  tgPagingRef.current = tgPaging;
   const [connected, setConnected] = useState(false);
   const [inputMode, setInputMode] = useState(() => readInputModeForSession(session.id));
   const [shellType, setShellType] = useState('bash');
@@ -62,6 +74,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
     shellBuf.current = [];
     shellRenderPending.current = false;
     setMessages([]);
+    setTgPaging(null);
+    tgScopeRef.current = '';
     setHistLoaded(false);
     setConnected(false);
     clearTimeout(quotaTimerRef.current);
@@ -109,28 +123,51 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
       }
     };
 
+    const initCtl = isTG ? new AbortController() : null;
     const init = async () => {
       // 載入歷史紀錄
       let hist = [];
+      let tgPage = null;
       try {
-        const res = await apiFetch(`/sessions/${session.id}/messages`);
+        // Telegram：只取最新有界頁（pagination=telegram），其餘由 sync／live 與按需載入合併。
+        const res = await apiFetch(isTG
+          ? `/sessions/${session.id}/messages?pagination=telegram&limit=50`
+          : `/sessions/${session.id}/messages`, initCtl ? { signal: initCtl.signal } : undefined);
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) hist = data;
-          else console.warn('[messages] unexpected payload', data);
+          else if (isTG && data && Array.isArray(data.messages)) {
+            hist = data.messages;
+            tgPage = { nextCursor: data.next_cursor || null, hasMore: !!data.has_more, syncState: data.sync_state || '', loading: false, error: null, needsInit: false, retryAt: 0 };
+          } else console.warn('[messages] unexpected payload', data);
         } else {
           console.warn('[messages] load failed', res.status);
+          if (isTG) {
+            let body = null;
+            try { body = await res.json(); } catch (_) {}
+            tgPage = tgInitFailed(tgPageError(res.status, body, res.headers && res.headers.get('Retry-After'), Date.now()));
+          }
           if (isCurrent()) showToast('載入對話失敗', { error: true, duration: 3000 });
         }
       } catch (err) {
+        if (err && err.name === 'AbortError') return;
         console.warn('[messages] load error', err);
+        if (isTG) tgPage = tgInitFailed(tgPageError(0, null, null, Date.now()));
         if (isCurrent()) showToast('載入對話失敗', { error: true, duration: 3000 });
       }
       if (isCurrent()) {
-        // snapshot：截止當下可能還有一則進行中的回覆，但之後不會再更新，不顯示串流動畫。
-        setMessages(hist.map(mapMessageRow).map((r) => (guestSnapshot ? { ...r, streaming: false } : r)));
-        const lastClaude = [...hist].reverse().find((m) => m.role === 'claude' && m.status === 'pending');
-        streamBuf.current = lastClaude ? (lastClaude.content || '') : '';
+        if (isTG) {
+          // 依穩定識別併入：WS sync／live 可能已先寫入，不能整份覆蓋。
+          // HTTP 先於 WS 完成；舊帳號資料由之後 sync 的 scope 改綁偵測丟棄（見 tgApplySync）。
+          const rows = hist.map(mapMessageRow);
+          setMessages((prev) => tgMergeList(prev, rows));
+          if (tgPage) setTgPaging(tgPage);
+        } else {
+          // snapshot：截止當下可能還有一則進行中的回覆，但之後不會再更新，不顯示串流動畫。
+          setMessages(hist.map(mapMessageRow).map((r) => (guestSnapshot ? { ...r, streaming: false } : r)));
+          const lastClaude = [...hist].reverse().find((m) => m.role === 'claude' && m.status === 'pending');
+          streamBuf.current = lastClaude ? (lastClaude.content || '') : '';
+        }
         setHistLoaded(true);
       }
 
@@ -161,6 +198,22 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
         everConnected = true;
         if (isCurrent() && wsRef.current === ws) setConnected(true);
         markRead();
+      };
+
+      const applyTelegramScope = (msg) => {
+        const rows = msg.messages ? (Array.isArray(msg.messages) ? msg.messages : JSON.parse(msg.messages)) : [];
+        const mapped = rows.map(mapMessageRow);
+        // 只併入最新有界頁，不覆蓋已載入的舊頁；未驗證／離線（沒有 scope）時保留已有資料。
+        const scope = msg.telegram_scope || null;
+        const prevScope = tgScopeRef.current;
+        if (scope) tgScopeRef.current = tgScopeKey(scope);
+        if (tgScopeChanged(messagesRef.current, scope, prevScope)) {
+          // 帳號／對象改變：中止進行中的請求並重置游標，不向新 scope 送舊 before；下次載入從新 scope 的最新頁開始。
+          tgAbortRequest();
+          setTgPaging((p) => p && { ...p, nextCursor: null, hasMore: null, loading: false, error: null, needsInit: true, retryAt: 0 });
+        }
+        setMessages((prev) => tgApplySync(prev, mapped, scope, prevScope));
+        if (msg.sync_state) setTgPaging((p) => (p ? { ...p, syncState: msg.sync_state } : p));
       };
 
       ws.onmessage = (evt) => {
@@ -195,6 +248,13 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
           return;
         }
 
+        // Telegram：伺服器驗證出新的 account/peer（登入切換、對象解析）或同步狀態改變（補漏中／離線）時推送，
+        // 不必等重連。與 sync 的 Telegram 部分同一套處理：併入最新有界頁、scope 改變就重置舊游標與請求。
+        if (msg.type === 'telegram_scope' && isTG) {
+          applyTelegramScope(msg);
+          return;
+        }
+
         if (msg.type === 'sync') {
           if (msg.value !== 'AWAITING_INPUT') setQuestion(null);
           setQuestionError('');
@@ -208,6 +268,9 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
           if (msg.messages) {
             const rows = Array.isArray(msg.messages) ? msg.messages : JSON.parse(msg.messages);
             const mapped = rows.map(mapMessageRow);
+            if (isTG) {
+              applyTelegramScope(msg);
+            } else {
             const lastClaude = [...rows].reverse().find((m) => m.role === 'claude' && (m.status || 'done') === 'pending');
             streamBuf.current = lastClaude ? (lastClaude.content || '') : '';
             setMessages((prev) => {
@@ -221,6 +284,7 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
                   : { ...m, createdAt: byId.get(m.id) }
               ));
             });
+            }
           }
           if (msg.quota) setQuota(msg.quota);
           if (msg.model) setSessionModel(msg.model);
@@ -272,13 +336,15 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
             thinkingMode.current = false;
             setActivityHint('');
             onHandoffChangeRef.current?.(session.id, null);
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              if (last && last.role === 'claude' && last.streaming && last.status === 'pending') {
-                return prev;
-              }
-              return [...prev, { role: 'claude', content: '', html: null, streaming: true, status: 'pending', createdAt: new Date().toISOString() }];
-            });
+            if (agentType !== 'telegram') {
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last && last.role === 'claude' && last.streaming && last.status === 'pending') {
+                  return prev;
+                }
+                return [...prev, { role: 'claude', content: '', html: null, streaming: true, status: 'pending', createdAt: new Date().toISOString() }];
+              });
+            }
           }
           if (msg.value === 'SHELL_RUNNING' || msg.value === 'SHELL_EXEC') {
             shellBuf.current = [];
@@ -321,9 +387,25 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
           streamBuf.current = '';
         }
 
+        if (msg.type === 'message') {
+          const row = mapMessageRow({ ...msg, role: msg.role || 'claude', created_at: msg.created_at || new Date().toISOString() });
+          // Telegram：完整 upsert（可帶 replaces_client_message_id），依穩定識別合併。
+          if (isTG) {
+            if (tgFilterScope([row], tgScopeRef.current).length) setMessages((prev) => tgUpsert(prev, row));
+          } else setMessages(prev => msg.id && prev.some(m => m.id === msg.id) ? prev : [...prev, row]);
+          return;
+        }
+
+        if (msg.type === 'delivery') {
+          // 送達狀態／錯誤呈現在原待傳項目上。
+          setMessages((prev) => tgApplyDelivery(prev, { clientMessageId: msg.client_message_id, delivery: msg.delivery, error: msg.error }));
+          return;
+        }
+
         if (msg.type === 'user_message') {
           const row = mapMessageRow({ ...msg, role: 'user', created_at: msg.created_at || new Date().toISOString() });
-          setMessages(prev => msg.id && prev.some(m => m.id === msg.id) ? prev : [...prev, row]);
+          if (isTG) setMessages((prev) => tgUpsert(prev, row));
+          else setMessages(prev => msg.id && prev.some(m => m.id === msg.id) ? prev : [...prev, row]);
         }
 
         if (msg.type === 'activity') {
@@ -539,6 +621,8 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
 
     return () => {
       cancelled = true;
+      if (initCtl) initCtl.abort();
+      tgAbortRequest();
       clearReconnectTimer();
       for (const [id, request] of inputRequestsRef.current) {
         if (request.ws._gen !== effectGen) continue;
@@ -552,6 +636,59 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
       }
     };
   }, [session.id]);
+
+  /** 中止進行中的較早頁請求並使其回應失效（換 session／scope）。 */
+  function tgAbortRequest() {
+    tgGenRef.current += 1;
+    if (tgReqRef.current) tgReqRef.current.controller.abort();
+    tgReqRef.current = null;
+  }
+
+  /**
+   * 使用者要求時取一頁較早訊息（頂部控制／到頂手勢），每次至多一頁、單頁 inflight 去重，不因 has_more 自動連抓。
+   * 失敗只顯示可重試的錯誤，不會變成到頂；429 在 retryAt 前不發請求；needsInit（初載失敗／游標失效／scope 變更）改取最新頁。
+   */
+  const loadOlder = useCallback(async () => {
+    const p = tgPagingRef.current;
+    if (!p || tgReqRef.current) return;
+    if (p.retryAt && Date.now() < p.retryAt) return;
+    if (!p.needsInit && (p.hasMore === false || !p.nextCursor)) return;
+    const sid = activeSessionRef.current;
+    const gen = tgGenRef.current;
+    const controller = new AbortController();
+    tgReqRef.current = { controller };
+    setTgPaging((prev) => prev && { ...prev, loading: true, error: null });
+    const stale = () => tgGenRef.current !== gen || activeSessionRef.current !== sid;
+    const fail = (e) => setTgPaging((prev) => prev && { ...prev, loading: false, error: { message: e.message }, retryAt: e.retryAt, needsInit: prev.needsInit || e.needsInit });
+    try {
+      const res = await apiFetch(
+        `/sessions/${sid}/messages?pagination=telegram&limit=50${p.needsInit ? '' : `&before=${encodeURIComponent(p.nextCursor)}`}`,
+        { signal: controller.signal });
+      if (stale()) return;
+      if (!res.ok) {
+        let body = null;
+        try { body = await res.json(); } catch (_) {}
+        if (stale()) return;
+        fail(tgPageError(res.status, body, res.headers && res.headers.get('Retry-After'), Date.now()));
+        return;
+      }
+      const data = await res.json();
+      if (stale()) return;
+      if (!data || !Array.isArray(data.messages)) { fail(tgPageError(0, null, null, Date.now())); return; }
+      // 只收目前已驗證 scope 的列；依穩定識別併入，已載入的頁與 live 都保留。
+      const rows = tgFilterScope(data.messages.map(mapMessageRow), tgScopeRef.current);
+      setMessages((prev) => tgMergeList(prev, rows));
+      setTgPaging((prev) => prev && {
+        ...prev, nextCursor: data.next_cursor || null, hasMore: !!data.has_more,
+        syncState: data.sync_state || prev.syncState, loading: false, error: null, needsInit: false, retryAt: 0,
+      });
+    } catch (err) {
+      if (stale() || (err && err.name === 'AbortError')) return;
+      fail(tgPageError(0, null, null, Date.now()));
+    } finally {
+      if (tgReqRef.current && tgReqRef.current.controller === controller) tgReqRef.current = null;
+    }
+  }, []);
 
   const send = useCallback((obj) => {
     const ws = wsRef.current;
@@ -633,6 +770,7 @@ function useChatSocket({ session, agentType, showPermModeSelect, showEffortSelec
     modelSel, setModelSel,
     effortSel, setEffortSel,
     histLoaded,
+    tgPaging, loadOlder,
     connected,
     inputMode, setInputMode,
     shellType,

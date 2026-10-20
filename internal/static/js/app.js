@@ -96,6 +96,8 @@ function App() {
   const [composerPrefill, setComposerPrefill] = useState(null);
   const [authed, setAuthed]   = useState(isTelegram);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const lastEscTimeRef = useRef(0);
+
   // 桌面更新：bridge 不存在時（瀏覽器／Telegram／訪客）不會有任何更新控制；托盤「檢查更新」經由 desktop-update-open 開啟設定的更新區。
   const desktopUpdate = useDesktopUpdate({ onOpen: () => setSettingsOpen(true) });
 
@@ -267,6 +269,26 @@ function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.altKey && (e.key === 'o' || e.key === 'O' || e.code === 'KeyO')) {
         e.preventDefault();
         toggleSplitOrientation();
+      } else if (e.altKey && (e.key === 'b' || e.key === 'B' || e.code === 'KeyB')) {
+        e.preventDefault();
+        const activeGroupIdx = tabGroups.focused === 1 ? 1 : 0;
+        const activeId = tabGroups.groups[activeGroupIdx]?.active || tabGroups.groups[0]?.active;
+        if (activeId) {
+          dispatchTabGroups({ type: 'close', sessionId: activeId, groupIndex: activeGroupIdx });
+        }
+      } else if (e.key === 'Escape') {
+        const now = Date.now();
+        if (now - lastEscTimeRef.current < 450) {
+          e.preventDefault();
+          const activeGroupIdx = tabGroups.focused === 1 ? 1 : 0;
+          const activeId = tabGroups.groups[activeGroupIdx]?.active || tabGroups.groups[0]?.active;
+          if (activeId) {
+            dispatchTabGroups({ type: 'close', sessionId: activeId, groupIndex: activeGroupIdx });
+          }
+          lastEscTimeRef.current = 0;
+        } else {
+          lastEscTimeRef.current = now;
+        }
       }
     };
     window.addEventListener('keydown', onKey);

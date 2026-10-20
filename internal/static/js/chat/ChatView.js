@@ -1,5 +1,39 @@
 const EMPTY_SUGGESTIONS = ['看一下目前 git 狀態與最近的變更', '概覽這個專案的結構', '跑測試並整理失敗原因'];
 
+/**
+ * Telegram 較早訊息的頂部控制：按需載入（不自動連抓）、載入中、可重試的錯誤、到頂停止。
+ * 429 時在 retryAt 前停用並於到期後自動恢復。
+ */
+function TelegramOlderControl({ paging, onLoad }) {
+  const [, setTick] = useState(0);
+  const wait = paging.retryAt ? paging.retryAt - Date.now() : 0;
+  useEffect(() => {
+    if (!(wait > 0)) return undefined;
+    const timer = setTimeout(() => setTick((n) => n + 1), wait + 50);
+    return () => clearTimeout(timer);
+  }, [paging.retryAt]);
+  if (!paging.needsInit && paging.hasMore === false) {
+    return <div role="status" data-older-state="done" className="shrink-0 text-center text-xs text-[oklch(0.5_0.01_264)]">已載入最早的訊息</div>;
+  }
+  const blocked = wait > 0;
+  const label = paging.loading ? '載入中…' : blocked ? '請稍候再試' : paging.error ? '重試' : paging.needsInit ? '重新載入' : '載入較早訊息';
+  return (
+    <div data-older-control className="shrink-0 flex flex-col items-center gap-1.5">
+      {paging.error && <div role="alert" data-older-error className="text-xs text-red-300">{paging.error.message}</div>}
+      <button
+        type="button"
+        onClick={onLoad}
+        disabled={paging.loading || blocked}
+        aria-busy={paging.loading}
+        data-older-state={paging.loading ? 'loading' : paging.error ? 'error' : 'idle'}
+        className="rounded-full border border-[oklch(0.34_0.03_264)] bg-[oklch(0.22_0.02_264)] px-3 py-1 text-xs text-[oklch(0.85_0.01_264)] hover:bg-[oklch(0.27_0.03_264)] disabled:opacity-60 disabled:cursor-default focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+      >
+        {label}
+      </button>
+    </div>
+  );
+}
+
 function QuestionCard({ question, error, canAct, connected, send }) {
   const [answers, setAnswers] = useState(() => question.questions.map(() => ({ selected: [], text: '' })));
   const [submitting, setSubmitting] = useState(false);
@@ -55,9 +89,9 @@ function QuestionCard({ question, error, canAct, connected, send }) {
 function ChatView({ session, onBack, showBack = true, fullHeight = true, usePermModeDropdown = false, onJumpToSession, allSessions = [], guest = null, onOpenComposer, handoffInfo = null, onHandoffChange, isSplit = false, onToggleSplit = null, splitOrientation = 'horizontal', onToggleSplitOrientation = null, isSecondaryPane = false, onClosePane = null, isFocused = true }) {
   const jumpToSession = typeof onJumpToSession === 'function' ? onJumpToSession : () => {};
   const agentType = session.agent_type || 'claude';
-  // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex 暫無對應概念）
-  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro';
-  const showEffortSelect = agentType !== 'cursor';
+  // Claude / Cursor / Antigravity 皆支援 mode 切換（Codex / Telegram 暫無對應概念）
+  const showPermModeSelect = agentType !== 'codex' && agentType !== 'kiro' && agentType !== 'telegram';
+  const showEffortSelect = agentType !== 'cursor' && agentType !== 'telegram';
   const {
     messages,
     state,
@@ -67,6 +101,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     modelSel, setModelSel,
     effortSel, setEffortSel,
     histLoaded,
+    tgPaging, loadOlder,
     connected,
     inputMode, setInputMode,
     shellType,
@@ -143,6 +178,14 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   const chatScrollRef = useRef(null);
   const chatNearBottomRef = useRef(true);
   const [showJumpLatest, setShowJumpLatest] = useState(false);
+  // Telegram 時間線：閱讀舊內容時的可見訊息錨點、到頂手勢、新訊息提示。
+  const isTGChat = agentType === 'telegram';
+  const anchorRef = useRef(null);
+  const gestureRef = useRef(false);
+  const progScrollRef = useRef(false);
+  const sendFollowUntilRef = useRef(0); // 本機使用者剛明確送出：待傳項目出現時才強制到底（與跨裝置 Out 區分）
+  const lastKeyRef = useRef(null);
+  const [hasNewBelow, setHasNewBelow] = useState(false);
   const chatInputRef = useRef(null);
   const slashInputWrapRef = useRef(null);
   const composerWrapRef = useRef(null);
@@ -158,8 +201,61 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
 
   const jumpToLatest = () => {
     chatNearBottomRef.current = true;
+    setHasNewBelow(false);
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  /** 記下目前第一則可見訊息與它相對容器頂端的位置（只在閱讀舊內容時；在底部則走跟隨）。 */
+  const captureAnchor = useCallback(() => {
+    const el = chatScrollRef.current;
+    if (!el) return;
+    if (chatNearBottomRef.current) { anchorRef.current = null; return; }
+    const top = el.getBoundingClientRect().top;
+    for (const node of el.querySelectorAll('[data-mkey]')) {
+      const r = node.getBoundingClientRect();
+      if (r.bottom > top + 1) { anchorRef.current = { key: node.getAttribute('data-mkey'), top: r.top - top }; return; }
+    }
+    anchorRef.current = null;
+  }, []);
+
+  /** 內容高度改變（向上補頁、圖片延後載入）後，把錨點訊息放回原本的位置，視圖不跳。 */
+  const restoreAnchor = useCallback(() => {
+    const el = chatScrollRef.current;
+    const a = anchorRef.current;
+    if (!el || !a) return;
+    const node = Array.from(el.querySelectorAll('[data-mkey]')).find((n) => n.getAttribute('data-mkey') === a.key);
+    if (!node) return;
+    const delta = (node.getBoundingClientRect().top - el.getBoundingClientRect().top) - a.top;
+    if (Math.abs(delta) >= 1) {
+      gestureRef.current = false; // 程式造成的捲動不算使用者手勢
+      // 這次調整產生的 scroll 事件不得重新記錄錨點：事件在下一幀、ResizeObserver 之前觸發，
+      // 此時內容可能又長高（圖片卡片等），會把偏移後的位置誤當成新錨點。
+      progScrollRef.current = true;
+      requestAnimationFrame(() => { progScrollRef.current = false; });
+      el.scrollTop += delta;
+    }
+  }, []);
+
+  const handleLoadOlder = useCallback(() => {
+    chatNearBottomRef.current = false; // 使用者要看舊內容：補頁後不要把視圖拉回底部
+    captureAnchor();
+    Promise.resolve(loadOlder()).then(() => requestAnimationFrame(() => requestAnimationFrame(syncChatNearBottom)));
+  }, [captureAnchor, loadOlder, syncChatNearBottom]);
+
+  const markGesture = () => { gestureRef.current = true; };
+
+  const handleChatScroll = useCallback(() => {
+    syncChatNearBottom();
+    if (!isTGChat) return;
+    if (!progScrollRef.current) captureAnchor();
+    if (chatNearBottomRef.current) setHasNewBelow(false);
+    const el = chatScrollRef.current;
+    // 到頂且是使用者手勢才取一頁；補頁後需要新的手勢才取下一頁（不因 sentinel 一直可見而連抓）。
+    if (el && el.scrollTop <= 40 && gestureRef.current) {
+      gestureRef.current = false;
+      handleLoadOlder();
+    }
+  }, [isTGChat, syncChatNearBottom, captureAnchor, handleLoadOlder]);
 
   /** 進入會話或執行結束後將游標放回輸入框（雙 rAF 以配合 React commit／行動裝置鍵盤） */
   const focusChatInput = useCallback(() => {
@@ -250,7 +346,18 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
   useEffect(() => {
     // 使用者往上翻舊內容時不強制拉回；自己剛送出的訊息例外
     const last = messages[messages.length - 1];
-    if (chatNearBottomRef.current || last?.role === 'user') {
+    // Telegram：只有尾端新增才跟隨／提示；向上補頁、送達狀態變化不得把視圖拉到底部。
+    const lastKey = last ? (last.id != null ? `m-${last.id}` : `i-${messages.length}`) : null;
+    const appended = !isTGChat || lastKey !== lastKeyRef.current;
+    // Telegram 不分方向（入站、他裝置送出的 Out 都一樣）：只有已在底部才跟隨，否則給提示。
+    // 例外只有本機使用者剛明確送出（待傳項目帶 client_message_id）才強制到底。
+    const ownSend = isTGChat && appended && !!last?.clientMessageId && Date.now() < sendFollowUntilRef.current;
+    if (ownSend) { sendFollowUntilRef.current = 0; chatNearBottomRef.current = true; }
+    if (isTGChat) {
+      if (appended && lastKeyRef.current != null && !chatNearBottomRef.current) setHasNewBelow(true);
+      lastKeyRef.current = lastKey;
+    }
+    if (isTGChat ? (appended && chatNearBottomRef.current) : (chatNearBottomRef.current || last?.role === 'user')) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
     let id2;
@@ -264,6 +371,31 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       if (id2 != null) cancelAnimationFrame(id2);
     };
   }, [messages, syncChatNearBottom]);
+
+  // Telegram：補頁後（內容高度在繪製前改變）立即把錨點放回原位。
+  // 訊息高度延後改變（圖片預覽載入、字型）由 ResizeObserver 處理：閱讀舊內容時維持錨點，在底部則維持貼底。
+  const resizeObsRef = useRef(null);
+  useEffect(() => {
+    if (!isTGChat || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => {
+      const el = chatScrollRef.current;
+      if (!el) return;
+      if (chatNearBottomRef.current) el.scrollTop = el.scrollHeight;
+      else restoreAnchor();
+    });
+    resizeObsRef.current = ro;
+    return () => { ro.disconnect(); resizeObsRef.current = null; };
+  }, [isTGChat, session.id]);
+  useLayoutEffect(() => {
+    if (!isTGChat) return;
+    if (!chatNearBottomRef.current) restoreAnchor();
+    const ro = resizeObsRef.current;
+    const el = chatScrollRef.current;
+    if (ro && el) {
+      ro.disconnect();
+      el.querySelectorAll('[data-mkey]').forEach((n) => ro.observe(n));
+    }
+  }, [messages]);
 
   // 待授權／Shell 確認區塊出現時捲到底（此狀態常不經 messages 更新而單獨出現）
   useEffect(() => {
@@ -305,6 +437,10 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     setInput(draft);
     chatNearBottomRef.current = true;
     setShowJumpLatest(false);
+    setHasNewBelow(false);
+    anchorRef.current = null;
+    lastKeyRef.current = null;
+    gestureRef.current = false;
     setSlashMenuItems([]);
     setSlashActiveIdx(0);
     setMentionOpen(false);
@@ -505,6 +641,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
     const token = { sessionId: session.id };
     pendingSendRef.current = token;
     setSending(true);
+    if (isTGChat) sendFollowUntilRef.current = Date.now() + 15000;
     try {
       await submitInput(expandMentionPrompt(trimmed, session, mentionChips), selected.map(a => a.attachmentId));
       clearDraftInputForSession(token.sessionId);
@@ -514,6 +651,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       setMentionChips([]);
       closeComposerMenus();
     } catch (err) {
+      sendFollowUntilRef.current = 0;
       if (composerSessionRef.current === token.sessionId && pendingSendRef.current === token) showToast(err.message || '送出失敗，草稿已保留', { error: true, duration: 5000 });
     } finally {
       if (composerSessionRef.current === token.sessionId && pendingSendRef.current === token) {
@@ -874,7 +1012,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
         quotaRefreshing={quotaRefreshing}
         onQuotaRefresh={handleQuotaRefresh}
         guest={guest}
-        onShare={isGuest ? null : () => setShareOpen(true)}
+        onShare={isGuest || isTGChat ? null : () => setShareOpen(true)}
         isSplit={isSplit}
         onToggleSplit={onToggleSplit}
         splitOrientation={splitOrientation}
@@ -895,13 +1033,24 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
       <div className="relative flex-1 min-h-0 flex flex-col">
       <div
         ref={chatScrollRef}
-        onScroll={syncChatNearBottom}
+        onScroll={handleChatScroll}
+        onWheel={isTGChat ? markGesture : undefined}
+        onTouchMove={isTGChat ? markGesture : undefined}
+        onPointerDown={isTGChat ? markGesture : undefined}
+        onKeyDown={isTGChat ? markGesture : undefined}
+        style={isTGChat ? { overflowAnchor: 'none' } : undefined} /* Telegram：錨點由上面的 JS 負責，各瀏覽器行為一致（含無原生 scroll anchoring 的 iOS WebView） */
         className="flex-1 min-h-0 overflow-y-auto app-scroll px-4 py-[18px] sm:px-8 sm:py-7 flex flex-col gap-5"
       >
         {!histLoaded && (
           <div className="mt-16 text-center text-sm text-[oklch(0.55_0.01_264)]">載入對話中…</div>
         )}
-        {histLoaded && messages.length === 0 && (
+        {isTGChat && histLoaded && tgPaging && tgPaging.syncState === 'offline' && (
+          <div role="status" data-sync-state="offline" className="shrink-0 text-center text-xs text-amber-300/80">
+            Telegram 未連線
+          </div>
+        )}
+        {isTGChat && histLoaded && tgPaging && <TelegramOlderControl paging={tgPaging} onLoad={handleLoadOlder} />}
+        {histLoaded && messages.length === 0 && !(isTGChat && tgPaging && tgPaging.needsInit && tgPaging.error) && (
           <div className="mt-16 flex flex-col items-center gap-4 text-center">
             <div className="text-sm text-[oklch(0.65_0.01_264)]">{guestReadOnly ? '目前還沒有訊息' : '輸入指令開始對話'}</div>
             {session.work_dir ? (
@@ -942,6 +1091,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
           return (
           <div
             key={m.id != null ? `m-${m.id}` : i}
+            data-mkey={m.id != null ? `m-${m.id}` : `i-${i}`}
             className={`flex w-full min-w-0 ${m.role === 'user' ? 'justify-end' : 'justify-start'} ${m.role === 'claude' || m.role === 'shell' ? 'group' : ''}`}
           >
             <div
@@ -959,6 +1109,11 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                 {authorLabel && <div className="mb-1 text-[11px] font-semibold text-white/70" data-msg-author>{authorLabel}</div>}
                 <MessageAttachments items={userParts.attachments} onPreview={setLightboxSrc} />
                 {userParts.text && <div className="whitespace-pre-wrap break-words leading-relaxed">{userParts.text}</div>}
+                {m.delivery && m.delivery !== 'sent' && (
+                  <div className={`mt-1 text-[11px] ${m.delivery === 'failed' ? 'text-red-300' : 'text-white/70'}`} data-delivery={m.delivery}>
+                    {m.delivery === 'pending' ? '傳送中…' : m.delivery === 'failed' ? '傳送失敗' : '送出結果不明'}{m.deliveryError ? `：${m.deliveryError}` : ''}
+                  </div>
+                )}
               </div>
             ) : m.role === 'shell' ? (
               <div className="bubble-shell px-4 py-3 text-sm w-fit max-w-full min-w-0">
@@ -984,7 +1139,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                     <span className={`inline-flex items-center justify-center w-[22px] h-[22px] rounded-md shrink-0 ${getAgentBadgeClass(agentType)}`} aria-hidden>
                       <AgentBadgeIcon agentType={agentType} />
                     </span>
-                    <span className="text-[13px] font-bold text-[oklch(0.85_0.01_264)]">{AGENT_LABEL[agentType] || agentType || 'Claude'}</span>
+                    <span className="text-[13px] font-bold text-[oklch(0.85_0.01_264)]">{agentType === 'telegram' && m.author ? m.author : (AGENT_LABEL[agentType] || agentType || 'Claude')}</span>
                   </div>
                 </div>
                 {m.thinking ? (
@@ -1143,6 +1298,16 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
 
         <div ref={bottomRef} />
       </div>
+      {isTGChat && hasNewBelow && (
+        <button
+          type="button"
+          onClick={jumpToLatest}
+          data-new-message-hint
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-violet-400/60 bg-violet-600 px-3 py-1.5 text-xs font-medium text-white shadow-lg hover:bg-violet-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
+        >
+          有新訊息 ↓
+        </button>
+      )}
       {showJumpLatest && (
         <button
           type="button"
