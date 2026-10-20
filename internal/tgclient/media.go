@@ -20,16 +20,17 @@ import (
 
 // 媒體上傳／下載的注入點。測試不碰真實 Telegram，也不把檔案寫進磁碟快取。
 type (
-	uploadFunc    func(ctx context.Context, name string, r io.Reader) (tg.InputFileClass, error)
+	uploadFunc    func(ctx context.Context, name string, r io.Reader, size int64) (tg.InputFileClass, error)
 	sendMediaFunc func(ctx context.Context, req *tg.MessagesSendMediaRequest) (tg.UpdatesClass, error)
 	fileFunc      func(ctx context.Context, loc tg.InputFileLocationClass, w io.Writer) error
 )
 
-func (m *Manager) rpcUpload(ctx context.Context, name string, r io.Reader) (tg.InputFileClass, error) {
+// rpcUpload 必須帶真實大小：FromReader 傳 -1 會被當成大檔案（InputFileBig），Telegram 不接受這種照片（PHOTO_SAVE_FILE_INVALID）。
+func (m *Manager) rpcUpload(ctx context.Context, name string, r io.Reader, size int64) (tg.InputFileClass, error) {
 	if m.client == nil {
 		return nil, errTGNotConnected
 	}
-	return uploader.NewUploader(m.client.API()).FromReader(ctx, name, r)
+	return uploader.NewUploader(m.client.API()).Upload(ctx, uploader.NewUpload(name, r, size))
 }
 
 func (m *Manager) rpcSendMedia(ctx context.Context, req *tg.MessagesSendMediaRequest) (tg.UpdatesClass, error) {
@@ -247,7 +248,12 @@ func (m *Manager) sendTelegramMedia(ctx context.Context, sessionID string, clien
 		if err != nil {
 			return fail(clientID, "開啟檔案", err)
 		}
-		input, err := m.uploadFn(ctx, att.Name, f)
+		st, err := f.Stat()
+		if err != nil {
+			f.Close()
+			return fail(clientID, "讀取檔案大小", err)
+		}
+		input, err := m.uploadFn(ctx, att.Name, f, st.Size())
 		f.Close()
 		if err != nil {
 			return fail(clientID, "上傳檔案", err)

@@ -94,10 +94,14 @@ func TestTelegramMediaPassThrough(t *testing.T) {
 		t.Fatal(err)
 	}
 	var sent *tg.MessagesSendMediaRequest
-	mgr.uploadFn = func(_ context.Context, name string, r io.Reader) (tg.InputFileClass, error) {
+	mgr.uploadFn = func(_ context.Context, name string, r io.Reader, size int64) (tg.InputFileClass, error) {
 		b, _ := io.ReadAll(r)
 		if name != "note.txt" || string(b) != "hello" {
 			t.Fatalf("upload name=%s body=%q", name, b)
+		}
+		// 不帶真實大小會被 gotd 當大檔案上傳，Telegram 會拒絕照片（PHOTO_SAVE_FILE_INVALID）。
+		if size != int64(len(b)) {
+			t.Fatalf("上傳必須帶真實大小 %d，got %d", len(b), size)
 		}
 		return &tg.InputFile{ID: 1, Name: name}, nil
 	}
