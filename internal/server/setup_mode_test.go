@@ -128,7 +128,7 @@ func TestSetupModeSurface(t *testing.T) {
 		t.Fatalf("偽造 Host = %d %s", status, body)
 	}
 	status, body = setupDo(t, http.MethodPost, base+"/setup/save", host, token)
-	if status != 501 || jsonCode(t, body) != "not_implemented" {
+	if status != 400 || jsonCode(t, body) != "invalid_input" {
 		t.Fatalf("save = %d %s", status, body)
 	}
 	if after := dirNames(t, dir); !reflect.DeepEqual(before, after) {

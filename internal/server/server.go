@@ -40,42 +40,73 @@ import (
 
 // Server 是已綁定 port 的 Fiber 服務。
 // Shutdown 關掉監聽；之後 Wait 也會返回。
+// 設定模式切到正常模式時會換掉 app／url，所以這些欄位都用 mu 保護。
 type Server struct {
-	app      *fiber.App
-	url      string
-	entryURL string
-	serveErr error
-	done     chan struct{}
+	mu         sync.Mutex
+	app        *fiber.App
+	url        string
+	entryURL   string
+	serveErr   error
+	done       chan struct{}
+	finishOnce sync.Once
+
+	// 只在設定模式有值。切換時先關它，進行中的儲存連線仍可把回應送完。
+	setupLn         net.Listener
+	keepAlive       bool
+	listenerStopped chan struct{}
 }
 
 // URL 是本機視窗要開的位址，例如 http://127.0.0.1:8080。
 // 監聽仍是 :port（所有介面），瀏覽器與 Mini App 可以從區網連。
 func (s *Server) URL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.url
 }
 
 // Wait 阻塞到 HTTP 服務結束。Shutdown 之後再呼叫也會立刻返回。
+// 設定模式切換時不會因為舊監聽結束而返回，要等最終的正常模式伺服器結束。
 func (s *Server) Wait() error {
 	<-s.done
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.serveErr
 }
 
 // EntryURL 是要打開的網址。設定模式帶一次性憑證；正常模式與 URL 相同。
 func (s *Server) EntryURL() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.entryURL != "" {
 		return s.entryURL
 	}
-	return s.URL()
+	return s.url
 }
 
 // Shutdown 停止接受連線，並等 Listener 返回或 ctx 逾時。
 func (s *Server) Shutdown(ctx context.Context) error {
-	err := s.app.ShutdownWithContext(ctx)
+	s.mu.Lock()
+	app := s.app
+	s.mu.Unlock()
+	var err error
+	if app != nil {
+		err = app.ShutdownWithContext(ctx)
+	}
 	select {
 	case <-s.done:
 	case <-ctx.Done():
 	}
 	return err
+}
+
+// finish 讓 Wait 返回。切換前後可能各有一條結束路徑，只准關一次。
+func (s *Server) finish(err error) {
+	s.finishOnce.Do(func() {
+		s.mu.Lock()
+		s.serveErr = err
+		s.mu.Unlock()
+		close(s.done)
+	})
 }
 
 // Start 讀取工作目錄的 config.yaml、開啟 DB、綁定 port。
@@ -95,7 +126,23 @@ func Start(ctx context.Context) (*Server, error) {
 		}
 		return nil, err
 	}
+	return runNormal(ctx, cfg)
+}
 
+// startNormal 在設定檔已經寫好之後啟動正常模式。設定模式同埠切換會呼叫它；測試可注入替代品。
+func startNormal(ctx context.Context) (*Server, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
+	}
+	return runNormal(ctx, cfg)
+}
+
+// runNormal 是 Start 在 config.Load 成功之後的原流程。行為與抽出前相同，避免正常啟動讀兩次設定。
+func runNormal(ctx context.Context, cfg *config.Config) (*Server, error) {
 	allowedNets, err := auth.ParseCIDRs(cfg.Web.AllowedCIDRs)
 	if err != nil {
 		return nil, fmt.Errorf("CIDR 設定錯誤: %v", err)
@@ -443,9 +490,9 @@ func Start(ctx context.Context) (*Server, error) {
 		done: make(chan struct{}),
 	}
 	go func() {
-		s.serveErr = app.Listener(ln)
+		err := app.Listener(ln)
 		_ = database.Close()
-		close(s.done)
+		s.finish(err)
 	}()
 	return s, nil
 }
