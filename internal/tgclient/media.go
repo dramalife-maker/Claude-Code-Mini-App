@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"strconv"
@@ -211,18 +212,23 @@ func mediaLocation(msg *tg.Message) (tg.InputFileLocationClass, string, string) 
 
 // sendTelegramMedia 用既有上傳檔送出。圖片走 photo，其餘走 document。不把伺服器路徑送進訊息文字。
 func (m *Manager) sendTelegramMedia(ctx context.Context, sessionID string, clientID int64, caption string, ids []string) (string, error) {
+	fail := func(id int64, step string, err error) (string, error) {
+		slog.Warn(fmt.Sprintf("[telegram] 送出附件失敗（%s）: %v", step, err))
+		if id > 0 {
+			publishDelivery(sessionID, strconv.FormatInt(id, 10), "failed", "訊息傳送失敗，請重新發送")
+		}
+		return "failed", nil
+	}
 	if m.db == nil {
 		return "failed", nil
 	}
 	s, err := m.db.GetSession(sessionID)
 	if err != nil {
-		publishDelivery(sessionID, strconv.FormatInt(clientID, 10), "failed", "訊息傳送失敗，請重新發送")
-		return "failed", nil
+		return fail(clientID, "讀取會話", err)
 	}
 	peer, err := m.liveHistoryPeer(ctx, s)
 	if err != nil || m.uploadFn == nil || m.sendMediaFn == nil {
-		publishDelivery(sessionID, strconv.FormatInt(clientID, 10), "failed", "訊息傳送失敗，請重新發送")
-		return "failed", nil
+		return fail(clientID, "解析對象或上傳未接線", err)
 	}
 	for i, id := range ids {
 		id = strings.TrimSpace(id)
@@ -231,24 +237,20 @@ func (m *Manager) sendTelegramMedia(ctx context.Context, sessionID string, clien
 		}
 		att, err := m.db.GetAttachment(sessionID, id)
 		if err != nil {
-			publishDelivery(sessionID, strconv.FormatInt(clientID, 10), "failed", "訊息傳送失敗，請重新發送")
-			return "failed", nil
+			return fail(clientID, "讀取附件", err)
 		}
 		path, err := media.ExistingUploadPath(att.SessionID, att.StorageName)
 		if err != nil {
-			publishDelivery(sessionID, strconv.FormatInt(clientID, 10), "failed", "訊息傳送失敗，請重新發送")
-			return "failed", nil
+			return fail(clientID, "附件路徑", err)
 		}
 		f, err := os.Open(path)
 		if err != nil {
-			publishDelivery(sessionID, strconv.FormatInt(clientID, 10), "failed", "訊息傳送失敗，請重新發送")
-			return "failed", nil
+			return fail(clientID, "開啟檔案", err)
 		}
 		input, err := m.uploadFn(ctx, att.Name, f)
 		f.Close()
 		if err != nil {
-			publishDelivery(sessionID, strconv.FormatInt(clientID, 10), "failed", "訊息傳送失敗，請重新發送")
-			return "failed", nil
+			return fail(clientID, "上傳檔案", err)
 		}
 		text := ""
 		if i == 0 {
@@ -287,10 +289,7 @@ func (m *Manager) sendTelegramMedia(ctx context.Context, sessionID string, clien
 		})
 		if err != nil {
 			m.dropPending(randomID)
-			if replaces > 0 {
-				publishDelivery(sessionID, strconv.FormatInt(replaces, 10), "failed", "訊息傳送失敗，請重新發送")
-			}
-			return "failed", nil
+			return fail(replaces, "sendMedia", err)
 		}
 		if short, ok := result.(*tg.UpdateShortSentMessage); ok {
 			m.finishSend(randomID, int64(short.ID), int64(short.Date))
@@ -302,10 +301,7 @@ func (m *Manager) sendTelegramMedia(ctx context.Context, sessionID string, clien
 		m.mu.Unlock()
 		if still {
 			m.dropPending(randomID)
-			if replaces > 0 {
-				publishDelivery(sessionID, strconv.FormatInt(replaces, 10), "failed", "訊息傳送失敗，請重新發送")
-			}
-			return "failed", nil
+			return fail(replaces, "已送出但未收到送達確認", nil)
 		}
 	}
 	return "sent", nil
