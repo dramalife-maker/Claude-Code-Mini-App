@@ -1072,6 +1072,8 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
         )}
         {messages.map((m, i) => {
           const userParts = m.role === 'user' ? attachmentMessageParts(m, session.id) : null;
+          // 收到的訊息（Telegram 朋友傳的圖片／檔案）也要顯示附件卡片；純附件時內容為空，不能當成「思考中」。
+          const claudeAtts = m.role === 'claude' && Array.isArray(m.attachments) && m.attachments.length ? attachmentMessageParts(m, session.id).attachments : [];
           const msgKey = m.id != null ? String(m.id) : `idx-${i}`;
           const forwardBody =
             m.role === 'claude' && String(m.resultText || '').trim() !== ''
@@ -1142,6 +1144,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                     <span className="text-[13px] font-bold text-[oklch(0.85_0.01_264)]">{agentType === 'telegram' && m.author ? m.author : (AGENT_LABEL[agentType] || agentType || 'Claude')}</span>
                   </div>
                 </div>
+                {claudeAtts.length > 0 && <MessageAttachments items={claudeAtts} onPreview={setLightboxSrc} />}
                 {m.thinking ? (
                   <div className="flex flex-row items-start gap-1.5">
                     <span className="text-violet-400/60 text-xs mt-0.5 shrink-0 select-none">💭</span>
@@ -1160,7 +1163,7 @@ function ChatView({ session, onBack, showBack = true, fullHeight = true, usePerm
                       <span className="streaming-tail shrink-0 select-none" aria-hidden="true">...</span>
                     )}
                   </div>
-                ) : (
+                ) : claudeAtts.length > 0 ? null : (
                   <div className="flex gap-1 py-1"><span className="dot"/><span className="dot"/><span className="dot"/></div>
                 )}
                 {forwardHints[msgKey] ? (
