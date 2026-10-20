@@ -7,44 +7,72 @@ Provides a chat-application-style unread message counter badge on session cards 
 ## Requirements
 
 ### Requirement: Unread message count calculation
-The system SHALL compute `unread_count` for each session representing the total number of non-user messages created after `last_read_at`.
+
+The system SHALL compute `unread_count` for each session representing the total number of non-user messages created after `last_read_at`. Telegram sessions SHALL always report an `unread_count` of 0, because their messages are not stored locally.
 
 #### Scenario: Accurate count of unread incoming messages
+
 - **WHEN** a session receives new assistant, shell, or agent messages after `last_read_at`
 - **THEN** the session query SHALL return `unread_count` matching the exact number of incoming messages
 
 #### Scenario: User messages excluded from unread count
+
 - **WHEN** a user posts an outgoing prompt
 - **THEN** the system SHALL NOT count user-authored messages toward `unread_count`
 
+#### Scenario: Telegram sessions report no unread count
+
+- **WHEN** a Telegram session is listed
+- **THEN** its `unread_count` SHALL be 0 regardless of incoming Telegram messages
+
 
 <!-- @trace
-source: post-message-and-unread-badge
-updated: 2026-10-13
+source: telegram-chat-sync-media
+updated: 2026-10-20
 code:
-  - scripts/selection-detect.test.cjs
-  - internal/static/js/chat/SelectionQuotePopover.js
-  - scripts/split-pane-quote.test.cjs
-  - internal/mcp/server.go
-  - internal/static/index.html
-  - internal/mcp/tools.go
   - internal/server/server.go
-  - internal/static/js/core/core.js
-  - scripts/popover-position.test.cjs
-  - internal/db/message.go
-  - internal/ws/handler.go
-  - scripts/quote-reply-action.test.cjs
-  - scripts/format-quote.test.cjs
-  - internal/static/js/chat/ChatView.js
-  - scripts/selection-quote-integration.test.cjs
+  - internal/tgclient/events.go
+  - internal/tgclient/send.go
+  - internal/tgclient/runner.go
+  - scripts/telegram-chat.test.cjs
+  - internal/tgclient/media.go
+  - internal/api/session.go
+  - internal/api/telegram_media.go
+  - internal/static/js/hooks/useChatSocket.js
+  - go.sum
+  - internal/api/share.go
+  - internal/agent/factory.go
+  - internal/static/js/session/NewSessionComposer.js
+  - internal/ws/sync.go
+  - internal/static/js/app.js
   - internal/ws/broadcast.go
+  - internal/ws/telegram.go
+  - internal/config/config.go
+  - config.example.yaml
+  - internal/db/message.go
+  - internal/api/telegram_history.go
   - internal/db/session.go
-  - scripts/textarea-autogrow.test.cjs
+  - internal/static/js/ui/ui-atoms.js
+  - internal/tgclient/history.go
+  - internal/static/js/chat/ChatView.js
+  - internal/static/AGENT.md
+  - internal/ws/handler.go
   - internal/static/js/session/SessionView.js
+  - internal/tgclient/manager.go
+  - internal/server/guest.go
+  - internal/static/js/core/core.js
+  - internal/static/js/hooks/telegramTimeline.js
+  - internal/static/index.html
+  - go.mod
 tests:
-  - internal/mcp/post_message_test.go
-  - internal/db/unread_smoke_test.go
-  - internal/api/session_test.go
+  - internal/server/guest_test.go
+  - internal/tgclient/helpers_test.go
+  - internal/tgclient/media_test.go
+  - internal/tgclient/history_test.go
+  - internal/tgclient/send_mem_test.go
+  - internal/ws/telegram_test.go
+  - internal/server/telegram_history_api_test.go
+  - internal/tgclient/manager_test.go
 -->
 
 ---
